@@ -4,3 +4,4 @@ export * from "./config";
 export * from "./connector";
 export * from "./theme";
 export * from "./storage";
+export * from "./search";

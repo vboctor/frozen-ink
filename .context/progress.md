@@ -5,9 +5,10 @@
 - Package naming: `@veecontext/<name>` with `workspace:*` for inter-package deps
 - Entry points: `packages/<name>/src/index.ts`
 - Typecheck: `bun run typecheck` (runs `tsc --build` from root)
-- Tests: `bun test <path>` — uses bun:test built-in runner
+- Tests: `bun test packages/<name>/src/` — uses bun:test built-in runner (use `src/` path to avoid stale dist/ test files)
 - Database: Drizzle ORM with bun:sqlite, schemas in `packages/core/src/db/`, client factory creates tables via raw SQL CREATE IF NOT EXISTS
 - DB conventions: WAL journal mode, foreign keys ON, JSON columns use `text(..., { mode: "json" })`, timestamps as TEXT with `datetime('now')` default
+- tsconfig exclude: `"exclude": ["src/**/__tests__"]` to prevent test files from compiling into dist/
 
 ## US-001: Project scaffold and monorepo setup
 - What was implemented:
@@ -80,3 +81,65 @@
   - Env var overrides must convert numeric strings to numbers before Zod validation (Zod won't coerce by default)
   - Tests must clean up VEECONTEXT_* env vars in both beforeEach and afterEach to avoid cross-test pollution
   - Config loading order: defaults → config.json merge → env var overrides → Zod validation
+
+## US-004: Core: Connector interface, registry, theme interface, and Obsidian helpers
+- What was implemented:
+  - Connector interfaces (`packages/core/src/connector/interface.ts`): Connector, ConnectorMetadata, SyncCursor, SyncResult, ConnectorEntityData — with initialize, sync, validateCredentials, dispose methods
+  - ConnectorRegistry (`packages/core/src/connector/registry.ts`): register/get/has/getRegisteredTypes for connector factories by type string
+  - Theme interfaces (`packages/core/src/theme/interface.ts`): Theme (connectorType, render, getFilePath) and ThemeRenderContext
+  - Obsidian helpers (`packages/core/src/theme/obsidian.ts`): frontmatter(fields), wikilink(target, label?), callout(type, title, content), embed(path) — with custom YAML serializer handling strings, numbers, booleans, arrays, objects, and YAML reserved words
+  - StorageBackend interface (`packages/core/src/storage/interface.ts`): write, read, delete, exists methods
+  - LocalStorageBackend (`packages/core/src/storage/local.ts`): filesystem implementation with auto directory creation
+  - Barrel exports for all three modules via index.ts files
+  - Updated `packages/core/src/index.ts` to export connector, theme, and storage modules
+  - 14 unit tests for Obsidian helpers: frontmatter YAML output, special char quoting, reserved word quoting, empty fields, empty arrays, wikilinks with/without labels, callout blocks with single/multi-line content, embed syntax
+  - 9 unit tests for LocalStorageBackend: write/read, nested directories, overwrite, delete, exists true/false, error on missing read/delete, Buffer content
+- Files changed:
+  - packages/core/src/connector/interface.ts (new)
+  - packages/core/src/connector/registry.ts (new)
+  - packages/core/src/connector/index.ts (new)
+  - packages/core/src/theme/interface.ts (new)
+  - packages/core/src/theme/obsidian.ts (new)
+  - packages/core/src/theme/index.ts (new)
+  - packages/core/src/storage/interface.ts (new)
+  - packages/core/src/storage/local.ts (new)
+  - packages/core/src/storage/index.ts (new)
+  - packages/core/src/theme/__tests__/obsidian.test.ts (new)
+  - packages/core/src/storage/__tests__/local-storage.test.ts (new)
+  - packages/core/src/index.ts (modified)
+- **Learnings for future iterations:**
+  - No external YAML library needed — a simple recursive serializer handles frontmatter for common types (strings, numbers, booleans, arrays, objects, null)
+  - YAML strings must be quoted when they contain `:`, `#`, `"`, `'`, leading/trailing spaces, or match reserved words (true/false/null/yes/no/on/off)
+  - Bun's `fs/promises` works identically to Node.js — `access()` for existence check, `mkdir` with `recursive: true` for nested dirs
+  - StorageBackend uses `string | Buffer` for write content to support both text and binary files
+  - ConnectorEntityData includes optional tags, attachments, and relations to match the collection DB schema structure
+
+## US-005: Core: Sync engine and FTS5 search indexer
+- What was implemented:
+  - SyncEngine class (`packages/core/src/connector/sync-engine.ts`) that: opens collection DB, loops connector.sync() until hasMore===false, upserts entities with SHA-256 content hash (only re-renders markdown on change), handles deletions (removes DB records + markdown files), downloads attachments via storage backend, updates sync_state cursors, logs sync_runs with status/counts/timing
+  - ThemeEngine class (`packages/core/src/theme/engine.ts`) that: registers themes by connector type, selects correct theme for rendering, provides render() and getFilePath() delegation
+  - SearchIndexer class (`packages/core/src/search/indexer.ts`) that: creates FTS5 virtual table (entities_fts) on title+content+tags, provides updateIndex(entity), removeIndex(entityId), and search(query, filters) with optional entityType filter
+  - Barrel exports for search module (`packages/core/src/search/index.ts`), updated connector and theme barrel exports
+  - Updated `packages/core/src/index.ts` to export search module
+  - 10 unit tests for SyncEngine: sync loop pagination, SHA-256 hashing, skip re-render on unchanged content, re-render on changed content, deletion handling (DB + filesystem), attachment downloads, sync_state cursor persistence, sync_runs record creation, markdown file output, tag insertion
+  - 8 unit tests for SearchIndexer: FTS5 table creation, field indexing (title/content/tags), result details, entityType filtering, index update for existing entity, index removal, multi-entity ranking, empty results
+  - Fixed tsconfig to exclude `__tests__` dirs from dist/ compilation
+- Files changed:
+  - packages/core/src/connector/sync-engine.ts (new)
+  - packages/core/src/theme/engine.ts (new)
+  - packages/core/src/search/indexer.ts (new)
+  - packages/core/src/search/index.ts (new)
+  - packages/core/src/connector/__tests__/sync-engine.test.ts (new)
+  - packages/core/src/search/__tests__/indexer.test.ts (new)
+  - packages/core/src/connector/index.ts (modified — added SyncEngine export)
+  - packages/core/src/theme/index.ts (modified — added ThemeEngine export)
+  - packages/core/src/index.ts (modified — added search export)
+  - packages/core/tsconfig.json (modified — added __tests__ exclude)
+- **Learnings for future iterations:**
+  - `Bun.CryptoHasher("sha256")` provides simple SHA-256 hashing without external deps
+  - FTS5 virtual tables use `UNINDEXED` column option for columns that should be stored but not searchable
+  - FTS5 query parser interprets `-` as NOT operator — avoid hyphens in test search terms or quote them
+  - `bun:sqlite` `Database` class can be used directly (without Drizzle) for FTS5 virtual tables since Drizzle doesn't support virtual table syntax
+  - `tsc --build` compiles test files into dist/ unless explicitly excluded — add `"exclude": ["src/**/__tests__"]` to tsconfig
+  - SyncEngine creates a new `getCollectionDb()` instance — each DB open gets its own WAL connection, so multiple SyncEngine instances for the same DB path work correctly
+  - When testing sync engines, use separate mock connectors for each run to avoid shared state between test phases

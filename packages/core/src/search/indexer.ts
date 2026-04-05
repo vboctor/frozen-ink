@@ -1,0 +1,106 @@
+import { Database, type SQLQueryBindings } from "bun:sqlite";
+
+export interface SearchResult {
+  entityId: number;
+  externalId: string;
+  entityType: string;
+  title: string;
+  rank: number;
+}
+
+export interface SearchFilters {
+  entityType?: string;
+  collectionName?: string;
+}
+
+export class SearchIndexer {
+  private sqlite: Database;
+
+  constructor(dbPath: string) {
+    this.sqlite = new Database(dbPath);
+    this.sqlite.exec("PRAGMA journal_mode = WAL;");
+    this.createFtsTable();
+  }
+
+  private createFtsTable(): void {
+    this.sqlite.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
+        entity_id UNINDEXED,
+        external_id UNINDEXED,
+        entity_type UNINDEXED,
+        title,
+        content,
+        tags
+      );
+    `);
+  }
+
+  updateIndex(entity: {
+    id: number;
+    externalId: string;
+    entityType: string;
+    title: string;
+    content: string;
+    tags: string[];
+  }): void {
+    // Remove existing entry for this entity
+    this.sqlite.exec(
+      `DELETE FROM entities_fts WHERE entity_id = '${entity.id}'`,
+    );
+
+    const stmt = this.sqlite.prepare(
+      `INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    stmt.run(
+      String(entity.id),
+      entity.externalId,
+      entity.entityType,
+      entity.title,
+      entity.content,
+      entity.tags.join(" "),
+    );
+  }
+
+  removeIndex(entityId: number): void {
+    this.sqlite.exec(
+      `DELETE FROM entities_fts WHERE entity_id = '${entityId}'`,
+    );
+  }
+
+  search(query: string, filters?: SearchFilters): SearchResult[] {
+    let sql = `
+      SELECT entity_id, external_id, entity_type, title, rank
+      FROM entities_fts
+      WHERE entities_fts MATCH ?
+    `;
+    const params: SQLQueryBindings[] = [query];
+
+    if (filters?.entityType) {
+      sql += ` AND entity_type = ?`;
+      params.push(filters.entityType);
+    }
+
+    sql += ` ORDER BY rank`;
+
+    const stmt = this.sqlite.prepare(sql);
+    const rows = stmt.all(...params) as Array<{
+      entity_id: string;
+      external_id: string;
+      entity_type: string;
+      title: string;
+      rank: number;
+    }>;
+
+    return rows.map((row) => ({
+      entityId: Number(row.entity_id),
+      externalId: row.external_id,
+      entityType: row.entity_type,
+      title: row.title,
+      rank: row.rank,
+    }));
+  }
+
+  close(): void {
+    this.sqlite.close();
+  }
+}
