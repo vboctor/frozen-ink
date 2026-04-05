@@ -1,6 +1,6 @@
-import { mkdir, writeFile, readFile, unlink, access } from "fs/promises";
-import { dirname, join } from "path";
-import type { StorageBackend } from "./interface";
+import { mkdir, writeFile, readFile, unlink, access, readdir, stat } from "fs/promises";
+import { dirname, join, relative } from "path";
+import type { StorageBackend, FileStat } from "./interface";
 
 export class LocalStorageBackend implements StorageBackend {
   constructor(private basePath: string) {}
@@ -28,6 +28,42 @@ export class LocalStorageBackend implements StorageBackend {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async list(prefix: string): Promise<string[]> {
+    const dir = join(this.basePath, prefix);
+    const base = this.basePath;
+    const result: string[] = [];
+
+    async function walk(dirPath: string): Promise<void> {
+      let entries;
+      try {
+        entries = await readdir(dirPath, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const entryPath = join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+          await walk(entryPath);
+        } else if (entry.isFile()) {
+          result.push(relative(base, entryPath));
+        }
+      }
+    }
+
+    await walk(dir);
+    return result;
+  }
+
+  async stat(path: string): Promise<FileStat | null> {
+    const fullPath = join(this.basePath, path);
+    try {
+      const s = await stat(fullPath);
+      return { mtimeMs: s.mtimeMs, size: s.size };
+    } catch {
+      return null;
     }
   }
 }

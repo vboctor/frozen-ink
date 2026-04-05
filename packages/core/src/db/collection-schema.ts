@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export const entities = sqliteTable("entities", {
@@ -9,6 +9,8 @@ export const entities = sqliteTable("entities", {
   data: text("data", { mode: "json" }).notNull().$type<Record<string, unknown>>(),
   contentHash: text("content_hash"),
   markdownPath: text("markdown_path"),
+  markdownMtime: real("markdown_mtime"),
+  markdownSize: integer("markdown_size"),
   url: text("url"),
   createdAt: text("created_at")
     .notNull()

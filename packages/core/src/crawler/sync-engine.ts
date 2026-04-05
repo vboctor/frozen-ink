@@ -12,6 +12,20 @@ import type { Crawler, CrawlerEntityData, SyncCursor } from "./interface";
 import type { ThemeEngine } from "../theme/engine";
 import type { StorageBackend } from "../storage/interface";
 
+/** Returns true if any path segment starts with "." (hidden dirs like .git, .obsidian). */
+function isToolPath(filePath: string): boolean {
+  return filePath.split("/").some((segment) => segment.startsWith("."));
+}
+
+/** Returns true when the stored mtime+size match the current file stat. */
+function statMatches(
+  stored: { markdownMtime: number | null; markdownSize: number | null },
+  current: { mtimeMs: number; size: number } | null,
+): boolean {
+  if (!current) return false;
+  return stored.markdownMtime === current.mtimeMs && stored.markdownSize === current.size;
+}
+
 function computeHash(data: Record<string, unknown>): string {
   const hasher = new Bun.CryptoHasher("sha256");
   hasher.update(JSON.stringify(data));
@@ -116,6 +130,9 @@ export class SyncEngine {
         }
       }
 
+      // Reconcile filesystem with DB
+      await this.reconcile(crawlerType);
+
       // Update sync_run as completed
       this.db
         .update(syncRuns)
@@ -170,6 +187,7 @@ export class SyncEngine {
       const markdown = this.renderMarkdown(entityData, crawlerType);
       const filePath = this.getMarkdownPath(entityData, crawlerType);
       await this.storage.write(filePath, markdown);
+      const writtenStat = await this.storage.stat(filePath);
 
       // Update entity
       this.db
@@ -180,6 +198,8 @@ export class SyncEngine {
           data: entityData.data,
           contentHash,
           markdownPath: filePath,
+          markdownMtime: writtenStat?.mtimeMs ?? null,
+          markdownSize: writtenStat?.size ?? null,
           url: entityData.url ?? null,
           updatedAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
         })
@@ -204,6 +224,7 @@ export class SyncEngine {
     const markdown = this.renderMarkdown(entityData, crawlerType);
     const filePath = this.getMarkdownPath(entityData, crawlerType);
     await this.storage.write(filePath, markdown);
+    const writtenStat = await this.storage.stat(filePath);
 
     // Insert entity
     this.db
@@ -215,6 +236,8 @@ export class SyncEngine {
         data: entityData.data,
         contentHash,
         markdownPath: filePath,
+        markdownMtime: writtenStat?.mtimeMs ?? null,
+        markdownSize: writtenStat?.size ?? null,
         url: entityData.url ?? null,
       })
       .run();
@@ -302,6 +325,101 @@ export class SyncEngine {
       return `${this.markdownBasePath}/${themePath}`;
     }
     return `${this.markdownBasePath}/${entityData.entityType}/${entityData.externalId}.md`;
+  }
+
+  private async reconcile(crawlerType: string): Promise<void> {
+    const allEntities = this.db.select().from(entities).all();
+
+    // 1. Ensure every entity in DB has its markdown file on disk with the expected content.
+    // Use stored mtime+size to skip files that haven't changed since we last wrote them,
+    // avoiding expensive re-renders and reads for unchanged entities.
+    for (const entity of allEntities) {
+      if (!entity.markdownPath) continue;
+      const currentStat = await this.storage.stat(entity.markdownPath);
+      if (statMatches(entity, currentStat)) continue;
+
+      // File is missing or has been modified — re-render and restore
+      const tags = this.db
+        .select()
+        .from(entityTags)
+        .where(eq(entityTags.entityId, entity.id))
+        .all()
+        .map((t) => t.tag);
+      const expected = this.themeEngine.render({
+        entity: {
+          externalId: entity.externalId,
+          entityType: entity.entityType,
+          title: entity.title,
+          data: entity.data as Record<string, unknown>,
+          url: entity.url ?? undefined,
+          tags,
+        },
+        collectionName: this.collectionName,
+        crawlerType,
+      });
+      await this.storage.write(entity.markdownPath, expected);
+      const writtenStat = await this.storage.stat(entity.markdownPath);
+      this.db
+        .update(entities)
+        .set({
+          markdownMtime: writtenStat?.mtimeMs ?? null,
+          markdownSize: writtenStat?.size ?? null,
+        })
+        .where(eq(entities.id, entity.id))
+        .run();
+    }
+
+    // 2. Delete orphaned markdown files (on disk but no matching entity in DB)
+    // Skip paths containing hidden directories (e.g. .git, .obsidian) — those
+    // are tool index files that belong to other applications and will be
+    // recreated by them; we must not touch them.
+    const dbMarkdownPaths = new Set(
+      allEntities.map((e) => e.markdownPath).filter(Boolean),
+    );
+    try {
+      const diskMarkdownFiles = await this.storage.list(this.markdownBasePath);
+      for (const diskPath of diskMarkdownFiles) {
+        if (isToolPath(diskPath)) continue;
+        if (!dbMarkdownPaths.has(diskPath)) {
+          try {
+            await this.storage.delete(diskPath);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch {
+      // markdown directory may not exist yet
+    }
+
+    // 3. Delete orphaned attachment files (on disk but no matching record in DB)
+    const allAttachmentRows = this.db.select().from(attachments).all();
+    const dbAttachmentPaths = new Set(
+      allAttachmentRows.map((a) => a.storagePath),
+    );
+    try {
+      const diskAttachmentFiles = await this.storage.list("attachments");
+      for (const diskPath of diskAttachmentFiles) {
+        if (isToolPath(diskPath)) continue;
+        if (!dbAttachmentPaths.has(diskPath)) {
+          try {
+            await this.storage.delete(diskPath);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch {
+      // attachments directory may not exist yet
+    }
+
+    // 4. Clean up attachment DB records whose files are missing from disk
+    for (const att of allAttachmentRows) {
+      const exists = await this.storage.exists(att.storagePath);
+      if (!exists) {
+        this.db.delete(attachments).where(eq(attachments.id, att.id)).run();
+      }
+    }
   }
 
   private async deleteEntity(externalId: string): Promise<boolean> {

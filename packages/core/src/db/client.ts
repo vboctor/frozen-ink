@@ -46,6 +46,8 @@ export function getCollectionDb(dbPath: string) {
       data TEXT NOT NULL DEFAULT '{}',
       content_hash TEXT,
       markdown_path TEXT,
+      markdown_mtime REAL,
+      markdown_size INTEGER,
       url TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))

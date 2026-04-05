@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, rmSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { eq } from "drizzle-orm";
 import { SyncEngine } from "../sync-engine";
@@ -550,5 +550,389 @@ describe("SyncEngine", () => {
     const tags = db.select().from(entityTags).all();
     expect(tags).toHaveLength(3);
     expect(tags.map((t) => t.tag).sort()).toEqual(["bug", "critical", "frontend"]);
+  });
+
+  it("reconcile: deletes orphaned markdown files not in DB", async () => {
+    // Create an entity via sync
+    const crawler = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "keep-1",
+            entityType: "issue",
+            title: "Keep This",
+            data: { body: "keep" },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+
+    const dbPath = join(TEST_DIR, "reconcile-orphan.db");
+    const engine = new SyncEngine({
+      crawler,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine.run();
+
+    // Manually create an orphaned markdown file (no DB entity)
+    const orphanDir = join(TEST_DIR, "storage", "md", "issue");
+    mkdirSync(orphanDir, { recursive: true });
+    writeFileSync(join(orphanDir, "orphan-999.md"), "# Orphaned File");
+
+    // Verify it exists
+    expect(await storage.exists("md/issue/orphan-999.md")).toBe(true);
+
+    // Run sync again — reconcile should delete the orphan
+    const crawler2 = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "keep-1",
+            entityType: "issue",
+            title: "Keep This",
+            data: { body: "keep" },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+    const engine2 = new SyncEngine({
+      crawler: crawler2,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine2.run();
+
+    // Orphaned file should be gone
+    expect(await storage.exists("md/issue/orphan-999.md")).toBe(false);
+    // Legitimate file should still exist
+    expect(await storage.exists("md/issue/keep-1.md")).toBe(true);
+  });
+
+  it("reconcile: re-renders missing markdown files from DB data", async () => {
+    // Create an entity via sync
+    const crawler = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "restore-1",
+            entityType: "doc",
+            title: "Restore Me",
+            data: { text: "important content" },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+
+    const dbPath = join(TEST_DIR, "reconcile-restore.db");
+    const engine = new SyncEngine({
+      crawler,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine.run();
+
+    // Verify file exists
+    expect(await storage.exists("md/doc/restore-1.md")).toBe(true);
+
+    // Manually delete the markdown file
+    await storage.delete("md/doc/restore-1.md");
+    expect(await storage.exists("md/doc/restore-1.md")).toBe(false);
+
+    // Run sync again — reconcile should re-render the file
+    const crawler2 = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "restore-1",
+            entityType: "doc",
+            title: "Restore Me",
+            data: { text: "important content" },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+    const engine2 = new SyncEngine({
+      crawler: crawler2,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine2.run();
+
+    // File should be restored
+    expect(await storage.exists("md/doc/restore-1.md")).toBe(true);
+    const content = await storage.read("md/doc/restore-1.md");
+    expect(content).toContain("Restore Me");
+  });
+
+  it("reconcile: deletes orphaned attachment files not in DB", async () => {
+    // Create entity with attachment
+    const crawler = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "att-keep",
+            entityType: "doc",
+            title: "With Attachment",
+            data: {},
+            attachments: [
+              {
+                filename: "real.png",
+                mimeType: "image/png",
+                content: Buffer.from("real-data"),
+              },
+            ],
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+
+    const dbPath = join(TEST_DIR, "reconcile-att.db");
+    const engine = new SyncEngine({
+      crawler,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine.run();
+
+    // Manually create an orphaned attachment file
+    await storage.write("attachments/orphan/stale.png", Buffer.from("orphan-data"));
+    expect(await storage.exists("attachments/orphan/stale.png")).toBe(true);
+
+    // Run sync again — reconcile should clean up
+    const crawler2 = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "att-keep",
+            entityType: "doc",
+            title: "With Attachment",
+            data: {},
+            attachments: [
+              {
+                filename: "real.png",
+                mimeType: "image/png",
+                content: Buffer.from("real-data"),
+              },
+            ],
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+    const engine2 = new SyncEngine({
+      crawler: crawler2,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine2.run();
+
+    // Orphaned attachment should be gone
+    expect(await storage.exists("attachments/orphan/stale.png")).toBe(false);
+    // Legitimate attachment should still exist
+    expect(await storage.exists("attachments/att-keep/real.png")).toBe(true);
+  });
+
+  it("reconcile: cleans up attachment DB records for missing files", async () => {
+    // Create entity with attachment
+    const crawler = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "att-clean",
+            entityType: "doc",
+            title: "Cleanup Test",
+            data: {},
+            attachments: [
+              {
+                filename: "gone.png",
+                mimeType: "image/png",
+                content: Buffer.from("will-be-deleted"),
+              },
+            ],
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+
+    const dbPath = join(TEST_DIR, "reconcile-clean.db");
+    const engine = new SyncEngine({
+      crawler,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine.run();
+
+    const db = getCollectionDb(dbPath);
+    expect(db.select().from(attachments).all()).toHaveLength(1);
+
+    // Manually delete the attachment file from disk
+    await storage.delete("attachments/att-clean/gone.png");
+
+    // Run sync again with no attachments (so DB record stays from first sync)
+    const crawler2 = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "att-clean",
+            entityType: "doc",
+            title: "Cleanup Test",
+            data: {},
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+    const engine2 = new SyncEngine({
+      crawler: crawler2,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine2.run();
+
+    // DB attachment record should be cleaned up since file is missing
+    expect(db.select().from(attachments).all()).toHaveLength(0);
+  });
+
+  it("reconcile: restores user-modified markdown files to expected content", async () => {
+    const crawler = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "modified-1",
+            entityType: "note",
+            title: "Original Title",
+            data: { body: "original body" },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+
+    const dbPath = join(TEST_DIR, "reconcile-modified.db");
+    const engine = new SyncEngine({
+      crawler,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine.run();
+
+    // Manually overwrite the markdown with wrong content
+    await storage.write("md/note/modified-1.md", "user scribbled here");
+    expect(await storage.read("md/note/modified-1.md")).toBe(
+      "user scribbled here",
+    );
+
+    // Run sync again — reconcile should restore the correct content
+    const crawler2 = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "modified-1",
+            entityType: "note",
+            title: "Original Title",
+            data: { body: "original body" },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+    const engine2 = new SyncEngine({
+      crawler: crawler2,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine2.run();
+
+    const content = await storage.read("md/note/modified-1.md");
+    expect(content).toContain("Original Title");
+    expect(content).not.toBe("user scribbled here");
+  });
+
+  it("reconcile: preserves files inside hidden tool directories (.git, .obsidian)", async () => {
+    const crawler = createMockCrawler([
+      {
+        entities: [],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+
+    const dbPath = join(TEST_DIR, "reconcile-toolpath.db");
+    const engine = new SyncEngine({
+      crawler,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+
+    // Simulate tool-generated index files inside the output directory
+    await storage.write("md/.obsidian/workspace.json", '{"main":true}');
+    await storage.write("attachments/.git/config", "[core]");
+
+    await engine.run();
+
+    // Tool files must not be touched
+    expect(await storage.exists("md/.obsidian/workspace.json")).toBe(true);
+    expect(await storage.exists("attachments/.git/config")).toBe(true);
   });
 });
