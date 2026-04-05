@@ -1,0 +1,206 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
+import {
+  getMasterDb,
+  getCollectionDb,
+  collections,
+  entities,
+  entityTags,
+} from "@veecontext/core";
+import { eq } from "drizzle-orm";
+import type { McpServerOptions } from "../server";
+
+export function registerEntityResources(
+  server: McpServer,
+  options: McpServerOptions,
+): void {
+  // Template resource: entity by collection and externalId
+  const entityTemplate = new ResourceTemplate(
+    "veecontext://entities/{collection}/{externalId}",
+    {
+      list: undefined,
+    },
+  );
+
+  server.registerResource(
+    "entity",
+    entityTemplate,
+    {
+      description:
+        "Full entity data by collection name and external ID",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const collectionName = variables.collection as string;
+      const externalId = variables.externalId as string;
+      const masterDbPath = join(options.veecontextHome, "master.db");
+
+      if (!existsSync(masterDbPath)) {
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "application/json",
+              text: JSON.stringify({ error: "VeeContext not initialized" }),
+            },
+          ],
+        };
+      }
+
+      const db = getMasterDb(masterDbPath);
+      const [col] = db
+        .select()
+        .from(collections)
+        .where(eq(collections.name, collectionName))
+        .all();
+
+      if (!col || !existsSync(col.dbPath)) {
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "application/json",
+              text: JSON.stringify({
+                error: `Collection "${collectionName}" not found`,
+              }),
+            },
+          ],
+        };
+      }
+
+      const colDb = getCollectionDb(col.dbPath);
+      const [entity] = colDb
+        .select()
+        .from(entities)
+        .where(eq(entities.externalId, externalId))
+        .all();
+
+      if (!entity) {
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "application/json",
+              text: JSON.stringify({
+                error: `Entity "${externalId}" not found`,
+              }),
+            },
+          ],
+        };
+      }
+
+      const tags = colDb
+        .select()
+        .from(entityTags)
+        .where(eq(entityTags.entityId, entity.id))
+        .all()
+        .map((t) => t.tag);
+
+      return {
+        contents: [
+          {
+            uri: uri.toString(),
+            mimeType: "application/json",
+            text: JSON.stringify({
+              id: entity.id,
+              externalId: entity.externalId,
+              entityType: entity.entityType,
+              title: entity.title,
+              data: entity.data,
+              url: entity.url,
+              tags,
+              createdAt: entity.createdAt,
+              updatedAt: entity.updatedAt,
+            }),
+          },
+        ],
+      };
+    },
+  );
+
+  // Template resource: markdown by collection and path
+  const markdownTemplate = new ResourceTemplate(
+    "veecontext://markdown/{collection}/{+path}",
+    {
+      list: undefined,
+    },
+  );
+
+  server.registerResource(
+    "markdown",
+    markdownTemplate,
+    {
+      description: "Rendered markdown file for an entity",
+      mimeType: "text/markdown",
+    },
+    async (uri, variables) => {
+      const collectionName = variables.collection as string;
+      const path = variables.path as string;
+      const masterDbPath = join(options.veecontextHome, "master.db");
+
+      if (!existsSync(masterDbPath)) {
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "text/plain",
+              text: "VeeContext not initialized",
+            },
+          ],
+        };
+      }
+
+      const db = getMasterDb(masterDbPath);
+      const [col] = db
+        .select()
+        .from(collections)
+        .where(eq(collections.name, collectionName))
+        .all();
+
+      if (!col) {
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "text/plain",
+              text: `Collection "${collectionName}" not found`,
+            },
+          ],
+        };
+      }
+
+      const collectionDir = join(
+        options.veecontextHome,
+        "collections",
+        collectionName,
+      );
+      const mdPath = join(collectionDir, path);
+
+      if (!existsSync(mdPath)) {
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "text/plain",
+              text: `Markdown file not found: ${path}`,
+            },
+          ],
+        };
+      }
+
+      const content = readFileSync(mdPath, "utf-8");
+
+      return {
+        contents: [
+          {
+            uri: uri.toString(),
+            mimeType: "text/markdown",
+            text: content,
+          },
+        ],
+      };
+    },
+  );
+}

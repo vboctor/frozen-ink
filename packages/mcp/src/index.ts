@@ -1,2 +1,3 @@
 // @veecontext/mcp - Model Context Protocol server
-export {};
+export { createMcpServer, startStdioServer } from "./server";
+export type { McpServerOptions } from "./server";

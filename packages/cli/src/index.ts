@@ -7,6 +7,7 @@ import { statusCommand } from "./commands/status";
 import { collectionsCommand } from "./commands/collections";
 import { searchCommand } from "./commands/search";
 import { configCommand } from "./commands/config";
+import { serveCommand } from "./commands/serve";
 
 const program = new Command();
 
@@ -22,5 +23,6 @@ program.addCommand(statusCommand);
 program.addCommand(collectionsCommand);
 program.addCommand(searchCommand);
 program.addCommand(configCommand);
+program.addCommand(serveCommand);
 
 program.parse();

@@ -9,6 +9,7 @@
 - Database: Drizzle ORM with bun:sqlite, schemas in `packages/core/src/db/`, client factory creates tables via raw SQL CREATE IF NOT EXISTS
 - DB conventions: WAL journal mode, foreign keys ON, JSON columns use `text(..., { mode: "json" })`, timestamps as TEXT with `datetime('now')` default
 - tsconfig exclude: `"exclude": ["src/**/__tests__"]` to prevent test files from compiling into dist/
+- MCP testing: Use `InMemoryTransport.createLinkedPair()` + `Client` from MCP SDK for in-process tool/resource testing without STDIO
 
 ## US-001: Project scaffold and monorepo setup
 - What was implemented:
@@ -204,3 +205,50 @@
   - FTS5 search across multiple collection databases requires opening/closing a SearchIndexer per collection DB path
   - Config dot-notation (e.g., `sync.interval`) requires custom get/set helpers since JSON doesn't natively support nested path access
   - The `VEECONTEXT_HOME` env var is essential for test isolation — set it in beforeEach to redirect all operations to a temp directory
+
+## US-008: MCP server with tools and resources
+- What was implemented:
+  - MCP server setup (`packages/mcp/src/server.ts`) using `@modelcontextprotocol/sdk` McpServer class with STDIO transport
+  - `createMcpServer()` factory and `startStdioServer()` entry point
+  - 6 tools registered:
+    - `list_collections`: lists all collections with entity counts and last sync time/status
+    - `search_entities`: FTS5 search with optional collection, entityType, and limit filters
+    - `get_entity`: returns full entity data + rendered markdown by collection + externalId
+    - `query_entities`: structured query with entityType, titleContains, tag filters, ordering (title/createdAt/updatedAt), and pagination (limit/offset)
+    - `trigger_sync`: initiates sync for a collection (with optional full re-sync), returns run ID and counts
+    - `get_sync_status`: returns recent sync runs (last 5) for a collection
+  - 2 static resources + 3 resource templates:
+    - `veecontext://collections` (static): lists all collections
+    - `veecontext://collections/{name}` (template): detailed info for a specific collection
+    - `veecontext://entities/{collection}/{externalId}` (template): full entity data with tags
+    - `veecontext://markdown/{collection}/{+path}` (template): rendered markdown content
+  - CLI serve command (`packages/cli/src/commands/serve.ts`): `vctx serve --mcp-only` starts MCP server in STDIO mode
+  - Updated `packages/mcp/src/index.ts` to export `createMcpServer`, `startStdioServer`, `McpServerOptions`
+  - Added `@veecontext/connectors`, `drizzle-orm`, `zod` as MCP package dependencies
+  - Added connectors project reference to MCP tsconfig, added `__tests__` exclude
+  - 21 unit tests using MCP SDK's `InMemoryTransport` + `Client` for in-process tool/resource testing
+- Files changed:
+  - packages/mcp/src/server.ts (new)
+  - packages/mcp/src/tools/list-collections.ts (new)
+  - packages/mcp/src/tools/search.ts (new)
+  - packages/mcp/src/tools/get-entity.ts (new)
+  - packages/mcp/src/tools/query.ts (new)
+  - packages/mcp/src/tools/sync.ts (new)
+  - packages/mcp/src/resources/collection.ts (new)
+  - packages/mcp/src/resources/entity.ts (new)
+  - packages/mcp/src/__tests__/tools.test.ts (new)
+  - packages/mcp/src/index.ts (modified — added exports)
+  - packages/mcp/package.json (modified — added connectors, drizzle-orm, zod deps)
+  - packages/mcp/tsconfig.json (modified — added __tests__ exclude, connectors reference)
+  - packages/cli/src/commands/serve.ts (new)
+  - packages/cli/src/index.ts (modified — added serve command)
+  - bun.lock (updated)
+- **Learnings for future iterations:**
+  - MCP SDK's `InMemoryTransport.createLinkedPair()` + `Client` enables clean in-process testing of tools and resources without STDIO pipes
+  - McpServer `registerTool` accepts a raw Zod shape object (not `z.object()`) as `inputSchema` — each key is a `z.string()`, `z.number()`, etc.
+  - `ResourceTemplate` constructor takes URI template string + callbacks object with `list` (for enumerable resources) and optional `complete` (for autocomplete)
+  - For non-enumerable resource templates, pass `{ list: undefined }` — this registers the template without exposing it in `listResources()`
+  - URI template `{+path}` (with `+` prefix) matches path segments including slashes — useful for file paths in `veecontext://markdown/{collection}/{+path}`
+  - Drizzle `and()` from `drizzle-orm` combines multiple SQL conditions — pass spread array of `SQL` typed conditions
+  - Tool annotations `readOnlyHint: true` communicates to MCP clients that the tool doesn't modify state
+  - `type: "text" as const` is required in tool callback return types to satisfy TypeScript's literal type checking for content arrays
