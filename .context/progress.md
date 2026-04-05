@@ -143,3 +143,28 @@
   - `tsc --build` compiles test files into dist/ unless explicitly excluded — add `"exclude": ["src/**/__tests__"]` to tsconfig
   - SyncEngine creates a new `getCollectionDb()` instance — each DB open gets its own WAL connection, so multiple SyncEngine instances for the same DB path work correctly
   - When testing sync engines, use separate mock connectors for each run to avoid shared state between test phases
+
+## US-006: GitHub connector and theme
+- What was implemented:
+  - GitHub types (`packages/connectors/src/github/types.ts`): GitHubConfig, GitHubCredentials, GitHubUser, GitHubLabel, GitHubMilestone, GitHubIssue, GitHubPullRequest interfaces
+  - GitHub connector (`packages/connectors/src/github/connector.ts`) implementing full Connector interface: fetches issues and PRs via GitHub REST API with pagination (100 per page), incremental sync via `updated_at`/`since` cursor, maps API responses to ConnectorEntityData with tags/relations, validates credentials against `/repos/:owner/:repo`, injectable `setFetch()` for testing
+  - GitHub theme (`packages/connectors/src/github/theme.ts`) implementing Theme interface: renders issues as Obsidian-compatible markdown with frontmatter (title, state, labels as tags, assignees, milestone, source URL), metadata callout, body content, wikilinks to related issues; renders PRs with review status, branch info callout (head/base refs + SHAs), merged status, linked issues
+  - Connectors index (`packages/connectors/src/index.ts`): registers GitHub connector in a `createDefaultRegistry()` factory, exports connector, theme, and types
+  - Added `__tests__` exclude to connectors tsconfig
+  - 13 theme tests: getFilePath for issues/PRs, frontmatter fields, H1 title, metadata callout, body content, wikilinks for related issues, closed date handling, PR review status (pending/merged/draft), branch info callout
+  - 12 connector tests: metadata fields, issue mapping, PR fetching after issues, PR filtering from issues endpoint, cross-reference relation extraction, incremental sync cursor, draft/merged tags, credential validation (200/401/network error), pagination on full page
+- Files changed:
+  - packages/connectors/src/github/types.ts (new)
+  - packages/connectors/src/github/connector.ts (new)
+  - packages/connectors/src/github/theme.ts (new)
+  - packages/connectors/src/github/__tests__/theme.test.ts (new)
+  - packages/connectors/src/github/__tests__/connector.test.ts (new)
+  - packages/connectors/src/index.ts (modified — added registry, exports)
+  - packages/connectors/tsconfig.json (modified — added __tests__ exclude)
+- **Learnings for future iterations:**
+  - The Obsidian YAML serializer quotes strings containing `:` — URLs and ISO timestamps get quoted automatically, so test expectations must account for quoted values (e.g., `'source: "https://..."'`)
+  - Injectable `setFetch()` method on connector class is a clean way to mock HTTP in tests without global fetch patching
+  - GitHub `/issues` endpoint returns PRs too — filter by checking `pull_request` property on each item
+  - Sync cursor uses a phase-based state machine (`issues` → `pulls` → `done`) to handle multi-endpoint pagination
+  - Cross-references parsed from issue/PR body via `/#(\d+)/g` regex; deduplication via Set prevents duplicate relations
+  - `per_page=100` is GitHub's max; when response length equals PER_PAGE, assume more pages exist
