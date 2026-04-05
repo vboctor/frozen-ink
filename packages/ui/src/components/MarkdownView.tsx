@@ -40,8 +40,10 @@ function preprocessMarkdown(raw: string, collection: string): string {
   );
   content = content.replace(
     /\[\[([^\]]+)\]\]/g,
-    (_match, target: string) =>
-      `[${target}](${WIKILINK_PREFIX}${encodeURIComponent(target)})`,
+    (_match, target: string) => {
+      const label = target.includes("/") ? target.split("/").pop()! : target;
+      return `[${label}](${WIKILINK_PREFIX}${encodeURIComponent(target)})`;
+    },
   );
 
   return content;

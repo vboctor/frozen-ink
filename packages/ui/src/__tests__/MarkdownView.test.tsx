@@ -70,7 +70,7 @@ describe("MarkdownView", () => {
       />,
     );
 
-    const link = screen.getByText("issues/123");
+    const link = screen.getByText("123");
     expect(link).toBeInTheDocument();
     expect(link.tagName).toBe("A");
     expect(link).toHaveClass("wikilink");
@@ -88,7 +88,7 @@ describe("MarkdownView", () => {
         onWikilinkClick={() => {}}
       />,
     );
-    const span = screen.getByText("issues/999");
+    const span = screen.getByText("999");
     expect(span.tagName).toBe("SPAN");
     expect(span).toHaveClass("wikilink-missing");
   });
