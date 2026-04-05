@@ -92,6 +92,15 @@ export function getCollectionDb(dbPath: string) {
       target_entity_id INTEGER NOT NULL REFERENCES entities(id),
       relation_type TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS entity_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_entity_id INTEGER NOT NULL REFERENCES entities(id),
+      source_markdown_path TEXT NOT NULL,
+      target_path TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_entity_links_target ON entity_links(target_path);
   `);
 
   return db;

@@ -7,6 +7,7 @@ import {
   syncState,
   syncRuns,
   entityRelations,
+  entityLinks,
 } from "../db/collection-schema";
 import type { Crawler, CrawlerEntityData, SyncCursor } from "./interface";
 import type { ThemeEngine } from "../theme/engine";
@@ -24,6 +25,18 @@ function statMatches(
 ): boolean {
   if (!current) return false;
   return stored.markdownMtime === current.mtimeMs && stored.markdownSize === current.size;
+}
+
+/** Extract wikilink targets from rendered markdown. Returns unique target strings. */
+function extractWikilinks(markdown: string): string[] {
+  const targets = new Set<string>();
+  // Match [[target]] and [[target|label]] patterns
+  const regex = /\[\[([^\]|]+?)(?:\|[^\]]+?)?\]\]/g;
+  let match;
+  while ((match = regex.exec(markdown)) !== null) {
+    targets.add(match[1]);
+  }
+  return Array.from(targets);
 }
 
 function computeHash(data: Record<string, unknown>): string {
@@ -217,6 +230,9 @@ export class SyncEngine {
       // Handle attachments
       await this.syncAttachments(existing.id, entityData);
 
+      // Extract and store outgoing links
+      this.syncLinks(existing.id, filePath, markdown);
+
       return { created: 0, updated: 1 };
     }
 
@@ -258,6 +274,9 @@ export class SyncEngine {
     // Handle attachments
     await this.syncAttachments(inserted.id, entityData);
 
+    // Extract and store outgoing links
+    this.syncLinks(inserted.id, filePath, markdown);
+
     return { created: 1, updated: 0 };
   }
 
@@ -284,6 +303,45 @@ export class SyncEngine {
           backend: "local",
         })
         .run();
+    }
+  }
+
+  private syncLinks(
+    entityId: number,
+    markdownPath: string,
+    markdown: string,
+  ): void {
+    const newTargets = new Set(
+      extractWikilinks(markdown).map((t) => `${this.markdownBasePath}/${t}.md`),
+    );
+
+    const existingRows = this.db
+      .select()
+      .from(entityLinks)
+      .where(eq(entityLinks.sourceEntityId, entityId))
+      .all();
+
+    const existingTargets = new Map(existingRows.map((r) => [r.targetPath, r.id]));
+
+    // Delete links that are no longer present
+    for (const [target, id] of existingTargets) {
+      if (!newTargets.has(target)) {
+        this.db.delete(entityLinks).where(eq(entityLinks.id, id)).run();
+      }
+    }
+
+    // Insert links that are new
+    for (const target of newTargets) {
+      if (!existingTargets.has(target)) {
+        this.db
+          .insert(entityLinks)
+          .values({
+            sourceEntityId: entityId,
+            sourceMarkdownPath: markdownPath,
+            targetPath: target,
+          })
+          .run();
+      }
     }
   }
 
@@ -443,6 +501,7 @@ export class SyncEngine {
     // Delete related records
     this.db.delete(entityTags).where(eq(entityTags.entityId, existing.id)).run();
     this.db.delete(attachments).where(eq(attachments.entityId, existing.id)).run();
+    this.db.delete(entityLinks).where(eq(entityLinks.sourceEntityId, existing.id)).run();
     this.db
       .delete(entityRelations)
       .where(eq(entityRelations.sourceEntityId, existing.id))

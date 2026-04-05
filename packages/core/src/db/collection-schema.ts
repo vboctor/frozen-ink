@@ -71,3 +71,12 @@ export const entityRelations = sqliteTable("entity_relations", {
     .references(() => entities.id),
   relationType: text("relation_type").notNull(),
 });
+
+export const entityLinks = sqliteTable("entity_links", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sourceEntityId: integer("source_entity_id")
+    .notNull()
+    .references(() => entities.id),
+  sourceMarkdownPath: text("source_markdown_path").notNull(),
+  targetPath: text("target_path").notNull(),
+});

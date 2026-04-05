@@ -8,6 +8,7 @@ import {
   collections,
   entities,
   entityTags,
+  entityLinks,
   SearchIndexer,
   loadConfig,
 } from "@veecontext/core";
@@ -302,6 +303,78 @@ export function createApiServer(
 
         allResults.sort((a, b) => a.rank - b.rank);
         return jsonResponse(allResults.slice(0, limit));
+      }
+
+      // GET /api/collections/:name/backlinks/*targetPath
+      // Returns all entities whose markdown links to the given target path
+      const backlinksMatch = path.match(
+        /^\/api\/collections\/([^/]+)\/backlinks\/(.+)$/,
+      );
+      if (backlinksMatch && req.method === "GET") {
+        const name = decodeURIComponent(backlinksMatch[1]);
+        const targetFile = decodeURIComponent(backlinksMatch[2]);
+
+        const db = getMasterDb(masterDbPath);
+        const [col] = db
+          .select()
+          .from(collections)
+          .where(eq(collections.name, name))
+          .all();
+        if (!col) return errorResponse("Collection not found", 404);
+        if (!existsSync(col.dbPath))
+          return errorResponse("Collection database not found", 404);
+
+        const colDb = getCollectionDb(col.dbPath);
+
+        // The UI passes the file path relative to the markdown dir (e.g. "commit/abc.md").
+        // Links in the DB store the full markdown path (e.g. "md/commit/abc.md").
+        // Try both the raw path and with "md/" prefix for matching.
+        const targetVariants = [targetFile, `md/${targetFile}`];
+
+        // Also match without .md extension since wikilinks resolve to path + ".md"
+        if (!targetFile.endsWith(".md")) {
+          targetVariants.push(`${targetFile}.md`, `md/${targetFile}.md`);
+        }
+
+        const seen = new Set<number>();
+        const results: Array<{
+          entityId: number;
+          externalId: string;
+          entityType: string;
+          title: string;
+          markdownPath: string | null;
+        }> = [];
+
+        for (const variant of targetVariants) {
+          const linkRows = colDb
+            .select()
+            .from(entityLinks)
+            .where(eq(entityLinks.targetPath, variant))
+            .all();
+
+          for (const link of linkRows) {
+            if (seen.has(link.sourceEntityId)) continue;
+            seen.add(link.sourceEntityId);
+
+            const [entity] = colDb
+              .select()
+              .from(entities)
+              .where(eq(entities.id, link.sourceEntityId))
+              .all();
+
+            if (entity) {
+              results.push({
+                entityId: entity.id,
+                externalId: entity.externalId,
+                entityType: entity.entityType,
+                title: entity.title,
+                markdownPath: entity.markdownPath,
+              });
+            }
+          }
+        }
+
+        return jsonResponse(results);
       }
 
       // GET /api/attachments/:collection/*path

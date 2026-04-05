@@ -6,6 +6,7 @@ import MarkdownView from "./components/MarkdownView";
 import SearchBar from "./components/SearchBar";
 import ThemeSwitcher, { type ThemeId } from "./components/ThemeSwitcher";
 import TabBar, { type Tab } from "./components/TabBar";
+import BacklinksPanel, { type Backlink } from "./components/BacklinksPanel";
 import type { Collection, TreeNode } from "./types";
 
 function loadTheme(): ThemeId {
@@ -67,6 +68,7 @@ export default function App() {
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
 
   // Tabs
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -124,6 +126,20 @@ export default function App() {
       .then(setFileContent)
       .catch(console.error)
       .finally(() => setLoading(false));
+  }, [selectedCollection, selectedFile]);
+
+  // Fetch backlinks for the current file
+  useEffect(() => {
+    if (!selectedCollection || !selectedFile) {
+      setBacklinks([]);
+      return;
+    }
+    fetch(
+      `/api/collections/${encodeURIComponent(selectedCollection)}/backlinks/${selectedFile}`,
+    )
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setBacklinks)
+      .catch(() => setBacklinks([]));
   }, [selectedCollection, selectedFile]);
 
   // Core navigation: open a file, optionally in a new tab
@@ -399,22 +415,30 @@ export default function App() {
           </button>
         </div>
       </div>
-      <div className="main-inner">
-        {loading && <div className="loading">Loading...</div>}
+      <div className="main-body">
+        <div className="main-inner">
+          {loading && <div className="loading">Loading...</div>}
+          {!loading && selectedFile && fileContent !== null && (
+            <MarkdownView
+              content={fileContent}
+              collection={selectedCollection || ""}
+              onWikilinkClick={handleWikilinkNavigate}
+            />
+          )}
+          {!selectedFile && !loading && (
+            <div className="empty-state">
+              <p>Select a file from the sidebar to view its contents</p>
+              <p className="hint">
+                Press <kbd>⌘P</kbd> or <kbd>⌘K</kbd> to search
+              </p>
+            </div>
+          )}
+        </div>
         {!loading && selectedFile && fileContent !== null && (
-          <MarkdownView
-            content={fileContent}
-            collection={selectedCollection || ""}
-            onWikilinkClick={handleWikilinkNavigate}
+          <BacklinksPanel
+            backlinks={backlinks}
+            onNavigate={handleWikilinkNavigate}
           />
-        )}
-        {!selectedFile && !loading && (
-          <div className="empty-state">
-            <p>Select a file from the sidebar to view its contents</p>
-            <p className="hint">
-              Press <kbd>⌘P</kbd> or <kbd>⌘K</kbd> to search
-            </p>
-          </div>
         )}
       </div>
     </>

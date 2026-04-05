@@ -8,6 +8,7 @@ import {
   entities,
   entityTags,
   attachments,
+  entityLinks,
   syncState,
   syncRuns,
 } from "../../db/collection-schema";
@@ -30,11 +31,11 @@ function createMockTheme(): Theme {
   };
 }
 
-function createMockCrawler(pages: SyncResult[]): Crawler {
+function createMockCrawler(pages: SyncResult[], crawlerType = "mock"): Crawler {
   let callIndex = 0;
   return {
     metadata: {
-      type: "mock",
+      type: crawlerType,
       displayName: "Mock Crawler",
       description: "A mock crawler for testing",
       configSchema: {},
@@ -934,5 +935,125 @@ describe("SyncEngine", () => {
     // Tool files must not be touched
     expect(await storage.exists("md/.obsidian/workspace.json")).toBe(true);
     expect(await storage.exists("attachments/.git/config")).toBe(true);
+  });
+
+  it("extracts wikilinks from rendered markdown and stores them as entity_links", async () => {
+    // Create a theme that generates wikilinks
+    const linkTheme: Theme = {
+      crawlerType: "linktest",
+      render(ctx: ThemeRenderContext): string {
+        return `# ${ctx.entity.title}\n\nSee [[note/other-note]] and [[note/another|Another Note]].`;
+      },
+      getFilePath(ctx: ThemeRenderContext): string {
+        return `${ctx.entity.entityType}/${ctx.entity.externalId}.md`;
+      },
+    };
+    const linkEngine = new ThemeEngine();
+    linkEngine.register(linkTheme);
+
+    const crawler = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "linker-1",
+            entityType: "note",
+            title: "Linker Note",
+            data: { text: "links to others" },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ], "linktest");
+
+    const dbPath = join(TEST_DIR, "links.db");
+    const engine = new SyncEngine({
+      crawler,
+      dbPath,
+      collectionName: "test",
+      themeEngine: linkEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine.run();
+
+    const db = getCollectionDb(dbPath);
+    const links = db.select().from(entityLinks).all();
+
+    // Should have 2 links: note/other-note and note/another
+    expect(links).toHaveLength(2);
+    const targets = links.map((l) => l.targetPath).sort();
+    expect(targets).toEqual(["md/note/another.md", "md/note/other-note.md"]);
+
+    // Source path should be the entity's markdown path
+    expect(links[0].sourceMarkdownPath).toBe("md/note/linker-1.md");
+  });
+
+  it("cleans up entity_links when an entity is deleted", async () => {
+    const linkTheme: Theme = {
+      crawlerType: "linktest",
+      render(ctx: ThemeRenderContext): string {
+        return `# ${ctx.entity.title}\n\nSee [[note/target]].`;
+      },
+      getFilePath(ctx: ThemeRenderContext): string {
+        return `${ctx.entity.entityType}/${ctx.entity.externalId}.md`;
+      },
+    };
+    const linkEngine = new ThemeEngine();
+    linkEngine.register(linkTheme);
+
+    // First sync: create entity with links
+    const crawler1 = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "delme-1",
+            entityType: "note",
+            title: "Delete Me",
+            data: {},
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ], "linktest");
+
+    const dbPath = join(TEST_DIR, "links-delete.db");
+    const engine1 = new SyncEngine({
+      crawler: crawler1,
+      dbPath,
+      collectionName: "test",
+      themeEngine: linkEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine1.run();
+
+    const db = getCollectionDb(dbPath);
+    expect(db.select().from(entityLinks).all()).toHaveLength(1);
+
+    // Second sync: delete the entity
+    const crawler2 = createMockCrawler([
+      {
+        entities: [],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: ["delme-1"],
+      },
+    ], "linktest");
+    const engine2 = new SyncEngine({
+      crawler: crawler2,
+      dbPath,
+      collectionName: "test",
+      themeEngine: linkEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+    await engine2.run();
+
+    // Links should be cleaned up
+    expect(db.select().from(entityLinks).all()).toHaveLength(0);
   });
 });

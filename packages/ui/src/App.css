@@ -529,11 +529,19 @@ body {
   background: var(--hover-bg);
 }
 
-/* ===== Main inner scroll area ===== */
+/* ===== Main body (content + right panel) ===== */
+.main-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
 .main-inner {
   flex: 1;
   overflow-y: auto;
   padding: 32px 48px;
+  min-width: 0;
 }
 
 /* ===== Theme Switcher ===== */
@@ -901,6 +909,113 @@ body {
 
 .callout-body p:last-child {
   margin-bottom: 0;
+}
+
+/* ===== Backlinks Panel (right sidebar) ===== */
+.backlinks-panel {
+  width: 240px;
+  min-width: 240px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.backlinks-panel.collapsed {
+  width: auto;
+  min-width: auto;
+}
+
+.backlinks-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+.backlinks-header:hover {
+  background: var(--hover-bg);
+}
+
+.backlinks-chevron {
+  font-size: 9px;
+  color: var(--text-muted);
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.backlinks-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+}
+
+.backlinks-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-family: var(--font-sans);
+  margin-left: auto;
+}
+
+.backlinks-list {
+  list-style: none;
+  overflow-y: auto;
+  padding: 4px 0;
+  flex: 1;
+}
+
+.backlink-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 6px 12px;
+  text-align: left;
+  transition: background 0.1s;
+  font-family: var(--font-sans);
+}
+
+.backlink-item:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.backlink-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.backlink-type {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+}
+
+.backlink-title {
+  font-size: 13px;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ===== Empty state ===== */
