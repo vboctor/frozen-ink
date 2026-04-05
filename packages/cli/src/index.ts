@@ -8,6 +8,7 @@ import { collectionsCommand } from "./commands/collections";
 import { searchCommand } from "./commands/search";
 import { configCommand } from "./commands/config";
 import { serveCommand } from "./commands/serve";
+import { daemonCommand } from "./commands/daemon";
 
 const program = new Command();
 
@@ -24,5 +25,6 @@ program.addCommand(collectionsCommand);
 program.addCommand(searchCommand);
 program.addCommand(configCommand);
 program.addCommand(serveCommand);
+program.addCommand(daemonCommand);
 
 program.parse();
