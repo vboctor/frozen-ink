@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { existsSync, readdirSync, statSync, readFileSync } from "fs";
-import { join, extname, relative } from "path";
+import { join, extname } from "path";
 import {
   getVeeContextHome,
   getMasterDb,
@@ -8,12 +8,11 @@ import {
   collections,
   entities,
   entityTags,
-  attachments,
   SearchIndexer,
   loadConfig,
 } from "@veecontext/core";
 import { startStdioServer } from "@veecontext/mcp";
-import { eq, like, desc, asc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -75,11 +74,51 @@ function errorResponse(message: string, status: number): Response {
   return jsonResponse({ error: message }, status);
 }
 
+function resolveUiDistDir(): string {
+  return join(import.meta.dir, "../../../ui/dist");
+}
+
+function tryServeStatic(
+  uiDistDir: string,
+  pathname: string,
+): Response | null {
+  // Try exact file match
+  const filePath = join(uiDistDir, pathname);
+  const normalizedDist = join(uiDistDir, "/");
+  const normalizedFile = join(filePath, "/").startsWith(normalizedDist)
+    ? filePath
+    : null;
+
+  if (normalizedFile && existsSync(normalizedFile)) {
+    try {
+      const stat = statSync(normalizedFile);
+      if (stat.isFile()) {
+        return new Response(readFileSync(normalizedFile), {
+          headers: { "Content-Type": getMimeType(normalizedFile) },
+        });
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // SPA fallback — serve index.html for non-API, non-asset routes
+  const indexPath = join(uiDistDir, "index.html");
+  if (existsSync(indexPath)) {
+    return new Response(readFileSync(indexPath), {
+      headers: { "Content-Type": "text/html" },
+    });
+  }
+
+  return null;
+}
+
 export function createApiServer(
   home: string,
   port: number,
 ): ReturnType<typeof Bun.serve> {
   const masterDbPath = join(home, "master.db");
+  const uiDistDir = resolveUiDistDir();
 
   const server = Bun.serve({
     port,
@@ -117,6 +156,33 @@ export function createApiServer(
         const markdownDir = join(home, "collections", name, "markdown");
         const tree = buildFileTree(markdownDir);
         return jsonResponse(tree);
+      }
+
+      // GET /api/collections/:name/markdown/*path — serve raw markdown file content
+      const markdownMatch = path.match(
+        /^\/api\/collections\/([^/]+)\/markdown\/(.+)$/,
+      );
+      if (markdownMatch && req.method === "GET") {
+        const name = decodeURIComponent(markdownMatch[1]);
+        const filePath = decodeURIComponent(markdownMatch[2]);
+
+        const fullPath = join(home, "collections", name, "markdown", filePath);
+
+        // Prevent path traversal
+        const collectionsBase = join(home, "collections", name);
+        if (!fullPath.startsWith(collectionsBase)) {
+          return errorResponse("Forbidden", 403);
+        }
+
+        if (!existsSync(fullPath)) {
+          return errorResponse("File not found", 404);
+        }
+
+        const content = readFileSync(fullPath, "utf-8");
+        return new Response(content, {
+          status: 200,
+          headers: { "Content-Type": "text/markdown; charset=utf-8" },
+        });
       }
 
       // GET /api/collections/:name/entities
@@ -203,19 +269,31 @@ export function createApiServer(
           externalId: string;
           entityType: string;
           title: string;
+          markdownPath: string | null;
           rank: number;
         }> = [];
 
         for (const col of collectionRows) {
           if (!existsSync(col.dbPath)) continue;
 
+          const colDb = getCollectionDb(col.dbPath);
           const indexer = new SearchIndexer(col.dbPath);
           try {
             const results = indexer.search(query, {
               entityType: typeFilter || undefined,
             });
             for (const r of results) {
-              allResults.push({ ...r, collection: col.name });
+              // Look up markdownPath from entities table
+              const [entity] = colDb
+                .select({ markdownPath: entities.markdownPath })
+                .from(entities)
+                .where(eq(entities.id, r.entityId))
+                .all();
+              allResults.push({
+                ...r,
+                collection: col.name,
+                markdownPath: entity?.markdownPath ?? null,
+              });
             }
           } finally {
             indexer.close();
@@ -257,6 +335,12 @@ export function createApiServer(
           status: 200,
           headers: { "Content-Type": getMimeType(fullPath) },
         });
+      }
+
+      // Serve static UI files for non-API routes
+      if (!path.startsWith("/api/")) {
+        const staticResponse = tryServeStatic(uiDistDir, path);
+        if (staticResponse) return staticResponse;
       }
 
       return errorResponse("Not found", 404);

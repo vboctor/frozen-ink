@@ -6,10 +6,12 @@
 - Entry points: `packages/<name>/src/index.ts`
 - Typecheck: `bun run typecheck` (runs `tsc --build` from root)
 - Tests: `bun test packages/<name>/src/` — uses bun:test built-in runner (use `src/` path to avoid stale dist/ test files)
+- UI tests: `npx vitest run` in packages/ui — uses vitest with happy-dom for React component testing
 - Database: Drizzle ORM with bun:sqlite, schemas in `packages/core/src/db/`, client factory creates tables via raw SQL CREATE IF NOT EXISTS
 - DB conventions: WAL journal mode, foreign keys ON, JSON columns use `text(..., { mode: "json" })`, timestamps as TEXT with `datetime('now')` default
 - tsconfig exclude: `"exclude": ["src/**/__tests__"]` to prevent test files from compiling into dist/
 - MCP testing: Use `InMemoryTransport.createLinkedPair()` + `Client` from MCP SDK for in-process tool/resource testing without STDIO
+- UI package: Vite + React with separate tsconfig overrides (`jsx: "react-jsx"`, `lib: ["DOM"]`, `types: []` to exclude bun-types)
 
 ## US-001: Project scaffold and monorepo setup
 - What was implemented:
@@ -252,3 +254,80 @@
   - Drizzle `and()` from `drizzle-orm` combines multiple SQL conditions — pass spread array of `SQL` typed conditions
   - Tool annotations `readOnlyHint: true` communicates to MCP clients that the tool doesn't modify state
   - `type: "text" as const` is required in tool callback return types to satisfy TypeScript's literal type checking for content arrays
+
+## US-009: CLI daemon and serve command with REST API
+- What was implemented:
+  - Daemon command (`packages/cli/src/commands/daemon.ts`) with `start`, `stop`, `status` subcommands: start forks a background Bun process via `Bun.spawn` that runs the sync loop, writes `daemon.pid`; stop reads PID and sends SIGTERM; status checks if PID process is alive; all handle stale PID file cleanup
+  - Daemon sync loop: loads config for sync interval, iterates all enabled collections, initializes connectors, runs SyncEngine per collection on a `setInterval` schedule
+  - Updated serve command (`packages/cli/src/commands/serve.ts`) with full REST API via `Bun.serve`:
+    - `GET /api/collections` — returns all collections with metadata
+    - `GET /api/collections/:name/tree` — builds recursive file tree of markdown files in collection directory
+    - `GET /api/collections/:name/entities` — paginated entity listing with type filter and tag resolution
+    - `GET /api/search?q=&collection=&type=&limit=` — FTS5 search across collections with filters
+    - `GET /api/attachments/:collection/*path` — serves attachment files with correct MIME types and path traversal protection
+  - Serve command supports `--mcp-only` (STDIO MCP only), `--ui-only` (REST API only), or both by default; `--port` flag overrides configured port
+  - Exported `createApiServer(home, port)` factory for testability
+  - Registered daemon command in CLI entry point (`packages/cli/src/index.ts`)
+  - 17 integration tests covering: daemon start/stop/status lifecycle (PID file creation, process detection, stale PID cleanup, already-running detection), all 5 API endpoints (collections list, file tree, paginated entities with tags, FTS search with filters, attachment serving with MIME types), error cases (404s, missing query params), and serve flag behavior
+- Files changed:
+  - packages/cli/src/commands/daemon.ts (new)
+  - packages/cli/src/commands/serve.ts (rewritten — added REST API with Bun.serve, --ui-only flag, createApiServer export)
+  - packages/cli/src/index.ts (modified — added daemon command import and registration)
+  - packages/cli/src/__tests__/daemon-serve.test.ts (new)
+- **Learnings for future iterations:**
+  - `Bun.serve` with `port: 0` picks a random available port — ideal for test isolation, access via `server.port`
+  - `Bun.spawn` with `stdio: ["ignore", "ignore", "ignore"]` + `proc.unref()` creates a detached background process suitable for daemon use
+  - Daemon self-invocation pattern: the daemon.ts file checks `process.argv` for a sentinel arg (`__daemon-run`) to run the sync loop directly when spawned as a child process
+  - `process.kill(pid, 0)` (signal 0) checks if a process is alive without actually sending a signal — useful for PID file validation
+  - Path traversal protection for attachment serving: verify `fullPath.startsWith(collectionsBase)` before serving files
+  - Drizzle query builder requires explicit type casting when conditionally adding `.where()` clauses: `as typeof query`
+  - `Bun.serve` `fetch` handler receives standard `Request` objects and must return `Response` — same API as Web standard fetch
+
+## US-010: Read-only web UI with file tree, markdown viewer, and search
+- What was implemented:
+  - Set up `packages/ui/` as a Vite + React app with TypeScript: `vite.config.ts`, `index.html`, `tsconfig.json` with JSX/DOM support, `package.json` with React 19, react-markdown 9, remark-gfm 4
+  - Layout component (`Layout.tsx`): flexbox sidebar + main content area
+  - CollectionPicker component (`CollectionPicker.tsx`): dropdown/select fetching from `/api/collections`, triggers collection switch
+  - FileTree component (`FileTree.tsx`): recursive tree rendering with expandable directories, file selection highlighting, `.md` extension stripping in display
+  - MarkdownView component (`MarkdownView.tsx`): react-markdown with remark-gfm, Obsidian-compatible preprocessing — strips frontmatter, converts `[[target|label]]` wikilinks to clickable internal navigation links, converts `![[path]]` image embeds to `/api/attachments/` URLs, detects `[!type] title` callout syntax in blockquotes and renders styled callout blocks
+  - SearchBar component (`SearchBar.tsx`): `Cmd+K` overlay with debounced search against `/api/search`, keyboard navigation (arrow keys + Enter), result display with collection/type metadata
+  - Clean light theme CSS (`App.css`): CSS variables, GitHub-inspired styling, callout type colors (info, warning, danger, tip, note, link, git), responsive layout
+  - Added `GET /api/collections/:name/markdown/*path` endpoint to serve.ts for raw markdown file content with path traversal protection
+  - Enhanced search endpoint to include `markdownPath` from entities table, enabling direct file navigation from search results
+  - Updated serve.ts to serve built UI static files from `packages/ui/dist` with SPA fallback to `index.html`
+  - Type declarations for Vite CSS imports (`vite-env.d.ts`)
+  - 22 unit tests across 3 test files:
+    - FileTree (6 tests): empty state, directory/file rendering, click handler, selection highlight, expand/collapse toggle
+    - MarkdownView (10 tests): headings, paragraphs, code blocks, tables, lists, frontmatter stripping, wikilinks (simple + labeled), image embeds, external links
+    - SearchBar (6 tests): input focus, overlay close on backdrop click, search result display, result navigation, empty state, Escape key close
+- Files changed:
+  - packages/ui/package.json (rewritten — added React, Vite, vitest, testing-library deps)
+  - packages/ui/tsconfig.json (rewritten — added JSX, DOM lib, excluded bun-types)
+  - packages/ui/vite.config.ts (new)
+  - packages/ui/index.html (new)
+  - packages/ui/src/vite-env.d.ts (new)
+  - packages/ui/src/index.ts (modified)
+  - packages/ui/src/types.ts (new)
+  - packages/ui/src/main.tsx (new)
+  - packages/ui/src/App.tsx (new)
+  - packages/ui/src/App.css (new)
+  - packages/ui/src/components/Layout.tsx (new)
+  - packages/ui/src/components/CollectionPicker.tsx (new)
+  - packages/ui/src/components/FileTree.tsx (new)
+  - packages/ui/src/components/MarkdownView.tsx (new)
+  - packages/ui/src/components/SearchBar.tsx (new)
+  - packages/ui/src/__tests__/setup.ts (new)
+  - packages/ui/src/__tests__/FileTree.test.tsx (new)
+  - packages/ui/src/__tests__/MarkdownView.test.tsx (new)
+  - packages/ui/src/__tests__/SearchBar.test.tsx (new)
+  - packages/cli/src/commands/serve.ts (modified — added markdown file endpoint, static UI serving, markdownPath in search)
+  - bun.lock (updated)
+- **Learnings for future iterations:**
+  - react-markdown v9 sanitizes non-standard URL schemes — use fragment URLs (`#wikilink/target`) instead of custom schemes (`wikilink:target`) for internal link detection in custom `a` components
+  - Vite + React UI package needs `"types": []` in tsconfig to exclude bun-types (which conflict with DOM globals), plus `"jsx": "react-jsx"` and `"lib": ["DOM", "DOM.Iterable", "ESNext"]`
+  - `vite-env.d.ts` with `/// <reference types="vite/client" />` is required for TypeScript to understand CSS imports like `import "./App.css"`
+  - happy-dom with vitest requires explicit `cleanup()` in `afterEach` via setup file — auto-cleanup doesn't work reliably with happy-dom environment
+  - `import.meta.dir` in Bun gives the directory of the current source file — useful for resolving relative paths to other workspace packages at runtime
+  - Vite `build` output to `dist/` includes hashed asset filenames — SPA fallback must serve `index.html` for any non-asset, non-API route
+  - `Bun.serve` can serve static files by reading them with `readFileSync` and setting the correct Content-Type header based on file extension
+  - For callout detection in react-markdown blockquotes, extract text recursively from React children — children may be wrapped in `<p>` elements depending on markdown structure

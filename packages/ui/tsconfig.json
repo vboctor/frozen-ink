@@ -3,7 +3,11 @@
   "compilerOptions": {
     "composite": true,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "jsx": "react-jsx",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "types": []
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/__tests__"]
 }
