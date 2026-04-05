@@ -4,9 +4,30 @@ import CollectionPicker from "./components/CollectionPicker";
 import FileTree from "./components/FileTree";
 import MarkdownView from "./components/MarkdownView";
 import SearchBar from "./components/SearchBar";
+import ThemeSwitcher, { type ThemeId } from "./components/ThemeSwitcher";
 import type { Collection, TreeNode } from "./types";
 
+function loadTheme(): ThemeId {
+  try {
+    const stored = localStorage.getItem("veecontext-theme");
+    if (stored) return stored as ThemeId;
+  } catch {
+    // localStorage unavailable
+  }
+  return "default";
+}
+
+function applyTheme(theme: ThemeId) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try {
+    localStorage.setItem("veecontext-theme", theme);
+  } catch {
+    // localStorage unavailable
+  }
+}
+
 export default function App() {
+  const [theme, setTheme] = useState<ThemeId>(loadTheme);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedCollection, setSelectedCollection] = useState<string | null>(
     null,
@@ -16,6 +37,10 @@ export default function App() {
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     fetch("/api/collections")
@@ -91,6 +116,7 @@ export default function App() {
 
   const sidebar = (
     <>
+      <ThemeSwitcher current={theme} onChange={setTheme} />
       <CollectionPicker
         collections={collections}
         selected={selectedCollection}
