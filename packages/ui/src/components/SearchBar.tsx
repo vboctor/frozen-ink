@@ -1,44 +1,136 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import type { SearchResult } from "../types";
+import { useState, useEffect, useRef, useMemo } from "react";
 
 interface SearchBarProps {
+  files: string[];
+  collection: string;
   onClose: () => void;
-  onNavigate: (collection: string, markdownPath: string | null) => void;
+  onNavigate: (collection: string, markdownPath: string) => void;
 }
 
-export default function SearchBar({ onClose, onNavigate }: SearchBarProps) {
+/** Title from a file path: strip folders and .md extension. */
+function titleFromPath(filePath: string): string {
+  return filePath.replace(/\.md$/, "").split("/").pop() ?? filePath;
+}
+
+interface FuzzyMatch {
+  filePath: string;
+  title: string;
+  indices: number[];
+  score: number;
+}
+
+/**
+ * Fuzzy-match a query against a title. Each query token's characters must
+ * appear in order in the title (case-insensitive). Returns matched character
+ * indices and a score, or null if no match.
+ */
+function fuzzyMatch(query: string, title: string): { indices: number[]; score: number } | null {
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  const titleLower = title.toLowerCase();
+  const indices: number[] = [];
+
+  for (const token of tokens) {
+    let pos = 0;
+    let matched = false;
+    const tokenIndices: number[] = [];
+
+    for (let i = 0; i < token.length; i++) {
+      const idx = titleLower.indexOf(token[i], pos);
+      if (idx === -1) { matched = false; break; }
+      tokenIndices.push(idx);
+      pos = idx + 1;
+      matched = true;
+    }
+
+    if (!matched) return null;
+    indices.push(...tokenIndices);
+  }
+
+  // Score: lower is better.
+  // Bonus for consecutive matches, word-boundary matches, and shorter titles.
+  let score = 0;
+  const sortedIndices = [...new Set(indices)].sort((a, b) => a - b);
+  for (let i = 0; i < sortedIndices.length; i++) {
+    const idx = sortedIndices[i];
+    // Gap penalty: distance from previous match
+    if (i > 0) {
+      score += (sortedIndices[i] - sortedIndices[i - 1] - 1) * 2;
+    } else {
+      // Bonus for matching near the start
+      score += idx * 3;
+    }
+    // Bonus for word boundary matches (start of string or after space/separator)
+    if (idx === 0 || /[\s\-_/]/.test(titleLower[idx - 1])) {
+      score -= 5;
+    }
+  }
+  // Prefer shorter titles
+  score += title.length;
+
+  return { indices: sortedIndices, score };
+}
+
+function HighlightedTitle({ title, indices }: { title: string; indices: number[] }) {
+  const set = new Set(indices);
+  const parts: { text: string; highlight: boolean }[] = [];
+  let i = 0;
+  while (i < title.length) {
+    const isHighlight = set.has(i);
+    let j = i + 1;
+    while (j < title.length && set.has(j) === isHighlight) j++;
+    parts.push({ text: title.slice(i, j), highlight: isHighlight });
+    i = j;
+  }
+  return (
+    <>
+      {parts.map((p, idx) =>
+        p.highlight ? (
+          <mark key={idx} className="search-highlight">{p.text}</mark>
+        ) : (
+          <span key={idx}>{p.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+export default function SearchBar({ files, collection, onClose, onNavigate }: SearchBarProps) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [searching, setSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  const doSearch = useCallback((q: string) => {
-    if (!q.trim()) {
-      setResults([]);
-      return;
+  const results: FuzzyMatch[] = useMemo(() => {
+    const q = query.trim();
+    if (!q) return [];
+    const matches: FuzzyMatch[] = [];
+    for (const filePath of files) {
+      const title = titleFromPath(filePath);
+      const m = fuzzyMatch(q, title);
+      if (m) matches.push({ filePath, title, indices: m.indices, score: m.score });
     }
-    setSearching(true);
-    fetch(`/api/search?q=${encodeURIComponent(q)}&limit=20`)
-      .then((r) => r.json())
-      .then((data: SearchResult[]) => {
-        setResults(data);
-        setSelectedIndex(0);
-      })
-      .catch(console.error)
-      .finally(() => setSearching(false));
-  }, []);
+    matches.sort((a, b) => a.score - b.score);
+    return matches.slice(0, 30);
+  }, [query, files]);
 
-  const handleChange = (value: string) => {
-    setQuery(value);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => doSearch(value), 200);
-  };
+  // Reset selection when results change
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [results]);
+
+  // Scroll selected item into view
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const item = list.children[selectedIndex] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -50,7 +142,7 @@ export default function SearchBar({ onClose, onNavigate }: SearchBarProps) {
     } else if (e.key === "Enter" && results.length > 0) {
       e.preventDefault();
       const result = results[selectedIndex];
-      onNavigate(result.collection, result.markdownPath);
+      onNavigate(collection, result.filePath);
     } else if (e.key === "Escape") {
       onClose();
     }
@@ -64,32 +156,35 @@ export default function SearchBar({ onClose, onNavigate }: SearchBarProps) {
             ref={inputRef}
             type="text"
             className="search-input"
-            placeholder="Search across all collections..."
+            placeholder="Search pages by title..."
             value={query}
-            onChange={(e) => handleChange(e.target.value)}
+            onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
           />
-          {searching && <span className="search-spinner">Searching...</span>}
         </div>
         {results.length > 0 && (
-          <ul className="search-results" role="listbox">
+          <ul className="search-results" role="listbox" ref={listRef}>
             {results.map((r, i) => (
               <li
-                key={`${r.collection}-${r.entityId}`}
+                key={r.filePath}
                 className={`search-result${i === selectedIndex ? " selected" : ""}`}
                 role="option"
                 aria-selected={i === selectedIndex}
-                onClick={() => onNavigate(r.collection, r.markdownPath)}
+                onClick={() => onNavigate(collection, r.filePath)}
               >
-                <span className="search-result-title">{r.title}</span>
-                <span className="search-result-meta">
-                  {r.collection} &middot; {r.entityType}
+                <span className="search-result-title">
+                  <HighlightedTitle title={r.title} indices={r.indices} />
                 </span>
+                {r.filePath.includes("/") && (
+                  <span className="search-result-meta">
+                    {r.filePath.split("/").slice(0, -1).join("/")}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
         )}
-        {query && !searching && results.length === 0 && (
+        {query && results.length === 0 && (
           <div className="search-empty">No results found</div>
         )}
       </div>

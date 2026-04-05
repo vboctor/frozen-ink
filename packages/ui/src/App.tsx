@@ -423,12 +423,8 @@ export default function App() {
   );
 
   const handleSearchNavigate = useCallback(
-    (collection: string, markdownPath: string | null) => {
-      if (markdownPath) {
-        navigateTo(collection, markdownPath);
-      } else {
-        setSelectedCollection(collection);
-      }
+    (collection: string, markdownPath: string) => {
+      navigateTo(collection, markdownPath);
       setSearchOpen(false);
     },
     [navigateTo],
@@ -587,6 +583,8 @@ export default function App() {
       />
       {searchOpen && (
         <SearchBar
+          files={allFiles}
+          collection={selectedCollection ?? ""}
           onClose={() => setSearchOpen(false)}
           onNavigate={handleSearchNavigate}
         />
