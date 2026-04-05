@@ -1,0 +1,96 @@
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { Database } from "bun:sqlite";
+import * as masterSchema from "./master-schema";
+import * as collectionSchema from "./collection-schema";
+
+export function getMasterDb(dbPath: string) {
+  const sqlite = new Database(dbPath);
+  sqlite.exec("PRAGMA journal_mode = WAL;");
+  sqlite.exec("PRAGMA foreign_keys = ON;");
+
+  const db = drizzle(sqlite, { schema: masterSchema });
+
+  // Create tables if they don't exist
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS collections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      connector_type TEXT NOT NULL,
+      config TEXT NOT NULL DEFAULT '{}',
+      credentials TEXT NOT NULL DEFAULT '{}',
+      sync_interval INTEGER NOT NULL DEFAULT 3600,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      db_path TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  return db;
+}
+
+export function getCollectionDb(dbPath: string) {
+  const sqlite = new Database(dbPath);
+  sqlite.exec("PRAGMA journal_mode = WAL;");
+  sqlite.exec("PRAGMA foreign_keys = ON;");
+
+  const db = drizzle(sqlite, { schema: collectionSchema });
+
+  // Create tables if they don't exist
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS entities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      external_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      data TEXT NOT NULL DEFAULT '{}',
+      content_hash TEXT,
+      markdown_path TEXT,
+      url TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS entity_tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_id INTEGER NOT NULL REFERENCES entities(id),
+      tag TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_id INTEGER NOT NULL REFERENCES entities(id),
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      backend TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_state (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      connector_type TEXT NOT NULL,
+      cursor TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL,
+      entities_created INTEGER NOT NULL DEFAULT 0,
+      entities_updated INTEGER NOT NULL DEFAULT 0,
+      entities_deleted INTEGER NOT NULL DEFAULT 0,
+      errors TEXT,
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS entity_relations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_entity_id INTEGER NOT NULL REFERENCES entities(id),
+      target_entity_id INTEGER NOT NULL REFERENCES entities(id),
+      relation_type TEXT NOT NULL
+    );
+  `);
+
+  return db;
+}
