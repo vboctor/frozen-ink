@@ -1,2 +1,3 @@
 // @veecontext/core - Shared types, schemas, and database layer
 export * from "./db";
+export * from "./config";
