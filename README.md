@@ -55,17 +55,28 @@ Each crawler syncs a different data source into VeeContext. See individual docs 
 # Install dependencies
 bun install
 
+# Install the vctx CLI globally (one-time)
+cd packages/cli && bun link && cd ../..
+# → vctx is now available in your PATH
+
 # Initialize VeeContext
-bun run packages/cli/src/index.ts init
+vctx init
 
 # Add a collection (examples)
-bun run packages/cli/src/index.ts add obsidian --name my-vault --path ~/Documents/MyVault
-bun run packages/cli/src/index.ts add git      --name my-repo  --path ~/projects/my-repo --include-diffs
-bun run packages/cli/src/index.ts add github   --name my-gh    --token $GITHUB_TOKEN --owner me --repo my-repo
+vctx add obsidian --name my-vault --path ~/Documents/MyVault
+vctx add git      --name my-repo  --path ~/projects/my-repo --include-diffs
+vctx add github   --name my-gh    --token $GITHUB_TOKEN --owner me --repo my-repo
 
 # Sync all collections
-bun run packages/cli/src/index.ts sync
+vctx sync
 ```
+
+> **Without global install** you can also run the CLI via the root script:
+> ```bash
+> bun run vctx -- init
+> bun run vctx -- sync
+> bun run vctx -- serve --ui-only
+> ```
 
 ## Running the Web UI
 
@@ -89,7 +100,8 @@ The `serve` command starts the REST API and serves the compiled UI as a static S
 **MCP server only** (for AI assistants, no web UI):
 
 ```bash
-bun run packages/cli/src/index.ts serve --mcp-only
+vctx serve --mcp-only
+# or: bun run vctx -- serve --mcp-only
 ```
 
 ## CLI Commands
@@ -141,8 +153,16 @@ Exposes 6 tools and 4 resources for AI assistants:
 ## Development
 
 ```bash
-# Dev server (API + UI hot reload)
+# Install the vctx CLI globally (one-time)
+cd packages/cli && bun link && cd ../..
+
+# Dev server: API on :3000 + Vite hot reload on :5173
 bun run dev
+
+# Run any CLI command during development
+vctx sync
+vctx status
+vctx search "my query"
 
 # Build UI for production
 bun run build:ui

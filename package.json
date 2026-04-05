@@ -5,6 +5,7 @@
     "packages/*"
   ],
   "scripts": {
+    "vctx": "bun run packages/cli/src/index.ts",
     "dev": "bun run packages/cli/src/index.ts serve --ui-only --port 3000 & bun run --cwd packages/ui dev",
     "build:ui": "bun run --cwd packages/ui build",
     "serve": "bun run build:ui && bun run packages/cli/src/index.ts serve --ui-only",
