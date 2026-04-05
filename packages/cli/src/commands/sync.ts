@@ -21,9 +21,9 @@ import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@ve
 
 export const syncCommand = new Command("sync")
   .description("Sync collections")
-  .option("--collection <name>", "Sync a specific collection")
+  .argument("<collection>", 'Collection name or "*" for all collections')
   .option("--full", "Full re-sync (ignore cursors)")
-  .action(async (opts: { collection?: string; full?: boolean }) => {
+  .action(async (collection: string, opts: { full?: boolean }) => {
     const home = getVeeContextHome();
     const masterDbPath = join(home, "master.db");
 
@@ -35,12 +35,12 @@ export const syncCommand = new Command("sync")
     const db = getMasterDb(masterDbPath);
     let collectionRows = db.select().from(collections).all();
 
-    if (opts.collection) {
+    if (collection !== "*") {
       collectionRows = collectionRows.filter(
-        (c) => c.name === opts.collection,
+        (c) => c.name === collection,
       );
       if (collectionRows.length === 0) {
-        console.error(`Collection "${opts.collection}" not found`);
+        console.error(`Collection "${collection}" not found`);
         process.exit(1);
       }
     }

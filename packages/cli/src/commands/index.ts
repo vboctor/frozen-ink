@@ -18,8 +18,8 @@ export const indexCommand = new Command("index")
   .description(
     "Re-index collections (rebuild search index and links from existing markdown)",
   )
-  .option("--collection <name>", "Index a specific collection")
-  .action(async (opts: { collection?: string }) => {
+  .argument("<collection>", 'Collection name or "*" for all collections')
+  .action(async (collection: string) => {
     const home = getVeeContextHome();
     const masterDbPath = join(home, "master.db");
 
@@ -31,12 +31,12 @@ export const indexCommand = new Command("index")
     const db = getMasterDb(masterDbPath);
     let collectionRows = db.select().from(collections).all();
 
-    if (opts.collection) {
+    if (collection !== "*") {
       collectionRows = collectionRows.filter(
-        (c) => c.name === opts.collection,
+        (c) => c.name === collection,
       );
       if (collectionRows.length === 0) {
-        console.error(`Collection "${opts.collection}" not found`);
+        console.error(`Collection "${collection}" not found`);
         process.exit(1);
       }
     }
