@@ -13,7 +13,7 @@ import {
   LocalStorageBackend,
 } from "@veecontext/core";
 import { eq, desc } from "drizzle-orm";
-import { createDefaultRegistry, gitHubTheme, obsidianTheme } from "@veecontext/crawlers";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@veecontext/crawlers";
 import type { McpServerOptions } from "../server";
 
 export function registerSync(
@@ -120,6 +120,7 @@ export function registerSync(
       const themeEngine = new ThemeEngine();
       themeEngine.register(gitHubTheme);
       themeEngine.register(obsidianTheme);
+      themeEngine.register(gitTheme);
 
       const engine = new SyncEngine({
         crawler,

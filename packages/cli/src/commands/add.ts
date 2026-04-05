@@ -16,7 +16,8 @@ export const addCommand = new Command("add")
   .option("--token <token>", "Authentication token")
   .option("--owner <owner>", "Repository owner (for github)")
   .option("--repo <repo>", "Repository name (for github)")
-  .option("--path <path>", "Path to local vault (for obsidian)")
+  .option("--path <path>", "Path to local directory (for obsidian, git)")
+  .option("--include-diffs", "Include commit diffs (for git)")
   .action(async (crawlerType: string, opts: Record<string, string>) => {
     const home = getVeeContextHome();
     const masterDbPath = join(home, "master.db");
@@ -59,6 +60,18 @@ export const addCommand = new Command("add")
       const vaultPath = resolve(opts.path);
       credentials.vaultPath = vaultPath;
       config.vaultPath = vaultPath;
+    } else if (crawlerType === "git") {
+      if (!opts.path) {
+        console.error("Git crawler requires --path <repo-path>");
+        process.exit(1);
+      }
+      const { resolve } = await import("path");
+      const repoPath = resolve(opts.path);
+      credentials.repoPath = repoPath;
+      config.repoPath = repoPath;
+      if (opts.includeDiffs) {
+        config.includeDiffs = true;
+      }
     }
 
     // Validate credentials

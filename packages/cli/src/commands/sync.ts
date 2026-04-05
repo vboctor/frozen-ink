@@ -11,7 +11,7 @@ import {
   syncState,
 } from "@veecontext/core";
 import { eq } from "drizzle-orm";
-import { createDefaultRegistry, gitHubTheme, obsidianTheme } from "@veecontext/crawlers";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@veecontext/crawlers";
 
 export const syncCommand = new Command("sync")
   .description("Sync collections")
@@ -51,6 +51,7 @@ export const syncCommand = new Command("sync")
     const themeEngine = new ThemeEngine();
     themeEngine.register(gitHubTheme);
     themeEngine.register(obsidianTheme);
+    themeEngine.register(gitTheme);
 
     for (const col of collectionRows) {
       console.log(`Syncing "${col.name}" (${col.crawlerType})...`);

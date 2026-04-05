@@ -1,6 +1,7 @@
 import { useMemo, type ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 
 const WIKILINK_PREFIX = "#wikilink/";
 
@@ -144,7 +145,11 @@ export default function MarkdownView({
 
   return (
     <article className="markdown-view">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={components}
+      >
         {processed}
       </ReactMarkdown>
     </article>

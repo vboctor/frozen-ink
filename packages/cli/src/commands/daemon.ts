@@ -10,7 +10,7 @@ import {
   ThemeEngine,
   LocalStorageBackend,
 } from "@veecontext/core";
-import { createDefaultRegistry, gitHubTheme, obsidianTheme } from "@veecontext/crawlers";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@veecontext/crawlers";
 
 function getPidPath(): string {
   return join(getVeeContextHome(), "daemon.pid");
@@ -45,6 +45,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
     const themeEngine = new ThemeEngine();
     themeEngine.register(gitHubTheme);
     themeEngine.register(obsidianTheme);
+    themeEngine.register(gitTheme);
 
     for (const col of collectionRows) {
       const factory = registry.get(col.crawlerType);
