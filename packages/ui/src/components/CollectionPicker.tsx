@@ -22,7 +22,7 @@ export default function CollectionPicker({
         <option value="">Select a collection...</option>
         {collections.map((c) => (
           <option key={c.name} value={c.name}>
-            {c.name} ({c.crawlerType})
+            {c.title}
           </option>
         ))}
       </select>

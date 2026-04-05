@@ -6,13 +6,15 @@ import {
   getMasterDb,
   getCollectionDb,
   collections,
+  isValidCollectionKey,
 } from "@veecontext/core";
 import { createDefaultRegistry } from "@veecontext/crawlers";
 
 export const addCommand = new Command("add")
   .description("Add a new collection")
   .argument("<crawler>", "Crawler type (e.g., github)")
-  .requiredOption("--name <name>", "Collection name")
+  .requiredOption("--name <key>", "Collection key (alphanumeric, dash, underscore)")
+  .option("--title <title>", "Display title for the collection")
   .option("--token <token>", "Authentication token")
   .option("--owner <owner>", "Repository owner (for github)")
   .option("--repo <repo>", "Repository name (for github)")
@@ -24,6 +26,13 @@ export const addCommand = new Command("add")
 
     if (!existsSync(masterDbPath)) {
       console.error("VeeContext not initialized. Run: vctx init");
+      process.exit(1);
+    }
+
+    if (!isValidCollectionKey(opts.name)) {
+      console.error(
+        `Invalid collection key "${opts.name}". Keys must contain only letters, numbers, dashes, and underscores.`,
+      );
       process.exit(1);
     }
 
@@ -99,6 +108,7 @@ export const addCommand = new Command("add")
     db.insert(collections)
       .values({
         name: opts.name,
+        title: opts.title || null,
         crawlerType,
         config,
         credentials,
@@ -106,7 +116,8 @@ export const addCommand = new Command("add")
       })
       .run();
 
-    console.log(`Collection "${opts.name}" created (${crawlerType})`);
+    const displayName = opts.title ? `${opts.title} (${opts.name})` : opts.name;
+    console.log(`Collection "${displayName}" created (${crawlerType})`);
     console.log(`  Database: ${collectionDbPath}`);
-    console.log(`  Run "vctx sync" to start syncing`);
+    console.log(`  Run "vctx sync ${opts.name}" to start syncing`);
   });

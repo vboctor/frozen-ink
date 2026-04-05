@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 export const collections = sqliteTable("collections", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
+  title: text("title"),
   crawlerType: text("crawler_type").notNull(),
   config: text("config", { mode: "json" }).notNull().$type<Record<string, unknown>>(),
   credentials: text("credentials", { mode: "json" }).notNull().$type<Record<string, unknown>>(),

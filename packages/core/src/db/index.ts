@@ -1,3 +1,3 @@
 export * from "./master-schema";
 export * from "./collection-schema";
-export { getMasterDb, getCollectionDb } from "./client";
+export { getMasterDb, getCollectionDb, isValidCollectionKey } from "./client";
