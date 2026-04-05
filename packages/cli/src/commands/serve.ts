@@ -40,28 +40,31 @@ function getMimeType(filePath: string): string {
 }
 
 function buildFileTree(dirPath: string, basePath: string = ""): object[] {
-  const result: object[] = [];
-  if (!existsSync(dirPath)) return result;
+  if (!existsSync(dirPath)) return [];
 
   const entries = readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
+  const dirs: object[] = [];
+  const files: object[] = [];
+
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
-      result.push({
+      dirs.push({
         name: entry.name,
         path: relativePath,
         type: "directory",
         children: buildFileTree(join(dirPath, entry.name), relativePath),
       });
     } else if (entry.name.endsWith(".md")) {
-      result.push({
+      files.push({
         name: entry.name,
         path: relativePath,
         type: "file",
       });
     }
   }
-  return result;
+
+  return [...dirs, ...files];
 }
 
 function jsonResponse(data: unknown, status: number = 200): Response {
