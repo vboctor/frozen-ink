@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@veecontext/connectors": "workspace:*",
+    "@veecontext/crawlers": "workspace:*",
     "@veecontext/core": "workspace:*",
     "@veecontext/mcp": "workspace:*",
     "commander": "^13.0.0",

@@ -11,7 +11,7 @@ import {
   syncState,
 } from "@veecontext/core";
 import { eq } from "drizzle-orm";
-import { createDefaultRegistry, gitHubTheme } from "@veecontext/connectors";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme } from "@veecontext/crawlers";
 
 export const syncCommand = new Command("sync")
   .description("Sync collections")
@@ -50,20 +50,21 @@ export const syncCommand = new Command("sync")
     const registry = createDefaultRegistry();
     const themeEngine = new ThemeEngine();
     themeEngine.register(gitHubTheme);
+    themeEngine.register(obsidianTheme);
 
     for (const col of collectionRows) {
-      console.log(`Syncing "${col.name}" (${col.connectorType})...`);
+      console.log(`Syncing "${col.name}" (${col.crawlerType})...`);
 
-      const factory = registry.get(col.connectorType);
+      const factory = registry.get(col.crawlerType);
       if (!factory) {
         console.error(
-          `  No connector for type: ${col.connectorType}, skipping`,
+          `  No crawler for type: ${col.crawlerType}, skipping`,
         );
         continue;
       }
 
-      const connector = factory();
-      await connector.initialize(
+      const crawler = factory();
+      await crawler.initialize(
         col.config as Record<string, unknown>,
         col.credentials as Record<string, unknown>,
       );
@@ -72,7 +73,7 @@ export const syncCommand = new Command("sync")
       if (opts.full) {
         const { getCollectionDb } = await import("@veecontext/core");
         const colDb = getCollectionDb(col.dbPath);
-        colDb.delete(syncState).where(eq(syncState.connectorType, col.connectorType)).run();
+        colDb.delete(syncState).where(eq(syncState.crawlerType, col.crawlerType)).run();
         console.log("  Cleared sync cursor for full re-sync");
       }
 
@@ -80,7 +81,7 @@ export const syncCommand = new Command("sync")
       const storage = new LocalStorageBackend(collectionDir);
 
       const engine = new SyncEngine({
-        connector,
+        crawler,
         dbPath: col.dbPath,
         collectionName: col.name,
         themeEngine,
@@ -95,6 +96,6 @@ export const syncCommand = new Command("sync")
         console.error(`  Sync failed for "${col.name}": ${err}`);
       }
 
-      await connector.dispose();
+      await crawler.dispose();
     }
   });

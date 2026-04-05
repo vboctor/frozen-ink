@@ -10,7 +10,7 @@ import {
   ThemeEngine,
   LocalStorageBackend,
 } from "@veecontext/core";
-import { createDefaultRegistry, gitHubTheme } from "@veecontext/connectors";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme } from "@veecontext/crawlers";
 
 function getPidPath(): string {
   return join(getVeeContextHome(), "daemon.pid");
@@ -44,14 +44,15 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
     const registry = createDefaultRegistry();
     const themeEngine = new ThemeEngine();
     themeEngine.register(gitHubTheme);
+    themeEngine.register(obsidianTheme);
 
     for (const col of collectionRows) {
-      const factory = registry.get(col.connectorType);
+      const factory = registry.get(col.crawlerType);
       if (!factory) continue;
 
-      const connector = factory();
+      const crawler = factory();
       try {
-        await connector.initialize(
+        await crawler.initialize(
           col.config as Record<string, unknown>,
           col.credentials as Record<string, unknown>,
         );
@@ -60,7 +61,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
         const storage = new LocalStorageBackend(collectionDir);
 
         const engine = new SyncEngine({
-          connector,
+          crawler,
           dbPath: col.dbPath,
           collectionName: col.name,
           themeEngine,
@@ -72,7 +73,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
       } catch (err) {
         console.error(`Sync failed for "${col.name}": ${err}`);
       } finally {
-        await connector.dispose();
+        await crawler.dispose();
       }
     }
   };

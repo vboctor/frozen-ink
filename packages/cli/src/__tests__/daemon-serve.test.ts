@@ -62,7 +62,7 @@ function addTestCollection(
   db.insert(collections)
     .values({
       name,
-      connectorType: "github",
+      crawlerType: "github",
       config: { owner: "test", repo: "repo" },
       credentials: { token: "tok", owner: "test", repo: "repo" },
       dbPath,
@@ -292,12 +292,12 @@ describe("API: GET /api/collections", () => {
 
       const data = (await res.json()) as Array<{
         name: string;
-        connectorType: string;
+        crawlerType: string;
         enabled: boolean;
       }>;
       expect(data).toHaveLength(1);
       expect(data[0].name).toBe("my-project");
-      expect(data[0].connectorType).toBe("github");
+      expect(data[0].crawlerType).toBe("github");
       expect(data[0].enabled).toBe(true);
     } finally {
       server.stop();

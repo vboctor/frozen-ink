@@ -1,7 +1,7 @@
 import type {
-  Connector,
-  ConnectorMetadata,
-  ConnectorEntityData,
+  Crawler,
+  CrawlerMetadata,
+  CrawlerEntityData,
   SyncCursor,
   SyncResult,
 } from "@veecontext/core";
@@ -22,8 +22,8 @@ interface GitHubSyncCursor extends SyncCursor {
   phase?: "issues" | "pulls" | "done";
 }
 
-export class GitHubConnector implements Connector {
-  metadata: ConnectorMetadata = {
+export class GitHubCrawler implements Crawler {
+  metadata: CrawlerMetadata = {
     type: "github",
     displayName: "GitHub",
     description: "Syncs GitHub issues and pull requests",
@@ -68,7 +68,7 @@ export class GitHubConnector implements Connector {
     };
 
     const phase = c.phase ?? "issues";
-    const entities: ConnectorEntityData[] = [];
+    const entities: CrawlerEntityData[] = [];
 
     if (phase === "issues" && this.syncIssues) {
       const page = c.issuesPage ?? 1;
@@ -236,10 +236,10 @@ export class GitHubConnector implements Connector {
     };
   }
 
-  private mapIssue(issue: GitHubIssue): ConnectorEntityData {
+  private mapIssue(issue: GitHubIssue): CrawlerEntityData {
     const tags = issue.labels.map((l) => l.name);
 
-    const relations: ConnectorEntityData["relations"] = [];
+    const relations: CrawlerEntityData["relations"] = [];
     // Parse cross-references from body (e.g., #123)
     if (issue.body) {
       const refs = issue.body.match(/#(\d+)/g);
@@ -283,12 +283,12 @@ export class GitHubConnector implements Connector {
     };
   }
 
-  private mapPullRequest(pr: GitHubPullRequest): ConnectorEntityData {
+  private mapPullRequest(pr: GitHubPullRequest): CrawlerEntityData {
     const tags = pr.labels.map((l) => l.name);
     tags.push(pr.draft ? "draft" : "ready");
     if (pr.merged) tags.push("merged");
 
-    const relations: ConnectorEntityData["relations"] = [];
+    const relations: CrawlerEntityData["relations"] = [];
     // Parse cross-references from body
     if (pr.body) {
       const refs = pr.body.match(/#(\d+)/g);
@@ -339,7 +339,7 @@ export class GitHubConnector implements Connector {
     };
   }
 
-  private findLatestUpdated(entities: ConnectorEntityData[]): string | undefined {
+  private findLatestUpdated(entities: CrawlerEntityData[]): string | undefined {
     let latest: string | undefined;
     for (const e of entities) {
       const updatedAt = e.data.updatedAt as string | undefined;

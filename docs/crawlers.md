@@ -1,19 +1,19 @@
-# Connectors
+# Crawlers
 
 ## Overview
 
-Connectors are the data ingestion layer of VeeContext. Each connector syncs data from an external service into the local SQLite database, normalizing it into a common schema.
+Crawlers are the data ingestion layer of VeeContext. Each crawler syncs data from an external service into the local SQLite database, normalizing it into a common schema.
 
-## Connector Interface
+## Crawler Interface
 
-Every connector implements a standard interface:
+Every crawler implements a standard interface:
 
 - **name** - Unique identifier (e.g., `github`, `linear`, `slack`)
 - **authenticate** - Validate credentials and establish a connection
 - **sync** - Fetch new/updated data since the last sync cursor
 - **getStatus** - Report current sync state and health
 
-## Planned Connectors
+## Planned Crawlers
 
 ### GitHub
 
@@ -29,7 +29,7 @@ Syncs messages and threads from configured channels. Uses the Slack Web API with
 
 ## Incremental Sync
 
-All connectors support incremental sync using cursors. Each sync operation:
+All crawlers support incremental sync using cursors. Each sync operation:
 
 1. Reads the last sync cursor from the database
 2. Fetches only data modified since that cursor
@@ -40,4 +40,4 @@ This ensures efficient operation even with large data volumes.
 
 ## Configuration
 
-Connectors are configured per-project in a `.veecontext/config.json` file. Each connector entry specifies authentication credentials (via environment variables) and connector-specific options like which repositories or channels to sync.
+Crawlers are configured per-project in a `.veecontext/config.json` file. Each crawler entry specifies authentication credentials (via environment variables) and crawler-specific options like which repositories or channels to sync.

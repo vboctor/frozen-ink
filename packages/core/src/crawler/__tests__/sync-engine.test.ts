@@ -13,14 +13,14 @@ import {
 } from "../../db/collection-schema";
 import { ThemeEngine } from "../../theme/engine";
 import { LocalStorageBackend } from "../../storage/local";
-import type { Connector, SyncCursor, SyncResult } from "../interface";
+import type { Crawler, SyncCursor, SyncResult } from "../interface";
 import type { Theme, ThemeRenderContext } from "../../theme/interface";
 
 const TEST_DIR = join(import.meta.dir, ".test-sync");
 
 function createMockTheme(): Theme {
   return {
-    connectorType: "mock",
+    crawlerType: "mock",
     render(ctx: ThemeRenderContext): string {
       return `# ${ctx.entity.title}\n\n${JSON.stringify(ctx.entity.data)}`;
     },
@@ -30,13 +30,13 @@ function createMockTheme(): Theme {
   };
 }
 
-function createMockConnector(pages: SyncResult[]): Connector {
+function createMockCrawler(pages: SyncResult[]): Crawler {
   let callIndex = 0;
   return {
     metadata: {
       type: "mock",
-      displayName: "Mock Connector",
-      description: "A mock connector for testing",
+      displayName: "Mock Crawler",
+      description: "A mock crawler for testing",
       configSchema: {},
       credentialFields: [],
     },
@@ -68,8 +68,8 @@ afterEach(() => {
 });
 
 describe("SyncEngine", () => {
-  it("loops connector.sync() until hasMore is false", async () => {
-    const connector = createMockConnector([
+  it("loops crawler.sync() until hasMore is false", async () => {
+    const crawler = createMockCrawler([
       {
         entities: [
           {
@@ -100,7 +100,7 @@ describe("SyncEngine", () => {
 
     const dbPath = join(TEST_DIR, "loop.db");
     const engine = new SyncEngine({
-      connector,
+      crawler,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -117,7 +117,7 @@ describe("SyncEngine", () => {
   });
 
   it("inserts entities with SHA-256 content hash", async () => {
-    const connector = createMockConnector([
+    const crawler = createMockCrawler([
       {
         entities: [
           {
@@ -135,7 +135,7 @@ describe("SyncEngine", () => {
 
     const dbPath = join(TEST_DIR, "hash.db");
     const engine = new SyncEngine({
-      connector,
+      crawler,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -160,7 +160,7 @@ describe("SyncEngine", () => {
     };
 
     // First sync
-    const connector1 = createMockConnector([
+    const crawler1 = createMockCrawler([
       {
         entities: [entityData],
         nextCursor: null,
@@ -171,7 +171,7 @@ describe("SyncEngine", () => {
 
     const dbPath = join(TEST_DIR, "skip.db");
     const engine1 = new SyncEngine({
-      connector: connector1,
+      crawler: crawler1,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -185,7 +185,7 @@ describe("SyncEngine", () => {
     const firstUpdatedAt = first.updatedAt;
 
     // Second sync with same data — should skip update
-    const connector2 = createMockConnector([
+    const crawler2 = createMockCrawler([
       {
         entities: [entityData],
         nextCursor: null,
@@ -195,7 +195,7 @@ describe("SyncEngine", () => {
     ]);
 
     const engine2 = new SyncEngine({
-      connector: connector2,
+      crawler: crawler2,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -219,7 +219,7 @@ describe("SyncEngine", () => {
     const dbPath = join(TEST_DIR, "rerender.db");
 
     // First sync
-    const connector1 = createMockConnector([
+    const crawler1 = createMockCrawler([
       {
         entities: [
           {
@@ -236,7 +236,7 @@ describe("SyncEngine", () => {
     ]);
 
     const engine1 = new SyncEngine({
-      connector: connector1,
+      crawler: crawler1,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -249,7 +249,7 @@ describe("SyncEngine", () => {
     const [first] = db.select().from(entities).all();
 
     // Second sync with changed data
-    const connector2 = createMockConnector([
+    const crawler2 = createMockCrawler([
       {
         entities: [
           {
@@ -266,7 +266,7 @@ describe("SyncEngine", () => {
     ]);
 
     const engine2 = new SyncEngine({
-      connector: connector2,
+      crawler: crawler2,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -288,7 +288,7 @@ describe("SyncEngine", () => {
     const dbPath = join(TEST_DIR, "delete.db");
 
     // First sync — create an entity
-    const connector1 = createMockConnector([
+    const crawler1 = createMockCrawler([
       {
         entities: [
           {
@@ -306,7 +306,7 @@ describe("SyncEngine", () => {
     ]);
 
     const engine1 = new SyncEngine({
-      connector: connector1,
+      crawler: crawler1,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -320,7 +320,7 @@ describe("SyncEngine", () => {
     expect(db.select().from(entityTags).all()).toHaveLength(1);
 
     // Second sync — delete it
-    const connector2 = createMockConnector([
+    const crawler2 = createMockCrawler([
       {
         entities: [],
         nextCursor: null,
@@ -330,7 +330,7 @@ describe("SyncEngine", () => {
     ]);
 
     const engine2 = new SyncEngine({
-      connector: connector2,
+      crawler: crawler2,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -352,7 +352,7 @@ describe("SyncEngine", () => {
   });
 
   it("downloads attachments via storage backend", async () => {
-    const connector = createMockConnector([
+    const crawler = createMockCrawler([
       {
         entities: [
           {
@@ -377,7 +377,7 @@ describe("SyncEngine", () => {
 
     const dbPath = join(TEST_DIR, "attach.db");
     const engine = new SyncEngine({
-      connector,
+      crawler,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -401,7 +401,7 @@ describe("SyncEngine", () => {
   });
 
   it("updates sync_state with latest cursor", async () => {
-    const connector = createMockConnector([
+    const crawler = createMockCrawler([
       {
         entities: [
           {
@@ -419,7 +419,7 @@ describe("SyncEngine", () => {
 
     const dbPath = join(TEST_DIR, "cursor.db");
     const engine = new SyncEngine({
-      connector,
+      crawler,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -432,12 +432,12 @@ describe("SyncEngine", () => {
     const db = getCollectionDb(dbPath);
     const states = db.select().from(syncState).all();
     expect(states).toHaveLength(1);
-    expect(states[0].connectorType).toBe("mock");
+    expect(states[0].crawlerType).toBe("mock");
     expect(states[0].cursor).toEqual({ page: 2, since: "2024-01-01" });
   });
 
   it("creates sync_runs with status, counts, and timing", async () => {
-    const connector = createMockConnector([
+    const crawler = createMockCrawler([
       {
         entities: [
           {
@@ -455,7 +455,7 @@ describe("SyncEngine", () => {
 
     const dbPath = join(TEST_DIR, "runs.db");
     const engine = new SyncEngine({
-      connector,
+      crawler,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -477,7 +477,7 @@ describe("SyncEngine", () => {
   });
 
   it("writes markdown files for new entities", async () => {
-    const connector = createMockConnector([
+    const crawler = createMockCrawler([
       {
         entities: [
           {
@@ -496,7 +496,7 @@ describe("SyncEngine", () => {
 
     const dbPath = join(TEST_DIR, "markdown.db");
     const engine = new SyncEngine({
-      connector,
+      crawler,
       dbPath,
       collectionName: "test",
       themeEngine,
@@ -517,7 +517,7 @@ describe("SyncEngine", () => {
   });
 
   it("inserts tags for entities", async () => {
-    const connector = createMockConnector([
+    const crawler = createMockCrawler([
       {
         entities: [
           {
@@ -536,7 +536,7 @@ describe("SyncEngine", () => {
 
     const dbPath = join(TEST_DIR, "tags.db");
     const engine = new SyncEngine({
-      connector,
+      crawler,
       dbPath,
       collectionName: "test",
       themeEngine,

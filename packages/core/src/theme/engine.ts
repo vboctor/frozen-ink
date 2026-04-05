@@ -4,25 +4,25 @@ export class ThemeEngine {
   private themes = new Map<string, Theme>();
 
   register(theme: Theme): void {
-    this.themes.set(theme.connectorType, theme);
+    this.themes.set(theme.crawlerType, theme);
   }
 
-  has(connectorType: string): boolean {
-    return this.themes.has(connectorType);
+  has(crawlerType: string): boolean {
+    return this.themes.has(crawlerType);
   }
 
   render(context: ThemeRenderContext): string {
-    const theme = this.themes.get(context.connectorType);
+    const theme = this.themes.get(context.crawlerType);
     if (!theme) {
-      throw new Error(`No theme registered for connector type: ${context.connectorType}`);
+      throw new Error(`No theme registered for crawler type: ${context.crawlerType}`);
     }
     return theme.render(context);
   }
 
   getFilePath(context: ThemeRenderContext): string {
-    const theme = this.themes.get(context.connectorType);
+    const theme = this.themes.get(context.crawlerType);
     if (!theme) {
-      throw new Error(`No theme registered for connector type: ${context.connectorType}`);
+      throw new Error(`No theme registered for crawler type: ${context.crawlerType}`);
     }
     return theme.getFilePath(context);
   }

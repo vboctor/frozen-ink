@@ -1,6 +1,6 @@
 export interface Collection {
   name: string;
-  connectorType: string;
+  crawlerType: string;
   enabled: boolean;
   syncInterval: number;
   createdAt: string;

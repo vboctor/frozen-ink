@@ -13,7 +13,7 @@ import {
   LocalStorageBackend,
 } from "@veecontext/core";
 import { eq, desc } from "drizzle-orm";
-import { createDefaultRegistry, gitHubTheme } from "@veecontext/connectors";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme } from "@veecontext/crawlers";
 import type { McpServerOptions } from "../server";
 
 export function registerSync(
@@ -83,22 +83,22 @@ export function registerSync(
       }
 
       const registry = createDefaultRegistry();
-      const factory = registry.get(col.connectorType);
+      const factory = registry.get(col.crawlerType);
       if (!factory) {
         return {
           content: [
             {
               type: "text" as const,
               text: JSON.stringify({
-                error: `No connector for type: ${col.connectorType}`,
+                error: `No crawler for type: ${col.crawlerType}`,
               }),
             },
           ],
         };
       }
 
-      const connector = factory();
-      await connector.initialize(
+      const crawler = factory();
+      await crawler.initialize(
         col.config as Record<string, unknown>,
         col.credentials as Record<string, unknown>,
       );
@@ -107,7 +107,7 @@ export function registerSync(
         const colDb = getCollectionDb(col.dbPath);
         colDb
           .delete(syncState)
-          .where(eq(syncState.connectorType, col.connectorType))
+          .where(eq(syncState.crawlerType, col.crawlerType))
           .run();
       }
 
@@ -119,9 +119,10 @@ export function registerSync(
       const storage = new LocalStorageBackend(collectionDir);
       const themeEngine = new ThemeEngine();
       themeEngine.register(gitHubTheme);
+      themeEngine.register(obsidianTheme);
 
       const engine = new SyncEngine({
-        connector,
+        crawler,
         dbPath: col.dbPath,
         collectionName: col.name,
         themeEngine,
@@ -131,7 +132,7 @@ export function registerSync(
 
       try {
         await engine.run();
-        await connector.dispose();
+        await crawler.dispose();
 
         // Get the latest sync run ID
         const colDb = getCollectionDb(col.dbPath);
@@ -157,7 +158,7 @@ export function registerSync(
           ],
         };
       } catch (err) {
-        await connector.dispose();
+        await crawler.dispose();
         return {
           content: [
             {

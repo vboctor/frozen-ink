@@ -17,18 +17,11 @@
         "vctx": "src/index.ts",
       },
       "dependencies": {
-        "@veecontext/connectors": "workspace:*",
         "@veecontext/core": "workspace:*",
+        "@veecontext/crawlers": "workspace:*",
         "@veecontext/mcp": "workspace:*",
         "commander": "^13.0.0",
         "drizzle-orm": "^0.39.0",
-      },
-    },
-    "packages/connectors": {
-      "name": "@veecontext/connectors",
-      "version": "0.1.0",
-      "dependencies": {
-        "@veecontext/core": "workspace:*",
       },
     },
     "packages/core": {
@@ -39,13 +32,20 @@
         "zod": "^3.24.0",
       },
     },
+    "packages/crawlers": {
+      "name": "@veecontext/crawlers",
+      "version": "0.1.0",
+      "dependencies": {
+        "@veecontext/core": "workspace:*",
+      },
+    },
     "packages/mcp": {
       "name": "@veecontext/mcp",
       "version": "0.1.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.12.0",
-        "@veecontext/connectors": "workspace:*",
         "@veecontext/core": "workspace:*",
+        "@veecontext/crawlers": "workspace:*",
         "drizzle-orm": "^0.39.0",
         "zod": "^3.24.0",
       },
@@ -281,9 +281,9 @@
 
     "@veecontext/cli": ["@veecontext/cli@workspace:packages/cli"],
 
-    "@veecontext/connectors": ["@veecontext/connectors@workspace:packages/connectors"],
-
     "@veecontext/core": ["@veecontext/core@workspace:packages/core"],
+
+    "@veecontext/crawlers": ["@veecontext/crawlers@workspace:packages/crawlers"],
 
     "@veecontext/mcp": ["@veecontext/mcp@workspace:packages/mcp"],
 

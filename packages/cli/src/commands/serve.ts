@@ -132,7 +132,7 @@ export function createApiServer(
         const rows = db.select().from(collections).all();
         const result = rows.map((r) => ({
           name: r.name,
-          connectorType: r.connectorType,
+          crawlerType: r.crawlerType,
           enabled: r.enabled,
           syncInterval: r.syncInterval,
           createdAt: r.createdAt,

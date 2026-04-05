@@ -100,7 +100,7 @@ describe("CLI: add", () => {
     db.insert(collections)
       .values({
         name: "test-gh",
-        connectorType: "github",
+        crawlerType: "github",
         config: { owner: "test", repo: "repo" },
         credentials: { token: "tok", owner: "test", repo: "repo" },
         dbPath,
@@ -113,7 +113,7 @@ describe("CLI: add", () => {
     const rows = db.select().from(collections).all();
     expect(rows).toHaveLength(1);
     expect(rows[0].name).toBe("test-gh");
-    expect(rows[0].connectorType).toBe("github");
+    expect(rows[0].crawlerType).toBe("github");
     expect(rows[0].enabled).toBe(true);
 
     // Verify collection directory
@@ -139,7 +139,7 @@ describe("CLI: collections", () => {
     db.insert(collections)
       .values({
         name: "my-col",
-        connectorType: "github",
+        crawlerType: "github",
         config: {},
         credentials: {},
         dbPath,
@@ -169,7 +169,7 @@ describe("CLI: collections", () => {
     db.insert(collections)
       .values({
         name: "toggled",
-        connectorType: "github",
+        crawlerType: "github",
         config: {},
         credentials: {},
         dbPath,
@@ -220,7 +220,7 @@ describe("CLI: collections", () => {
     db.insert(collections)
       .values({
         name: "to-remove",
-        connectorType: "github",
+        crawlerType: "github",
         config: {},
         credentials: {},
         dbPath,
@@ -265,7 +265,7 @@ describe("CLI: status", () => {
     db.insert(collections)
       .values({
         name: "status-test",
-        connectorType: "github",
+        crawlerType: "github",
         config: {},
         credentials: {},
         dbPath,
@@ -336,7 +336,7 @@ describe("CLI: search", () => {
     db.insert(collections)
       .values({
         name: "search-test",
-        connectorType: "github",
+        crawlerType: "github",
         config: {},
         credentials: {},
         dbPath,
@@ -394,7 +394,7 @@ describe("CLI: search", () => {
     db.insert(collections)
       .values({
         name: "json-test",
-        connectorType: "github",
+        crawlerType: "github",
         config: {},
         credentials: {},
         dbPath,
@@ -500,7 +500,7 @@ describe("CLI: config", () => {
   });
 });
 
-describe("CLI: sync triggers connector", () => {
+describe("CLI: sync triggers crawler", () => {
   it("syncs a collection using the sync engine", async () => {
     const { initCommand } = await import("../commands/init");
     const origLog = console.log;
@@ -519,7 +519,7 @@ describe("CLI: sync triggers connector", () => {
     db.insert(collections)
       .values({
         name: "sync-test",
-        connectorType: "github",
+        crawlerType: "github",
         config: { owner: "test", repo: "repo" },
         credentials: { token: "test-token", owner: "test", repo: "repo" },
         dbPath,

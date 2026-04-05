@@ -39,7 +39,7 @@ function addCollection(
   db.insert(collections)
     .values({
       name,
-      connectorType: "github",
+      crawlerType: "github",
       config: { owner: "test", repo: name },
       credentials: { token: "tok" },
       enabled: opts?.enabled ?? true,
@@ -168,7 +168,7 @@ describe("list_collections tool", () => {
 
     expect(data).toHaveLength(1);
     expect(data[0].name).toBe("my-repo");
-    expect(data[0].connectorType).toBe("github");
+    expect(data[0].crawlerType).toBe("github");
     expect(data[0].enabled).toBe(true);
     expect(data[0].entityCount).toBe(2);
     expect(data[0].lastSyncTime).toBe("2025-01-15 10:00:00");
@@ -623,7 +623,7 @@ describe("MCP resources", () => {
     const data = JSON.parse(result.contents[0].text!);
     expect(data.name).toBe("detail-col");
     expect(data.entityCount).toBe(1);
-    expect(data.connectorType).toBe("github");
+    expect(data.crawlerType).toBe("github");
   });
 
   it("reads an entity resource by collection and externalId", async () => {

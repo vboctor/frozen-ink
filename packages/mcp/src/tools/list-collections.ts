@@ -63,7 +63,7 @@ export function registerListCollections(
 
         return {
           name: col.name,
-          connectorType: col.connectorType,
+          crawlerType: col.crawlerType,
           enabled: col.enabled,
           entityCount,
           lastSyncTime,

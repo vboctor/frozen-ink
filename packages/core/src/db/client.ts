@@ -15,7 +15,7 @@ export function getMasterDb(dbPath: string) {
     CREATE TABLE IF NOT EXISTS collections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      connector_type TEXT NOT NULL,
+      crawler_type TEXT NOT NULL,
       config TEXT NOT NULL DEFAULT '{}',
       credentials TEXT NOT NULL DEFAULT '{}',
       sync_interval INTEGER NOT NULL DEFAULT 3600,
@@ -68,7 +68,7 @@ export function getCollectionDb(dbPath: string) {
 
     CREATE TABLE IF NOT EXISTS sync_state (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      connector_type TEXT NOT NULL,
+      crawler_type TEXT NOT NULL,
       cursor TEXT,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );

@@ -32,7 +32,7 @@ const listCommand = new Command("list")
 
     for (const row of rows) {
       const status = row.enabled ? "enabled" : "disabled";
-      console.log(`${row.name} (${row.connectorType}) [${status}]`);
+      console.log(`${row.name} (${row.crawlerType}) [${status}]`);
     }
   });
 

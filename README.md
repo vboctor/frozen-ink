@@ -7,7 +7,7 @@ VeeContext is a developer tool that aggregates context from multiple sources (Gi
 The project is organized as a Bun monorepo with five packages:
 
 - **@veecontext/core** - Shared types, Zod schemas, database layer (Drizzle ORM + SQLite), and domain logic
-- **@veecontext/connectors** - Data source connectors that sync external services into the local database
+- **@veecontext/crawlers** - Data source crawlers that sync external services into the local database
 - **@veecontext/mcp** - MCP server that exposes aggregated context to AI assistants
 - **@veecontext/cli** - Command-line interface for configuration, syncing, and daemon management
 - **@veecontext/ui** - Terminal UI dashboard for monitoring sync status and browsing context
@@ -27,12 +27,12 @@ bun run typecheck
 ```
 packages/
   core/          Shared types, schemas, DB
-  connectors/    GitHub, Linear, Slack connectors
+  crawlers/    GitHub, Linear, Slack crawlers
   mcp/           MCP server
   cli/           CLI entry point
   ui/            Terminal dashboard
 docs/
   architecture.md
-  connectors.md
+  crawlers.md
   themes.md
 ```

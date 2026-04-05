@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { GitHubConnector } from "../connector";
+import { GitHubCrawler } from "../crawler";
 import type { GitHubIssue, GitHubPullRequest } from "../types";
 
 function mockFetch(responses: Record<string, unknown[]>) {
@@ -60,37 +60,37 @@ function samplePR(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest
   };
 }
 
-let connector: GitHubConnector;
+let crawler: GitHubCrawler;
 
 beforeEach(async () => {
-  connector = new GitHubConnector();
-  await connector.initialize(
+  crawler = new GitHubCrawler();
+  await crawler.initialize(
     { owner: "owner", repo: "repo" },
     { token: "ghp_test", owner: "owner", repo: "repo" },
   );
 });
 
-describe("GitHubConnector", () => {
+describe("GitHubCrawler", () => {
   describe("metadata", () => {
     it("has correct type and credential fields", () => {
-      expect(connector.metadata.type).toBe("github");
-      expect(connector.metadata.credentialFields).toContain("token");
-      expect(connector.metadata.credentialFields).toContain("owner");
-      expect(connector.metadata.credentialFields).toContain("repo");
+      expect(crawler.metadata.type).toBe("github");
+      expect(crawler.metadata.credentialFields).toContain("token");
+      expect(crawler.metadata.credentialFields).toContain("owner");
+      expect(crawler.metadata.credentialFields).toContain("repo");
     });
   });
 
   describe("sync", () => {
-    it("fetches issues and maps to ConnectorEntityData", async () => {
+    it("fetches issues and maps to CrawlerEntityData", async () => {
       const issue = sampleIssue();
-      connector.setFetch(
+      crawler.setFetch(
         mockFetch({
           "/issues?": [issue],
           "/pulls?": [],
         }),
       );
 
-      const result = await connector.sync(null);
+      const result = await crawler.sync(null);
       // First page of issues returned, then hasMore to transition to pulls phase
       expect(result.entities).toHaveLength(1);
       expect(result.entities[0].externalId).toBe("issue-10");
@@ -105,7 +105,7 @@ describe("GitHubConnector", () => {
 
     it("fetches PRs after issues are done", async () => {
       const pr = samplePR();
-      connector.setFetch(
+      crawler.setFetch(
         mockFetch({
           "/issues?": [],
           "/pulls?": [pr],
@@ -113,12 +113,12 @@ describe("GitHubConnector", () => {
       );
 
       // First call: issues phase returns empty, transitions to pulls
-      const result1 = await connector.sync(null);
+      const result1 = await crawler.sync(null);
       expect(result1.hasMore).toBe(true);
       expect(result1.nextCursor).toHaveProperty("phase", "pulls");
 
       // Second call: pulls phase
-      const result2 = await connector.sync(result1.nextCursor);
+      const result2 = await crawler.sync(result1.nextCursor);
       expect(result2.entities).toHaveLength(1);
       expect(result2.entities[0].externalId).toBe("pr-20");
       expect(result2.entities[0].entityType).toBe("pull_request");
@@ -137,14 +137,14 @@ describe("GitHubConnector", () => {
         pull_request: { url: "https://api.github.com/repos/owner/repo/pulls/30" },
       });
 
-      connector.setFetch(
+      crawler.setFetch(
         mockFetch({
           "/issues?": [issue, prAsIssue],
           "/pulls?": [],
         }),
       );
 
-      const result = await connector.sync(null);
+      const result = await crawler.sync(null);
       // Only the real issue should be included
       const issueEntities = result.entities.filter((e) => e.entityType === "issue");
       expect(issueEntities).toHaveLength(1);
@@ -156,14 +156,14 @@ describe("GitHubConnector", () => {
         body: "Related to #5 and #12. Also see #5 again.",
       });
 
-      connector.setFetch(
+      crawler.setFetch(
         mockFetch({
           "/issues?": [issue],
           "/pulls?": [],
         }),
       );
 
-      const result = await connector.sync(null);
+      const result = await crawler.sync(null);
       const relations = result.entities[0].relations ?? [];
       expect(relations).toHaveLength(2);
       expect(relations[0]).toEqual({ targetExternalId: "issue-5", relationType: "references" });
@@ -172,7 +172,7 @@ describe("GitHubConnector", () => {
 
     it("uses updatedSince cursor for incremental sync", async () => {
       let capturedUrl = "";
-      connector.setFetch(async (input: string | URL | Request) => {
+      crawler.setFetch(async (input: string | URL | Request) => {
         const url = typeof input === "string" ? input : input.toString();
         capturedUrl = url;
         return new Response(JSON.stringify([]), {
@@ -181,7 +181,7 @@ describe("GitHubConnector", () => {
         });
       });
 
-      await connector.sync({
+      await crawler.sync({
         phase: "issues",
         issuesPage: 1,
         updatedSince: "2024-06-01T00:00:00Z",
@@ -199,7 +199,7 @@ describe("GitHubConnector", () => {
         merged_at: "2024-01-05T00:00:00Z",
       });
 
-      connector.setFetch(
+      crawler.setFetch(
         mockFetch({
           "/issues?": [],
           "/pulls?": [draftPR, mergedPR],
@@ -207,7 +207,7 @@ describe("GitHubConnector", () => {
       );
 
       // Skip to pulls phase
-      const result = await connector.sync({ phase: "pulls", pullsPage: 1 });
+      const result = await crawler.sync({ phase: "pulls", pullsPage: 1 });
       const draft = result.entities.find((e) => e.externalId === "pr-20");
       const merged = result.entities.find((e) => e.externalId === "pr-21");
 
@@ -220,8 +220,8 @@ describe("GitHubConnector", () => {
 
   describe("validateCredentials", () => {
     it("returns true when API responds with 200", async () => {
-      connector.setFetch(async () => new Response("{}", { status: 200 }));
-      const valid = await connector.validateCredentials({
+      crawler.setFetch(async () => new Response("{}", { status: 200 }));
+      const valid = await crawler.validateCredentials({
         token: "ghp_valid",
         owner: "owner",
         repo: "repo",
@@ -230,8 +230,8 @@ describe("GitHubConnector", () => {
     });
 
     it("returns false when API responds with 401", async () => {
-      connector.setFetch(async () => new Response("Unauthorized", { status: 401 }));
-      const valid = await connector.validateCredentials({
+      crawler.setFetch(async () => new Response("Unauthorized", { status: 401 }));
+      const valid = await crawler.validateCredentials({
         token: "ghp_bad",
         owner: "owner",
         repo: "repo",
@@ -240,10 +240,10 @@ describe("GitHubConnector", () => {
     });
 
     it("returns false when fetch throws", async () => {
-      connector.setFetch(async () => {
+      crawler.setFetch(async () => {
         throw new Error("Network error");
       });
-      const valid = await connector.validateCredentials({
+      const valid = await crawler.validateCredentials({
         token: "ghp_bad",
         owner: "owner",
         repo: "repo",
@@ -259,14 +259,14 @@ describe("GitHubConnector", () => {
         sampleIssue({ number: i + 1, title: `Issue ${i + 1}` }),
       );
 
-      connector.setFetch(
+      crawler.setFetch(
         mockFetch({
           "/issues?": fullPage,
           "/pulls?": [],
         }),
       );
 
-      const result = await connector.sync(null);
+      const result = await crawler.sync(null);
       expect(result.hasMore).toBe(true);
       expect(result.nextCursor).toHaveProperty("issuesPage", 2);
       expect(result.nextCursor).toHaveProperty("phase", "issues");

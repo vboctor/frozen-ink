@@ -43,7 +43,7 @@ export function registerCollectionResources(
 
       const result = rows.map((col) => ({
         name: col.name,
-        connectorType: col.connectorType,
+        crawlerType: col.crawlerType,
         enabled: col.enabled,
       }));
 
@@ -74,7 +74,7 @@ export function registerCollectionResources(
           resources: rows.map((col) => ({
             uri: `veecontext://collections/${col.name}`,
             name: col.name,
-            description: `${col.connectorType} collection: ${col.name}`,
+            description: `${col.crawlerType} collection: ${col.name}`,
             mimeType: "application/json",
           })),
         };
@@ -145,7 +145,7 @@ export function registerCollectionResources(
 
       const result = {
         name: col.name,
-        connectorType: col.connectorType,
+        crawlerType: col.crawlerType,
         enabled: col.enabled,
         entityCount,
         lastSyncTime,

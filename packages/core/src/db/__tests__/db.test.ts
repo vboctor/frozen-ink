@@ -43,7 +43,7 @@ describe("Master Database", () => {
     db.insert(collections)
       .values({
         name: "My GitHub",
-        connectorType: "github",
+        crawlerType: "github",
         config: { org: "acme" },
         credentials: { token: "ghp_xxx" },
         dbPath: "/data/github.db",
@@ -54,7 +54,7 @@ describe("Master Database", () => {
     const rows = db.select().from(collections).all();
     expect(rows).toHaveLength(1);
     expect(rows[0].name).toBe("My GitHub");
-    expect(rows[0].connectorType).toBe("github");
+    expect(rows[0].crawlerType).toBe("github");
     expect(rows[0].config).toEqual({ org: "acme" });
     expect(rows[0].credentials).toEqual({ token: "ghp_xxx" });
     expect(rows[0].syncInterval).toBe(3600);
@@ -202,7 +202,7 @@ describe("Collection Database", () => {
     // sync_state
     db.insert(syncState)
       .values({
-        connectorType: "github",
+        crawlerType: "github",
         cursor: { since: "2024-01-01T00:00:00Z" },
       })
       .run();

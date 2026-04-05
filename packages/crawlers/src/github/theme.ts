@@ -9,7 +9,7 @@ function slugify(text: string): string {
 }
 
 export class GitHubTheme implements Theme {
-  connectorType = "github";
+  crawlerType = "github";
 
   render(context: ThemeRenderContext): string {
     const { entity } = context;

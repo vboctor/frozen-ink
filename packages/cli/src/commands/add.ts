@@ -7,16 +7,17 @@ import {
   getCollectionDb,
   collections,
 } from "@veecontext/core";
-import { createDefaultRegistry } from "@veecontext/connectors";
+import { createDefaultRegistry } from "@veecontext/crawlers";
 
 export const addCommand = new Command("add")
   .description("Add a new collection")
-  .argument("<connector>", "Connector type (e.g., github)")
+  .argument("<crawler>", "Crawler type (e.g., github)")
   .requiredOption("--name <name>", "Collection name")
   .option("--token <token>", "Authentication token")
   .option("--owner <owner>", "Repository owner (for github)")
   .option("--repo <repo>", "Repository name (for github)")
-  .action(async (connectorType: string, opts: Record<string, string>) => {
+  .option("--path <path>", "Path to local vault (for obsidian)")
+  .action(async (crawlerType: string, opts: Record<string, string>) => {
     const home = getVeeContextHome();
     const masterDbPath = join(home, "master.db");
 
@@ -26,21 +27,21 @@ export const addCommand = new Command("add")
     }
 
     const registry = createDefaultRegistry();
-    if (!registry.has(connectorType)) {
+    if (!registry.has(crawlerType)) {
       console.error(
-        `Unknown connector type: ${connectorType}. Available: ${registry.getRegisteredTypes().join(", ")}`,
+        `Unknown crawler type: ${crawlerType}. Available: ${registry.getRegisteredTypes().join(", ")}`,
       );
       process.exit(1);
     }
 
-    // Build credentials and config based on connector type
+    // Build credentials and config based on crawler type
     const credentials: Record<string, unknown> = {};
     const config: Record<string, unknown> = {};
 
-    if (connectorType === "github") {
+    if (crawlerType === "github") {
       if (!opts.token || !opts.owner || !opts.repo) {
         console.error(
-          "GitHub connector requires --token, --owner, and --repo",
+          "GitHub crawler requires --token, --owner, and --repo",
         );
         process.exit(1);
       }
@@ -49,13 +50,22 @@ export const addCommand = new Command("add")
       credentials.repo = opts.repo;
       config.owner = opts.owner;
       config.repo = opts.repo;
+    } else if (crawlerType === "obsidian") {
+      if (!opts.path) {
+        console.error("Obsidian crawler requires --path <vault-path>");
+        process.exit(1);
+      }
+      const { resolve } = await import("path");
+      const vaultPath = resolve(opts.path);
+      credentials.vaultPath = vaultPath;
+      config.vaultPath = vaultPath;
     }
 
     // Validate credentials
-    const factory = registry.get(connectorType)!;
-    const connector = factory();
+    const factory = registry.get(crawlerType)!;
+    const crawler = factory();
     console.log("Validating credentials...");
-    const valid = await connector.validateCredentials(credentials);
+    const valid = await crawler.validateCredentials(credentials);
 
     if (!valid) {
       console.error("Credential validation failed. Check your token and access.");
@@ -76,14 +86,14 @@ export const addCommand = new Command("add")
     db.insert(collections)
       .values({
         name: opts.name,
-        connectorType,
+        crawlerType,
         config,
         credentials,
         dbPath: collectionDbPath,
       })
       .run();
 
-    console.log(`Collection "${opts.name}" created (${connectorType})`);
+    console.log(`Collection "${opts.name}" created (${crawlerType})`);
     console.log(`  Database: ${collectionDbPath}`);
     console.log(`  Run "vctx sync" to start syncing`);
   });

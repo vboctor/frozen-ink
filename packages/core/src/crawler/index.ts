@@ -1,9 +1,9 @@
 export type {
-  Connector,
-  ConnectorMetadata,
+  Crawler,
+  CrawlerMetadata,
   SyncCursor,
   SyncResult,
-  ConnectorEntityData,
+  CrawlerEntityData,
 } from "./interface";
-export { ConnectorRegistry, type ConnectorFactory } from "./registry";
+export { CrawlerRegistry, type CrawlerFactory } from "./registry";
 export { SyncEngine, type SyncEngineOptions } from "./sync-engine";

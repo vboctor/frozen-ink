@@ -32,7 +32,7 @@ function makeIssueContext(overrides: Partial<ThemeRenderContext["entity"]> = {})
       ...overrides,
     },
     collectionName: "acme-app",
-    connectorType: "github",
+    crawlerType: "github",
   };
 }
 
@@ -68,7 +68,7 @@ function makePRContext(overrides: Partial<ThemeRenderContext["entity"]> = {}): T
       ...overrides,
     },
     collectionName: "acme-app",
-    connectorType: "github",
+    crawlerType: "github",
   };
 }
 

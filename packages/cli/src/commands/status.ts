@@ -26,13 +26,13 @@ export const statusCommand = new Command("status")
     const collectionRows = db.select().from(collections).all();
 
     if (collectionRows.length === 0) {
-      console.log("No collections configured. Run: vctx add <connector>");
+      console.log("No collections configured. Run: vctx add <crawler>");
       return;
     }
 
     for (const col of collectionRows) {
       const status = col.enabled ? "enabled" : "disabled";
-      console.log(`\n${col.name} (${col.connectorType}) [${status}]`);
+      console.log(`\n${col.name} (${col.crawlerType}) [${status}]`);
 
       if (!existsSync(col.dbPath)) {
         console.log("  Database not found");

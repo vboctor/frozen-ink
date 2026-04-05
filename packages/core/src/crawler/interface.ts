@@ -2,7 +2,7 @@ export interface SyncCursor {
   [key: string]: unknown;
 }
 
-export interface ConnectorEntityData {
+export interface CrawlerEntityData {
   externalId: string;
   entityType: string;
   title: string;
@@ -14,6 +14,7 @@ export interface ConnectorEntityData {
     filename: string;
     mimeType: string;
     content: Buffer | Uint8Array;
+    storagePath?: string;
   }[];
   relations?: {
     targetExternalId: string;
@@ -22,13 +23,13 @@ export interface ConnectorEntityData {
 }
 
 export interface SyncResult {
-  entities: ConnectorEntityData[];
+  entities: CrawlerEntityData[];
   nextCursor: SyncCursor | null;
   hasMore: boolean;
   deletedExternalIds: string[];
 }
 
-export interface ConnectorMetadata {
+export interface CrawlerMetadata {
   type: string;
   displayName: string;
   description: string;
@@ -36,8 +37,8 @@ export interface ConnectorMetadata {
   credentialFields: string[];
 }
 
-export interface Connector {
-  metadata: ConnectorMetadata;
+export interface Crawler {
+  metadata: CrawlerMetadata;
   initialize(
     config: Record<string, unknown>,
     credentials: Record<string, unknown>,

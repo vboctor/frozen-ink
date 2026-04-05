@@ -8,7 +8,7 @@ import {
   syncRuns,
   entityRelations,
 } from "../db/collection-schema";
-import type { Connector, ConnectorEntityData, SyncCursor } from "./interface";
+import type { Crawler, CrawlerEntityData, SyncCursor } from "./interface";
 import type { ThemeEngine } from "../theme/engine";
 import type { StorageBackend } from "../storage/interface";
 
@@ -19,7 +19,7 @@ function computeHash(data: Record<string, unknown>): string {
 }
 
 export interface SyncEngineOptions {
-  connector: Connector;
+  crawler: Crawler;
   dbPath: string;
   collectionName: string;
   themeEngine: ThemeEngine;
@@ -28,7 +28,7 @@ export interface SyncEngineOptions {
 }
 
 export class SyncEngine {
-  private connector: Connector;
+  private crawler: Crawler;
   private db: ReturnType<typeof getCollectionDb>;
   private collectionName: string;
   private themeEngine: ThemeEngine;
@@ -36,7 +36,7 @@ export class SyncEngine {
   private markdownBasePath: string;
 
   constructor(options: SyncEngineOptions) {
-    this.connector = options.connector;
+    this.crawler = options.crawler;
     this.db = getCollectionDb(options.dbPath);
     this.collectionName = options.collectionName;
     this.themeEngine = options.themeEngine;
@@ -45,7 +45,7 @@ export class SyncEngine {
   }
 
   async run(): Promise<void> {
-    const connectorType = this.connector.metadata.type;
+    const crawlerType = this.crawler.metadata.type;
     const startedAt = new Date().toISOString().replace("T", " ").replace("Z", "");
 
     // Create sync_run record
@@ -70,18 +70,18 @@ export class SyncEngine {
       const [stateRow] = this.db
         .select()
         .from(syncState)
-        .where(eq(syncState.connectorType, connectorType))
+        .where(eq(syncState.crawlerType, crawlerType))
         .all();
       let cursor: SyncCursor | null = (stateRow?.cursor as SyncCursor) ?? null;
 
       // Sync loop
       let hasMore = true;
       while (hasMore) {
-        const result = await this.connector.sync(cursor);
+        const result = await this.crawler.sync(cursor);
 
         // Process entities
         for (const entityData of result.entities) {
-          const counts = await this.upsertEntity(entityData, connectorType);
+          const counts = await this.upsertEntity(entityData, crawlerType);
           created += counts.created;
           updated += counts.updated;
         }
@@ -111,7 +111,7 @@ export class SyncEngine {
         } else {
           this.db
             .insert(syncState)
-            .values({ connectorType, cursor: cursor as Record<string, unknown> })
+            .values({ crawlerType, cursor: cursor as Record<string, unknown> })
             .run();
         }
       }
@@ -148,8 +148,8 @@ export class SyncEngine {
   }
 
   private async upsertEntity(
-    entityData: ConnectorEntityData,
-    connectorType: string,
+    entityData: CrawlerEntityData,
+    crawlerType: string,
   ): Promise<{ created: number; updated: number }> {
     const contentHash = entityData.contentHash ?? computeHash(entityData.data);
 
@@ -167,8 +167,8 @@ export class SyncEngine {
       }
 
       // Render markdown
-      const markdown = this.renderMarkdown(entityData, connectorType);
-      const filePath = this.getMarkdownPath(entityData, connectorType);
+      const markdown = this.renderMarkdown(entityData, crawlerType);
+      const filePath = this.getMarkdownPath(entityData, crawlerType);
       await this.storage.write(filePath, markdown);
 
       // Update entity
@@ -201,8 +201,8 @@ export class SyncEngine {
     }
 
     // New entity — render markdown
-    const markdown = this.renderMarkdown(entityData, connectorType);
-    const filePath = this.getMarkdownPath(entityData, connectorType);
+    const markdown = this.renderMarkdown(entityData, crawlerType);
+    const filePath = this.getMarkdownPath(entityData, crawlerType);
     await this.storage.write(filePath, markdown);
 
     // Insert entity
@@ -240,7 +240,7 @@ export class SyncEngine {
 
   private async syncAttachments(
     entityId: number,
-    entityData: ConnectorEntityData,
+    entityData: CrawlerEntityData,
   ): Promise<void> {
     // Remove old attachments
     this.db.delete(attachments).where(eq(attachments.entityId, entityId)).run();
@@ -248,7 +248,7 @@ export class SyncEngine {
     if (!entityData.attachments?.length) return;
 
     for (const att of entityData.attachments) {
-      const storagePath = `attachments/${entityData.externalId}/${att.filename}`;
+      const storagePath = att.storagePath ?? `attachments/${entityData.externalId}/${att.filename}`;
       await this.storage.write(storagePath, Buffer.from(att.content));
 
       this.db
@@ -265,8 +265,8 @@ export class SyncEngine {
   }
 
   private renderMarkdown(
-    entityData: ConnectorEntityData,
-    connectorType: string,
+    entityData: CrawlerEntityData,
+    crawlerType: string,
   ): string {
     return this.themeEngine.render({
       entity: {
@@ -278,15 +278,15 @@ export class SyncEngine {
         tags: entityData.tags,
       },
       collectionName: this.collectionName,
-      connectorType,
+      crawlerType,
     });
   }
 
   private getMarkdownPath(
-    entityData: ConnectorEntityData,
-    connectorType: string,
+    entityData: CrawlerEntityData,
+    crawlerType: string,
   ): string {
-    if (this.themeEngine.has(connectorType)) {
+    if (this.themeEngine.has(crawlerType)) {
       const themePath = this.themeEngine.getFilePath({
         entity: {
           externalId: entityData.externalId,
@@ -297,7 +297,7 @@ export class SyncEngine {
           tags: entityData.tags,
         },
         collectionName: this.collectionName,
-        connectorType,
+        crawlerType,
       });
       return `${this.markdownBasePath}/${themePath}`;
     }

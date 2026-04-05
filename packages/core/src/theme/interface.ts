@@ -8,11 +8,11 @@ export interface ThemeRenderContext {
     tags?: string[];
   };
   collectionName: string;
-  connectorType: string;
+  crawlerType: string;
 }
 
 export interface Theme {
-  connectorType: string;
+  crawlerType: string;
   render(context: ThemeRenderContext): string;
   getFilePath(context: ThemeRenderContext): string;
 }

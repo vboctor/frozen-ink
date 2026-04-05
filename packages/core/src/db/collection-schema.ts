@@ -39,7 +39,7 @@ export const attachments = sqliteTable("attachments", {
 
 export const syncState = sqliteTable("sync_state", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  connectorType: text("connector_type").notNull(),
+  crawlerType: text("crawler_type").notNull(),
   cursor: text("cursor", { mode: "json" }).$type<Record<string, unknown>>(),
   updatedAt: text("updated_at")
     .notNull()
