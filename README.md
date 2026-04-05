@@ -51,102 +51,89 @@ Each crawler syncs a different data source into VeeContext. See individual docs 
 
 ## Quick Start
 
+All commands below run from the **repository root**. No global install required.
+
 ```bash
 # Install dependencies
 bun install
 
-# Install the vctx CLI globally (one-time)
-cd packages/cli && bun link && cd ../..
-# → vctx is now available in your PATH
-
-# Initialize VeeContext
-vctx init
+# Initialize VeeContext (~/.veecontext/)
+bun run vctx -- init
 ```
-
-> **Without global install** use the root script instead:
-> `bun run vctx -- <command>`  e.g. `bun run vctx -- init`
 
 ### Adding collections
 
 **Obsidian vault** — syncs all markdown notes and attachments:
 ```bash
-vctx add obsidian --name my-vault --path ~/Documents/MyVault
+bun run vctx -- add obsidian --name my-vault --path ~/Documents/MyVault
 ```
 
 **Git repository** — syncs commits, branches, and tags:
 ```bash
-vctx add git --name my-repo --path ~/projects/my-repo
+bun run vctx -- add git --name my-repo --path ~/projects/my-repo
 
 # Include full commit diffs in the rendered markdown:
-vctx add git --name my-repo --path ~/projects/my-repo --include-diffs
+bun run vctx -- add git --name my-repo --path ~/projects/my-repo --include-diffs
 ```
 
 **GitHub repository** — syncs issues and pull requests via the GitHub API:
 ```bash
-vctx add github --name my-gh \
+bun run vctx -- add github --name my-gh \
   --token ghp_yourPersonalAccessToken \
   --owner your-username \
   --repo your-repo-name
 ```
 
-### Syncing and running
+### Syncing
 
 ```bash
 # Sync all collections once
-vctx sync
+bun run vctx -- sync
 
 # Sync a single collection
-vctx sync --collection my-vault
+bun run vctx -- sync --collection my-vault
+
+# Check sync status
+bun run vctx -- status
 
 # Start the background daemon (syncs on the configured interval)
-vctx daemon start
-vctx daemon status
-vctx daemon stop
-
-# Start the web UI + API server
-bun run serve            # build UI then serve on http://localhost:3000
-bun run dev              # dev mode: API on :3000, hot-reload UI on :5173
+bun run vctx -- daemon start
+bun run vctx -- daemon status
+bun run vctx -- daemon stop
 ```
 
-## Running the Web UI
-
-**Development** — API server on port 3000, Vite dev server on port 5173 with hot reload:
+### Running the web UI
 
 ```bash
+# Dev mode: API on :3000, hot-reload UI on :5173
 bun run dev
-# API:  http://localhost:3000
-# UI:   http://localhost:5173  (proxies /api → 3000)
+
+# Production: build UI then serve everything on :3000
+bun run serve
+
+# MCP server only (for AI assistants, no web UI)
+bun run vctx -- serve --mcp-only
 ```
 
-**Production** — build the UI then serve everything on a single port:
-
-```bash
-bun run serve           # builds UI then serves on http://localhost:3000
-bun run serve -- --port 4000   # custom port
-```
-
-The `serve` command starts the REST API and serves the compiled UI as a static SPA from the same port. No separate process needed.
-
-**MCP server only** (for AI assistants, no web UI):
-
-```bash
-vctx serve --mcp-only
-# or: bun run vctx -- serve --mcp-only
-```
+> **Optional: install `vctx` globally** to drop the `bun run vctx --` prefix:
+> ```bash
+> cd packages/cli && bun link && cd ../..
+> vctx sync   # works from anywhere
+> ```
 
 ## CLI Commands
 
 | Command | Description |
 |---------|-------------|
-| `vctx init` | Initialize `~/.veecontext/` directory and config |
-| `vctx add <type>` | Add a new collection (github, obsidian, git) |
-| `vctx sync` | Sync all enabled collections (or `--collection <name>`) |
-| `vctx status` | Show sync status for all collections |
-| `vctx search <query>` | Full-text search across all collections |
-| `vctx collections list\|remove\|enable\|disable` | Manage collections |
-| `vctx config get\|set\|list` | View/edit configuration |
-| `vctx serve` | Start API server + MCP server |
-| `vctx daemon start\|stop\|status` | Background sync daemon |
+| `bun run vctx -- init` | Initialize `~/.veecontext/` directory and config |
+| `bun run vctx -- add <type>` | Add a new collection (github, obsidian, git) |
+| `bun run vctx -- sync` | Sync all enabled collections (or `--collection <name>`) |
+| `bun run vctx -- status` | Show sync status for all collections |
+| `bun run vctx -- search <query>` | Full-text search across all collections |
+| `bun run vctx -- collections list\|remove\|enable\|disable` | Manage collections |
+| `bun run vctx -- config get\|set\|list` | View/edit configuration |
+| `bun run vctx -- serve` | Start API server + MCP server |
+| `bun run vctx -- daemon start\|stop\|status` | Background sync daemon |
 
 ## Web UI
 
