@@ -345,6 +345,27 @@ export class SyncEngine {
     }
   }
 
+  /**
+   * Returns a lookupEntityPath callback for use in ThemeRenderContext.
+   * Resolves an externalId to its wikilink-compatible path (relative, no .md extension).
+   */
+  private makeLookupEntityPath(): (externalId: string) => string | undefined {
+    return (externalId: string) => {
+      const rows = this.db
+        .select({ markdownPath: entities.markdownPath })
+        .from(entities)
+        .where(eq(entities.externalId, externalId))
+        .all();
+      const markdownPath = rows[0]?.markdownPath;
+      if (!markdownPath) return undefined;
+      const base = `${this.markdownBasePath}/`;
+      const relative = markdownPath.startsWith(base)
+        ? markdownPath.slice(base.length)
+        : markdownPath;
+      return relative.endsWith(".md") ? relative.slice(0, -3) : relative;
+    };
+  }
+
   private renderMarkdown(
     entityData: CrawlerEntityData,
     crawlerType: string,
@@ -360,6 +381,7 @@ export class SyncEngine {
       },
       collectionName: this.collectionName,
       crawlerType,
+      lookupEntityPath: this.makeLookupEntityPath(),
     });
   }
 
@@ -414,6 +436,7 @@ export class SyncEngine {
         },
         collectionName: this.collectionName,
         crawlerType,
+        lookupEntityPath: this.makeLookupEntityPath(),
       });
       await this.storage.write(entity.markdownPath, expected);
       const writtenStat = await this.storage.stat(entity.markdownPath);

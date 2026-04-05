@@ -29,16 +29,18 @@ function preprocessMarkdown(raw: string, collection: string): string {
       `![${path}](/api/attachments/${encodeURIComponent(collection)}/${path})`,
   );
 
-  // Replace wikilinks: [[target|label]] → [label](#wikilink/target)
-  // and [[target]] → [target](#wikilink/target)
+  // Replace wikilinks: [[target|label]] → [label](#wikilink/encoded-target)
+  // and [[target]] → [target](#wikilink/encoded-target)
+  // encodeURIComponent ensures spaces and special chars survive the URL round-trip.
   content = content.replace(
     /\[\[([^\]|]+)\|([^\]]+)\]\]/g,
     (_match, target: string, label: string) =>
-      `[${label}](${WIKILINK_PREFIX}${target})`,
+      `[${label}](${WIKILINK_PREFIX}${encodeURIComponent(target)})`,
   );
   content = content.replace(
     /\[\[([^\]]+)\]\]/g,
-    (_match, target: string) => `[${target}](${WIKILINK_PREFIX}${target})`,
+    (_match, target: string) =>
+      `[${target}](${WIKILINK_PREFIX}${encodeURIComponent(target)})`,
   );
 
   return content;
@@ -78,7 +80,7 @@ export default function MarkdownView({
     () => ({
       a({ href, children }) {
         if (href?.startsWith(WIKILINK_PREFIX)) {
-          const target = href.slice(WIKILINK_PREFIX.length);
+          const target = decodeURIComponent(href.slice(WIKILINK_PREFIX.length));
           return (
             <a
               href="#"

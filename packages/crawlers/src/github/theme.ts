@@ -80,9 +80,10 @@ export class GitHubTheme implements Theme {
     // Related issues via wikilinks
     const relatedNumbers = this.extractIssueRefs(d.body as string | null);
     if (relatedNumbers.length > 0) {
-      const links = relatedNumbers.map((num) =>
-        wikilink(`issues/${num}`, `#${num}`),
-      );
+      const links = relatedNumbers.map((num) => {
+        const resolved = context.lookupEntityPath?.(`issue-${num}`);
+        return wikilink(resolved ?? `issues/${num}`, `#${num}`);
+      });
       sections.push(
         callout("link", "Related Issues", links.join("\n")),
       );
@@ -162,9 +163,10 @@ export class GitHubTheme implements Theme {
     // Linked issues via wikilinks
     const relatedNumbers = this.extractIssueRefs(d.body as string | null);
     if (relatedNumbers.length > 0) {
-      const links = relatedNumbers.map((num) =>
-        wikilink(`issues/${num}`, `#${num}`),
-      );
+      const links = relatedNumbers.map((num) => {
+        const resolved = context.lookupEntityPath?.(`issue-${num}`);
+        return wikilink(resolved ?? `issues/${num}`, `#${num}`);
+      });
       sections.push(
         callout("link", "Linked Issues", links.join("\n")),
       );

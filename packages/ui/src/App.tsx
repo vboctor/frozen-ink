@@ -337,10 +337,39 @@ export default function App() {
 
   const handleWikilinkNavigate = useCallback(
     (target: string) => {
-      const file = target.endsWith(".md") ? target : `${target}.md`;
-      if (selectedCollection) navigateTo(selectedCollection, file);
+      if (!selectedCollection) return;
+      const directPath = target.endsWith(".md") ? target : `${target}.md`;
+
+      // Flatten the file tree into a list of all file paths for lookup
+      function flattenTree(nodes: TreeNode[]): string[] {
+        const paths: string[] = [];
+        for (const node of nodes) {
+          if (node.type === "file") paths.push(node.path);
+          if (node.children) paths.push(...flattenTree(node.children));
+        }
+        return paths;
+      }
+      const allFiles = flattenTree(fileTree);
+
+      // 1. Direct path match (exact file exists)
+      if (allFiles.includes(directPath)) {
+        navigateTo(selectedCollection, directPath);
+        return;
+      }
+
+      // 2. Obsidian-style: match by file stem anywhere in the tree
+      // e.g. [[VeeClaw - CLI Channel]] matches "notes/VeeClaw - CLI Channel.md"
+      const stem = directPath.includes("/") ? directPath.split("/").pop()! : directPath;
+      const match = allFiles.find((f) => f === stem || f.endsWith(`/${stem}`));
+      if (match) {
+        navigateTo(selectedCollection, match);
+        return;
+      }
+
+      // 3. Fall back to direct path (will show not-found if missing)
+      navigateTo(selectedCollection, directPath);
     },
-    [selectedCollection, navigateTo],
+    [selectedCollection, navigateTo, fileTree],
   );
 
   const handleFileSelect = useCallback(

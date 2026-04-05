@@ -4,13 +4,18 @@ import { join } from "path";
 import {
   getVeeContextHome,
   getMasterDb,
+  getCollectionDb,
   collections,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
   syncState,
+  entities,
+  entityTags,
+  attachments,
+  entityLinks,
+  entityRelations,
 } from "@veecontext/core";
-import { eq } from "drizzle-orm";
 import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@veecontext/crawlers";
 
 export const syncCommand = new Command("sync")
@@ -70,12 +75,16 @@ export const syncCommand = new Command("sync")
         col.credentials as Record<string, unknown>,
       );
 
-      // Clear cursor for full re-sync
+      // Full re-sync: wipe all collection data so the sync starts clean
       if (opts.full) {
-        const { getCollectionDb } = await import("@veecontext/core");
         const colDb = getCollectionDb(col.dbPath);
-        colDb.delete(syncState).where(eq(syncState.crawlerType, col.crawlerType)).run();
-        console.log("  Cleared sync cursor for full re-sync");
+        colDb.delete(entityLinks).run();
+        colDb.delete(entityRelations).run();
+        colDb.delete(attachments).run();
+        colDb.delete(entityTags).run();
+        colDb.delete(entities).run();
+        colDb.delete(syncState).run();
+        console.log(`  Cleared all data for full re-sync`);
       }
 
       const collectionDir = join(home, "collections", col.name);
