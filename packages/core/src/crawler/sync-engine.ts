@@ -31,11 +31,13 @@ function statMatches(
 /** Extract wikilink targets from rendered markdown. Returns unique target strings. */
 function extractWikilinks(markdown: string): string[] {
   const targets = new Set<string>();
-  // Match [[target]] and [[target|label]] patterns
-  const regex = /\[\[([^\]|]+?)(?:\|[^\]]+?)?\]\]/g;
+  // Negative lookbehind excludes ![[embeds]] (images / transclusions).
+  // Capture group strips [[target#section]] and [[target^blockref]] anchors.
+  const regex = /(?<!!)\[\[([^\]|]+?)(?:[#^][^\]|]*)?(?:\|[^\]]+?)?\]\]/g;
   let match;
   while ((match = regex.exec(markdown)) !== null) {
-    targets.add(match[1]);
+    const target = match[1].trim();
+    if (target) targets.add(target);
   }
   return Array.from(targets);
 }

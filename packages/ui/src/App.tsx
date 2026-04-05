@@ -6,7 +6,7 @@ import MarkdownView from "./components/MarkdownView";
 import SearchBar from "./components/SearchBar";
 import ThemeSwitcher, { type ThemeId } from "./components/ThemeSwitcher";
 import TabBar, { type Tab } from "./components/TabBar";
-import BacklinksPanel, { type Backlink } from "./components/BacklinksPanel";
+import LinksPanel, { type Backlink, type LinkItem } from "./components/LinksPanel";
 import type { Collection, TreeNode } from "./types";
 
 function loadTheme(): ThemeId {
@@ -46,6 +46,38 @@ function saveSidebarWidth(width: number) {
   }
 }
 
+function loadLastCollection(): string | null {
+  try {
+    return localStorage.getItem("veecontext-collection") ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastCollection(name: string) {
+  try {
+    localStorage.setItem("veecontext-collection", name);
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+function loadLastFile(collection: string): string | null {
+  try {
+    return localStorage.getItem(`veecontext-file:${collection}`) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastFile(collection: string, file: string) {
+  try {
+    localStorage.setItem(`veecontext-file:${collection}`, file);
+  } catch {
+    // localStorage unavailable
+  }
+}
+
 function titleFromPath(file: string): string {
   return (
     file
@@ -69,6 +101,8 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
+  const [outgoingLinks, setOutgoingLinks] = useState<LinkItem[]>([]);
+  const [backlinksOpen, setBacklinksOpen] = useState(true);
 
   // Tabs
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -83,6 +117,9 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
   const resizingRef = useRef(false);
   const resizeStartRef = useRef({ x: 0, width: 0 });
+  // Tracks which collection has already had its last file restored to prevent
+  // re-triggering when unrelated state causes allFiles to recompute.
+  const restoredCollectionRef = useRef<string | null>(null);
 
   // Derive the active file from the active tab
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
@@ -108,7 +145,15 @@ export default function App() {
   useEffect(() => {
     fetch("/api/collections")
       .then((r) => r.json())
-      .then(setCollections)
+      .then((data: Collection[]) => {
+        const sorted = [...data].sort((a, b) => a.name.localeCompare(b.name));
+        setCollections(sorted);
+        if (!selectedCollection && sorted.length > 0) {
+          const last = loadLastCollection();
+          const found = last ? sorted.find((c) => c.name === last) : null;
+          setSelectedCollection(found ? found.name : sorted[0].name);
+        }
+      })
       .catch(console.error);
   }, []);
 
@@ -117,11 +162,38 @@ export default function App() {
       setFileTree([]);
       return;
     }
+    saveLastCollection(selectedCollection);
+    // Reset restore guard whenever the collection changes so the new collection
+    // gets a fresh restore attempt once its tree loads.
+    restoredCollectionRef.current = null;
     fetch(`/api/collections/${encodeURIComponent(selectedCollection)}/tree`)
       .then((r) => r.json())
       .then(setFileTree)
       .catch(console.error);
   }, [selectedCollection]);
+
+  // Save the current file whenever it changes
+  useEffect(() => {
+    if (selectedCollection && selectedFile) {
+      saveLastFile(selectedCollection, selectedFile);
+    }
+  }, [selectedCollection, selectedFile]);
+
+  // Restore the last opened file once the file tree is ready for a collection.
+  // The ref guard ensures this fires exactly once per collection switch.
+  useEffect(() => {
+    if (!selectedCollection || allFiles.length === 0) return;
+    if (restoredCollectionRef.current === selectedCollection) return;
+    restoredCollectionRef.current = selectedCollection;
+    if (tabs.some((t) => t.collection === selectedCollection)) return;
+    const lastFile = loadLastFile(selectedCollection);
+    if (lastFile && allFiles.includes(lastFile)) {
+      navigateTo(selectedCollection, lastFile);
+    }
+  // navigateTo and tabs are intentionally omitted — we only want to trigger
+  // on collection/tree changes, not on every tab update.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCollection, allFiles]);
 
   useEffect(() => {
     if (!selectedCollection || !selectedFile) {
@@ -153,6 +225,20 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : []))
       .then(setBacklinks)
       .catch(() => setBacklinks([]));
+  }, [selectedCollection, selectedFile]);
+
+  // Fetch outgoing links for the current file
+  useEffect(() => {
+    if (!selectedCollection || !selectedFile) {
+      setOutgoingLinks([]);
+      return;
+    }
+    fetch(
+      `/api/collections/${encodeURIComponent(selectedCollection)}/outgoing-links/${selectedFile}`,
+    )
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setOutgoingLinks)
+      .catch(() => setOutgoingLinks([]));
   }, [selectedCollection, selectedFile]);
 
   // Core navigation: open a file, optionally in a new tab
@@ -444,6 +530,17 @@ export default function App() {
           >
             ⌘P
           </button>
+          <button
+            className={`nav-btn icon-btn${backlinksOpen ? " active" : ""}`}
+            onClick={() => setBacklinksOpen((o) => !o)}
+            title="Toggle links panel"
+            aria-label="Toggle links panel"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+          </button>
         </div>
       </div>
       <div className="main-body">
@@ -466,9 +563,11 @@ export default function App() {
             </div>
           )}
         </div>
-        {!loading && selectedFile && fileContent !== null && (
-          <BacklinksPanel
+        {!loading && selectedFile && (
+          <LinksPanel
             backlinks={backlinks}
+            outgoingLinks={outgoingLinks}
+            open={backlinksOpen}
             onNavigate={handleWikilinkNavigate}
           />
         )}

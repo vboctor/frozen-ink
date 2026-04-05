@@ -67,6 +67,10 @@ export class SearchIndexer {
     );
   }
 
+  clearIndex(): void {
+    this.sqlite.exec("DELETE FROM entities_fts");
+  }
+
   search(query: string, filters?: SearchFilters): SearchResult[] {
     // Transform into FTS5 prefix query so partial words match.
     // e.g. "fix lo" → "fix* lo*" matches "fix-login-bug" title.

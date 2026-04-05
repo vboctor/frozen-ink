@@ -269,7 +269,7 @@ export class ObsidianCrawler implements Crawler {
   }
 
   private extractTitle(content: string, relativePath: string): string {
-    // Try to get title from first H1 heading (skip frontmatter first)
+    // Try to get title from first H1 heading (skip frontmatter and code blocks)
     let body = content;
     if (body.startsWith("---")) {
       const endIdx = body.indexOf("---", 3);
@@ -278,7 +278,10 @@ export class ObsidianCrawler implements Crawler {
       }
     }
 
-    const h1Match = body.match(/^#\s+(.+)$/m);
+    // Strip fenced code blocks so we don't match H1 headings inside them
+    const stripped = body.replace(/^(`{3,}|~{3,}).*\n[\s\S]*?\n\1\s*$/gm, "");
+
+    const h1Match = stripped.match(/^#\s+(.+)$/m);
     if (h1Match) return h1Match[1].trim();
 
     // Fall back to filename without extension

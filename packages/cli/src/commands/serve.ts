@@ -13,7 +13,7 @@ import {
   loadConfig,
 } from "@veecontext/core";
 import { startStdioServer } from "@veecontext/mcp";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, like } from "drizzle-orm";
 
 const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -333,14 +333,25 @@ export function createApiServer(
 
         const colDb = getCollectionDb(col.dbPath);
 
-        // The UI passes the file path relative to the markdown dir (e.g. "commit/abc.md").
-        // Links in the DB store the full markdown path (e.g. "md/commit/abc.md").
-        // Try both the raw path and with "md/" prefix for matching.
-        const targetVariants = [targetFile, `md/${targetFile}`];
+        // The UI passes the file path relative to the markdown dir (e.g. "issues/42.md").
+        // Links in the DB store the full path including the base dir (e.g. "markdown/issues/42.md").
+        const targetVariants = [targetFile, `markdown/${targetFile}`];
 
         // Also match without .md extension since wikilinks resolve to path + ".md"
         if (!targetFile.endsWith(".md")) {
-          targetVariants.push(`${targetFile}.md`, `md/${targetFile}.md`);
+          targetVariants.push(`${targetFile}.md`, `markdown/${targetFile}.md`);
+        }
+
+        // Obsidian-style: wikilinks like [[VeeClaw - Use Cases]] store the stem without
+        // the folder prefix (e.g. "markdown/VeeClaw - Use Cases.md") even when the actual
+        // file lives in a subdirectory ("Projects/VeeClaw - Use Cases.md").
+        // Add filename-only variants to catch those cross-folder backlinks.
+        const filename = targetFile.includes("/") ? targetFile.split("/").pop()! : null;
+        if (filename) {
+          targetVariants.push(filename, `markdown/${filename}`);
+          if (!filename.endsWith(".md")) {
+            targetVariants.push(`${filename}.md`, `markdown/${filename}.md`);
+          }
         }
 
         const seen = new Set<number>();
@@ -370,17 +381,103 @@ export function createApiServer(
               .all();
 
             if (entity) {
+              // Use filename stem as title (more reliable than entity.title which
+              // can match H1 headings inside code blocks)
+              const relPath = entity.markdownPath?.replace(/^markdown\//, "");
+              const displayTitle = relPath
+                ? relPath.replace(/\.md$/, "").split("/").pop()!
+                : entity.title;
               results.push({
                 entityId: entity.id,
                 externalId: entity.externalId,
                 entityType: entity.entityType,
-                title: entity.title,
+                title: displayTitle,
                 markdownPath: entity.markdownPath,
               });
             }
           }
         }
 
+        return jsonResponse(results);
+      }
+
+      // GET /api/collections/:name/outgoing-links/*sourcePath
+      // Returns all entities that the given file links to
+      const outgoingMatch = path.match(
+        /^\/api\/collections\/([^/]+)\/outgoing-links\/(.+)$/,
+      );
+      if (outgoingMatch && req.method === "GET") {
+        const name = decodeURIComponent(outgoingMatch[1]);
+        const sourceFile = decodeURIComponent(outgoingMatch[2]);
+
+        const db = getMasterDb(masterDbPath);
+        const [col] = db.select().from(collections).where(eq(collections.name, name)).all();
+        if (!col) return errorResponse("Collection not found", 404);
+        if (!existsSync(col.dbPath))
+          return errorResponse("Collection database not found", 404);
+
+        const colDb = getCollectionDb(col.dbPath);
+
+        // sourceMarkdownPath in DB includes the "markdown/" prefix
+        const sourceVariants = [sourceFile, `markdown/${sourceFile}`];
+
+        const seen = new Set<string>();
+        const results: Array<{
+          title: string;
+          markdownPath: string | null;
+        }> = [];
+
+        for (const variant of sourceVariants) {
+          const linkRows = colDb
+            .select()
+            .from(entityLinks)
+            .where(eq(entityLinks.sourceMarkdownPath, variant))
+            .all();
+
+          for (const link of linkRows) {
+            if (seen.has(link.targetPath)) continue;
+            seen.add(link.targetPath);
+
+            // targetPath is already stored as "markdown/{target}.md" by syncLinks().
+            // Entity markdownPath may include subfolders: "markdown/VeeClaw/VeeClaw - Design.md".
+            // 1. Direct match (works when target has no subfolder mismatch)
+            let entity = null;
+            const [e1] = colDb
+              .select()
+              .from(entities)
+              .where(eq(entities.markdownPath, link.targetPath))
+              .all();
+            if (e1) { entity = e1; }
+
+            // 2. Stem match by filename (Obsidian resolves wikilinks by filename alone)
+            if (!entity) {
+              const filename = link.targetPath.split("/").pop();
+              if (filename) {
+                const [e2] = colDb
+                  .select()
+                  .from(entities)
+                  .where(like(entities.markdownPath, `%/${filename}`))
+                  .all();
+                if (e2) { entity = e2; }
+              }
+            }
+
+            if (entity) {
+              const relPath = entity.markdownPath
+                ? entity.markdownPath.replace(/^markdown\//, "")
+                : null;
+              // Use filename stem as title (more reliable than entity.title which
+              // can match H1 headings inside code blocks)
+              const displayTitle = relPath
+                ? relPath.replace(/\.md$/, "").split("/").pop()!
+                : entity.title;
+              results.push({ title: displayTitle, markdownPath: relPath });
+            }
+            // Dangling links (no matching entity) are silently excluded
+          }
+        }
+
+        results.sort((a, b) => a.title.localeCompare(b.title));
         return jsonResponse(results);
       }
 

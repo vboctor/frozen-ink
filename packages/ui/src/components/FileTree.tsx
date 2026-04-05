@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { TreeNode } from "../types";
 
 interface FileTreeProps {
@@ -46,9 +46,18 @@ function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
   }
 
   const isSelected = node.path === selectedFile;
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (isSelected) {
+      btnRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [isSelected]);
+
   return (
     <li className="tree-file" role="treeitem">
       <button
+        ref={btnRef}
         className={`tree-file-button${isSelected ? " selected" : ""}`}
         onClick={(e) => onSelect(node.path, e.metaKey || e.ctrlKey)}
         style={{ paddingLeft: `${depth * 16 + 4}px` }}

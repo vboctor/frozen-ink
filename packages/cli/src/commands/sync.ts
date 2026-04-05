@@ -9,6 +9,7 @@ import {
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
+  SearchIndexer,
   syncState,
   entities,
   entityTags,
@@ -84,6 +85,9 @@ export const syncCommand = new Command("sync")
         colDb.delete(entityTags).run();
         colDb.delete(entities).run();
         colDb.delete(syncState).run();
+        const indexer = new SearchIndexer(col.dbPath);
+        indexer.clearIndex();
+        indexer.close();
         console.log(`  Cleared all data for full re-sync`);
       }
 
