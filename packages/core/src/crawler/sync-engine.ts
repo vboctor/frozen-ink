@@ -9,6 +9,7 @@ import {
   entityRelations,
   entityLinks,
 } from "../db/collection-schema";
+import { SearchIndexer } from "../search/indexer";
 import type { Crawler, CrawlerEntityData, SyncCursor } from "./interface";
 import type { ThemeEngine } from "../theme/engine";
 import type { StorageBackend } from "../storage/interface";
@@ -61,6 +62,7 @@ export class SyncEngine {
   private themeEngine: ThemeEngine;
   private storage: StorageBackend;
   private markdownBasePath: string;
+  private searchIndexer: SearchIndexer;
 
   constructor(options: SyncEngineOptions) {
     this.crawler = options.crawler;
@@ -69,6 +71,7 @@ export class SyncEngine {
     this.themeEngine = options.themeEngine;
     this.storage = options.storage;
     this.markdownBasePath = options.markdownBasePath;
+    this.searchIndexer = new SearchIndexer(options.dbPath);
   }
 
   async run(): Promise<void> {
@@ -233,6 +236,16 @@ export class SyncEngine {
       // Extract and store outgoing links
       this.syncLinks(existing.id, filePath, markdown);
 
+      // Update search index
+      this.searchIndexer.updateIndex({
+        id: existing.id,
+        externalId: entityData.externalId,
+        entityType: entityData.entityType,
+        title: entityData.title,
+        content: markdown,
+        tags: entityData.tags ?? [],
+      });
+
       return { created: 0, updated: 1 };
     }
 
@@ -276,6 +289,16 @@ export class SyncEngine {
 
     // Extract and store outgoing links
     this.syncLinks(inserted.id, filePath, markdown);
+
+    // Add to search index
+    this.searchIndexer.updateIndex({
+      id: inserted.id,
+      externalId: entityData.externalId,
+      entityType: entityData.entityType,
+      title: entityData.title,
+      content: markdown,
+      tags: entityData.tags ?? [],
+    });
 
     return { created: 1, updated: 0 };
   }
@@ -534,6 +557,9 @@ export class SyncEngine {
       .where(eq(entityRelations.targetEntityId, existing.id))
       .run();
     this.db.delete(entities).where(eq(entities.id, existing.id)).run();
+
+    // Remove from search index
+    this.searchIndexer.removeIndex(existing.id);
 
     return true;
   }

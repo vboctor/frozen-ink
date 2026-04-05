@@ -68,12 +68,28 @@ export class SearchIndexer {
   }
 
   search(query: string, filters?: SearchFilters): SearchResult[] {
+    // Transform into FTS5 prefix query so partial words match.
+    // e.g. "fix lo" → "fix* lo*" matches "fix-login-bug" title.
+    // Strip FTS5 special characters to avoid syntax errors.
+    const ftsQuery = query
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((token) => {
+        const safe = token.replace(/["()\^*.]/g, "");
+        return safe ? `${safe}*` : null;
+      })
+      .filter(Boolean)
+      .join(" ");
+
+    if (!ftsQuery) return [];
+
     let sql = `
       SELECT entity_id, external_id, entity_type, title, rank
       FROM entities_fts
       WHERE entities_fts MATCH ?
     `;
-    const params: SQLQueryBindings[] = [query];
+    const params: SQLQueryBindings[] = [ftsQuery];
 
     if (filters?.entityType) {
       sql += ` AND entity_type = ?`;

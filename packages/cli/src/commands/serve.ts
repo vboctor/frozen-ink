@@ -290,10 +290,14 @@ export function createApiServer(
                 .from(entities)
                 .where(eq(entities.id, r.entityId))
                 .all();
+              // Strip the "markdown/" base path prefix so the UI receives a path
+              // relative to the markdown directory (matching what the file tree returns)
+              const rawPath = entity?.markdownPath ?? null;
+              const markdownPath = rawPath ? rawPath.replace(/^markdown\//, "") : null;
               allResults.push({
                 ...r,
                 collection: col.name,
-                markdownPath: entity?.markdownPath ?? null,
+                markdownPath,
               });
             }
           } finally {
