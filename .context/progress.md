@@ -1,0 +1,82 @@
+## Codebase Patterns
+- Bun monorepo with `workspaces: ["packages/*"]` in root package.json
+- TypeScript project references: root tsconfig has `references` + `files: []`, each package has `composite: true`
+- Each package extends `../../tsconfig.json` and sets its own `outDir: "dist"`, `rootDir: "src"`
+- Package naming: `@veecontext/<name>` with `workspace:*` for inter-package deps
+- Entry points: `packages/<name>/src/index.ts`
+- Typecheck: `bun run typecheck` (runs `tsc --build` from root)
+- Tests: `bun test <path>` — uses bun:test built-in runner
+- Database: Drizzle ORM with bun:sqlite, schemas in `packages/core/src/db/`, client factory creates tables via raw SQL CREATE IF NOT EXISTS
+- DB conventions: WAL journal mode, foreign keys ON, JSON columns use `text(..., { mode: "json" })`, timestamps as TEXT with `datetime('now')` default
+
+## US-001: Project scaffold and monorepo setup
+- What was implemented:
+  - Root package.json with workspaces for all 5 packages
+  - Root tsconfig.json with strict mode, ESNext target, Bun types, and project references
+  - .gitignore covering node_modules, *.db, .env, dist/, daemon.pid, .veecontext/, build artifacts
+  - 5 packages: core, connectors, mcp, cli, ui — each with package.json, tsconfig.json, src/index.ts
+  - Inter-package dependencies: connectors/mcp depend on core, cli depends on connectors+mcp
+  - Core deps: drizzle-orm, zod; CLI deps: commander; MCP deps: @modelcontextprotocol/sdk
+  - Dev deps: bun-types, typescript
+  - README.md with project overview
+  - docs/architecture.md, docs/connectors.md, docs/themes.md
+- Files changed:
+  - .gitignore, package.json, tsconfig.json, bun.lock, README.md
+  - packages/{core,connectors,mcp,cli,ui}/package.json
+  - packages/{core,connectors,mcp,cli,ui}/tsconfig.json
+  - packages/{core,connectors,mcp,cli,ui}/src/index.ts
+  - docs/architecture.md, docs/connectors.md, docs/themes.md
+- **Learnings for future iterations:**
+  - `tsc --build` with composite projects emits .js/.d.ts into both src/ and dist/ dirs — make sure .gitignore covers `*.d.ts`, `*.d.ts.map`, `*.js.map`, `packages/*/src/*.js`
+  - Root tsconfig must have `files: []` when using project references to avoid trying to compile all files directly
+  - bun install resolves `workspace:*` dependencies correctly across all packages
+
+## US-002: Core: Database schemas and client factory
+- What was implemented:
+  - Master schema (`packages/core/src/db/master-schema.ts`) with `collections` table: id, name, connectorType, config JSON, credentials JSON, syncInterval, enabled, dbPath, createdAt, updatedAt
+  - Collection schema (`packages/core/src/db/collection-schema.ts`) with 6 tables: entities, entity_tags, attachments, sync_state, sync_runs, entity_relations — all with proper foreign key references
+  - Client factory (`packages/core/src/db/client.ts`) with `getMasterDb(dbPath)` and `getCollectionDb(dbPath)` — creates typed Drizzle instances with auto table creation via CREATE IF NOT EXISTS
+  - Barrel export (`packages/core/src/db/index.ts`) re-exporting schemas and client functions
+  - Updated `packages/core/src/index.ts` to export db module
+  - `drizzle.config.ts` at root pointing to both schema files
+  - Added `drizzle-kit` as root dev dependency
+  - 8 unit tests covering: DB creation, table existence for all tables, full CRUD on collections, entities, entity_tags, attachments, sync_state, sync_runs, and entity_relations
+- Files changed:
+  - packages/core/src/db/master-schema.ts (new)
+  - packages/core/src/db/collection-schema.ts (new)
+  - packages/core/src/db/client.ts (new)
+  - packages/core/src/db/index.ts (new)
+  - packages/core/src/db/__tests__/db.test.ts (new)
+  - packages/core/src/index.ts (modified)
+  - drizzle.config.ts (new)
+  - package.json, bun.lock (drizzle-kit added)
+- **Learnings for future iterations:**
+  - Drizzle ORM with bun:sqlite uses `drizzle-orm/bun-sqlite` driver — no separate `better-sqlite3` package needed
+  - Table creation uses raw SQL in client factory rather than Drizzle migrations — simpler for embedded SQLite use case
+  - JSON columns in SQLite use `text(..., { mode: "json" })` with `$type<T>()` for TypeScript typing
+  - `bun:sqlite` is built into Bun — no extra dependency needed, just `import { Database } from "bun:sqlite"`
+  - Boolean columns use `integer(..., { mode: "boolean" })` since SQLite has no native boolean type
+  - Tests use temp directories with `mkdirSync/rmSync` in beforeEach/afterEach for clean isolation
+
+## US-003: Core: Configuration schema and loader
+- What was implemented:
+  - Zod schema (`packages/core/src/config/schema.ts`) with 6 config sections: db (mode, turso URL/token), storage (mode, S3/R2 config), sync (interval, concurrency, retries), ui (port), mcp (transport, port), logging (level, file)
+  - Default config (`packages/core/src/config/defaults.ts`) with sensible values: local mode, 900s sync interval, port 3000, stdio transport, info logging
+  - Config loader (`packages/core/src/config/loader.ts`) that reads `~/.veecontext/config.json` (or `VEECONTEXT_HOME` override), deep-merges with defaults, applies `VEECONTEXT_*` env var overrides, validates with Zod
+  - `getVeeContextHome()` helper respecting `VEECONTEXT_HOME` env var
+  - Barrel export (`packages/core/src/config/index.ts`) re-exporting schema, defaults, loader, and all types
+  - Updated `packages/core/src/index.ts` to export config module
+  - 16 unit tests covering: complete valid config, defaults for empty config, invalid values rejection (bad mode, bad level, negative interval, non-integer port, invalid URL), default config validation, `getVeeContextHome` with/without env var, loader with no file, config.json merging, env var overrides, env vars overriding file values, invalid config rejection
+- Files changed:
+  - packages/core/src/config/schema.ts (new)
+  - packages/core/src/config/defaults.ts (new)
+  - packages/core/src/config/loader.ts (new)
+  - packages/core/src/config/index.ts (new)
+  - packages/core/src/config/__tests__/config.test.ts (new)
+  - packages/core/src/index.ts (modified)
+- **Learnings for future iterations:**
+  - Zod `.default({})` on object schemas allows omitting entire sections while still populating nested defaults
+  - Deep merge is needed for partial config.json — Zod defaults only apply to missing keys, not partial objects
+  - Env var overrides must convert numeric strings to numbers before Zod validation (Zod won't coerce by default)
+  - Tests must clean up VEECONTEXT_* env vars in both beforeEach and afterEach to avoid cross-test pollution
+  - Config loading order: defaults → config.json merge → env var overrides → Zod validation
