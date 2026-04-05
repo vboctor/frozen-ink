@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { TreeNode } from "../types";
 
 interface FileTreeProps {
@@ -62,6 +62,30 @@ function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
 }
 
 export default function FileTree({ tree, selectedFile, onSelect }: FileTreeProps) {
+  const navRef = useRef<HTMLElement>(null);
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+
+    const buttons = Array.from(
+      navRef.current?.querySelectorAll<HTMLButtonElement>(".tree-file-button") ?? [],
+    );
+    if (buttons.length === 0) return;
+
+    const currentIndex = buttons.findIndex((btn) => btn.classList.contains("selected"));
+    const nextIndex =
+      e.key === "ArrowDown"
+        ? Math.min(currentIndex + 1, buttons.length - 1)
+        : Math.max(currentIndex - 1, 0);
+
+    if (nextIndex !== currentIndex) {
+      const btn = buttons[nextIndex];
+      btn.focus();
+      onSelect(btn.title, false);
+    }
+  }
+
   if (tree.length === 0) {
     return (
       <div className="file-tree-empty">
@@ -71,7 +95,7 @@ export default function FileTree({ tree, selectedFile, onSelect }: FileTreeProps
   }
 
   return (
-    <nav className="file-tree" aria-label="File tree">
+    <nav className="file-tree" aria-label="File tree" ref={navRef} onKeyDown={handleKeyDown}>
       <ul role="tree">
         {tree.map((node) => (
           <TreeItem
