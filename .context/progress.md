@@ -168,3 +168,39 @@
   - Sync cursor uses a phase-based state machine (`issues` → `pulls` → `done`) to handle multi-endpoint pagination
   - Cross-references parsed from issue/PR body via `/#(\d+)/g` regex; deduplication via Set prevents duplicate relations
   - `per_page=100` is GitHub's max; when response length equals PER_PAGE, assume more pages exist
+
+## US-007: CLI: init, add, sync, status, collections, search, and config commands
+- What was implemented:
+  - Main CLI entry point (`packages/cli/src/index.ts`) with Commander program setup, `vctx` binary name, and all 7 subcommands registered
+  - `init` command (`packages/cli/src/commands/init.ts`): creates `~/.veecontext/` directory, `config.json` with defaults, master DB, and `collections/` directory; skips if already initialized
+  - `add` command (`packages/cli/src/commands/add.ts`): takes connector type argument + `--name`, `--token`, `--owner`, `--repo` flags; validates credentials via connector before creating collection; creates collection entry in master DB and collection directory with `data.db` and `markdown/` dir
+  - `sync` command (`packages/cli/src/commands/sync.ts`): triggers SyncEngine for all or specific collection (`--collection`); supports `--full` flag to clear sync cursors for re-sync; sets up ThemeEngine with registered themes and LocalStorageBackend per collection
+  - `status` command (`packages/cli/src/commands/status.ts`): displays enabled/disabled state, entity counts, last sync run time/status/counts/errors for each collection
+  - `collections` command (`packages/cli/src/commands/collections.ts`): `list`, `remove`, `enable`, `disable` subcommands; remove deletes both DB entry and collection directory
+  - `search` command (`packages/cli/src/commands/search.ts`): FTS5 search across all/specific collections with `--collection`, `--type`, `--limit`, `--json` flags; sorts results by rank, supports JSON output
+  - `config` command (`packages/cli/src/commands/config.ts`): `get`, `set`, `list` subcommands for dot-notation config paths; auto-parses values (booleans, numbers, null, strings); reads/writes `config.json` file directly
+  - Added `bin` field to cli `package.json` pointing `vctx` to `src/index.ts`
+  - Added `@veecontext/core` and `drizzle-orm` as direct CLI dependencies
+  - Added `__tests__` exclude to cli `tsconfig.json`, added core project reference
+  - 13 integration tests covering: init creates directory structure, init skips if exists, add creates collection in master DB, collections list/enable/disable/remove, status shows entity counts and sync runs, search returns FTS results, search --json output, config get/set/list, sync setup
+- Files changed:
+  - packages/cli/src/index.ts (rewritten — Commander program with all commands)
+  - packages/cli/src/commands/init.ts (new)
+  - packages/cli/src/commands/add.ts (new)
+  - packages/cli/src/commands/sync.ts (new)
+  - packages/cli/src/commands/status.ts (new)
+  - packages/cli/src/commands/collections.ts (new)
+  - packages/cli/src/commands/search.ts (new)
+  - packages/cli/src/commands/config.ts (new)
+  - packages/cli/src/__tests__/cli.test.ts (new)
+  - packages/cli/package.json (modified — added bin, core dep, drizzle-orm dep)
+  - packages/cli/tsconfig.json (modified — added __tests__ exclude, core reference)
+  - bun.lock (updated)
+- **Learnings for future iterations:**
+  - Commander `parseAsync` with `{ from: "user" }` allows testing individual commands without full CLI argument parsing
+  - Commander subcommands (e.g., `collections list`) work via `addCommand` on a parent command — each subcommand gets its own action handler
+  - `process.exit(1)` in Commander actions requires careful test isolation — tests that trigger error paths should mock `process.exit` or test the underlying logic separately
+  - Drizzle `desc()` import from `drizzle-orm` provides ORDER BY DESC for queries (used in status for latest sync run)
+  - FTS5 search across multiple collection databases requires opening/closing a SearchIndexer per collection DB path
+  - Config dot-notation (e.g., `sync.interval`) requires custom get/set helpers since JSON doesn't natively support nested path access
+  - The `VEECONTEXT_HOME` env var is essential for test isolation — set it in beforeEach to redirect all operations to a temp directory
