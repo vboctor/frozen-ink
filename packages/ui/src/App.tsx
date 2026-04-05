@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Layout from "./components/Layout";
 import CollectionPicker from "./components/CollectionPicker";
 import FileTree from "./components/FileTree";
@@ -87,6 +87,19 @@ export default function App() {
   // Derive the active file from the active tab
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const selectedFile = activeTab?.file ?? null;
+
+  // Flat list of all file paths in the current file tree for wikilink resolution
+  const allFiles = useMemo(() => {
+    function flatten(nodes: TreeNode[]): string[] {
+      const paths: string[] = [];
+      for (const node of nodes) {
+        if (node.type === "file") paths.push(node.path);
+        if (node.children) paths.push(...flatten(node.children));
+      }
+      return paths;
+    }
+    return flatten(fileTree);
+  }, [fileTree]);
 
   useEffect(() => {
     applyTheme(theme);
@@ -340,17 +353,6 @@ export default function App() {
       if (!selectedCollection) return;
       const directPath = target.endsWith(".md") ? target : `${target}.md`;
 
-      // Flatten the file tree into a list of all file paths for lookup
-      function flattenTree(nodes: TreeNode[]): string[] {
-        const paths: string[] = [];
-        for (const node of nodes) {
-          if (node.type === "file") paths.push(node.path);
-          if (node.children) paths.push(...flattenTree(node.children));
-        }
-        return paths;
-      }
-      const allFiles = flattenTree(fileTree);
-
       // 1. Direct path match (exact file exists)
       if (allFiles.includes(directPath)) {
         navigateTo(selectedCollection, directPath);
@@ -360,7 +362,7 @@ export default function App() {
       // 2. Obsidian-style: match by file stem anywhere in the tree
       // e.g. [[VeeClaw - CLI Channel]] matches "notes/VeeClaw - CLI Channel.md"
       const stem = directPath.includes("/") ? directPath.split("/").pop()! : directPath;
-      const match = allFiles.find((f) => f === stem || f.endsWith(`/${stem}`));
+      const match = allFiles.find((f: string) => f === stem || f.endsWith(`/${stem}`));
       if (match) {
         navigateTo(selectedCollection, match);
         return;
@@ -369,7 +371,7 @@ export default function App() {
       // 3. Fall back to direct path (will show not-found if missing)
       navigateTo(selectedCollection, directPath);
     },
-    [selectedCollection, navigateTo, fileTree],
+    [selectedCollection, navigateTo, allFiles],
   );
 
   const handleFileSelect = useCallback(
@@ -451,6 +453,7 @@ export default function App() {
             <MarkdownView
               content={fileContent}
               collection={selectedCollection || ""}
+              allFiles={allFiles}
               onWikilinkClick={handleWikilinkNavigate}
             />
           )}

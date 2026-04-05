@@ -8,6 +8,7 @@ const WIKILINK_PREFIX = "#wikilink/";
 interface MarkdownViewProps {
   content: string;
   collection: string;
+  allFiles: string[];
   onWikilinkClick: (target: string) => void;
 }
 
@@ -66,9 +67,18 @@ const CALLOUT_ICONS: Record<string, string> = {
   git: "🔀",
 };
 
+function resolveWikilink(target: string, allFiles: string[]): string | null {
+  const directPath = target.endsWith(".md") ? target : `${target}.md`;
+  if (allFiles.includes(directPath)) return directPath;
+  const stem = directPath.includes("/") ? directPath.split("/").pop()! : directPath;
+  const match = allFiles.find((f) => f === stem || f.endsWith(`/${stem}`));
+  return match ?? null;
+}
+
 export default function MarkdownView({
   content,
   collection,
+  allFiles,
   onWikilinkClick,
 }: MarkdownViewProps) {
   const processed = useMemo(
@@ -81,6 +91,10 @@ export default function MarkdownView({
       a({ href, children }) {
         if (href?.startsWith(WIKILINK_PREFIX)) {
           const target = decodeURIComponent(href.slice(WIKILINK_PREFIX.length));
+          const resolved = resolveWikilink(target, allFiles);
+          if (!resolved) {
+            return <span className="wikilink-missing">{children}</span>;
+          }
           return (
             <a
               href="#"
@@ -95,7 +109,7 @@ export default function MarkdownView({
           );
         }
         return (
-          <a href={href} target="_blank" rel="noopener noreferrer">
+          <a href={href} className="external-link" target="_blank" rel="noopener noreferrer">
             {children}
           </a>
         );
@@ -142,7 +156,7 @@ export default function MarkdownView({
         return <blockquote>{children}</blockquote>;
       },
     }),
-    [onWikilinkClick],
+    [onWikilinkClick, allFiles],
   );
 
   return (

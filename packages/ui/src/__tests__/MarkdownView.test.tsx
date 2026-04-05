@@ -6,7 +6,7 @@ import MarkdownView from "../components/MarkdownView";
 describe("MarkdownView", () => {
   it("renders headings", () => {
     render(
-      <MarkdownView content="# Hello World" collection="test" onWikilinkClick={() => {}} />,
+      <MarkdownView content="# Hello World" collection="test" allFiles={[]} onWikilinkClick={() => {}} />,
     );
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Hello World");
   });
@@ -16,6 +16,7 @@ describe("MarkdownView", () => {
       <MarkdownView
         content="This is a paragraph."
         collection="test"
+        allFiles={[]}
         onWikilinkClick={() => {}}
       />,
     );
@@ -25,7 +26,7 @@ describe("MarkdownView", () => {
   it("renders code blocks", () => {
     const content = "```\nconst x = 1;\n```";
     render(
-      <MarkdownView content={content} collection="test" onWikilinkClick={() => {}} />,
+      <MarkdownView content={content} collection="test" allFiles={[]} onWikilinkClick={() => {}} />,
     );
     expect(screen.getByText("const x = 1;")).toBeInTheDocument();
   });
@@ -33,7 +34,7 @@ describe("MarkdownView", () => {
   it("renders tables with remark-gfm", () => {
     const content = "| Name | Value |\n| --- | --- |\n| foo | bar |";
     render(
-      <MarkdownView content={content} collection="test" onWikilinkClick={() => {}} />,
+      <MarkdownView content={content} collection="test" allFiles={[]} onWikilinkClick={() => {}} />,
     );
     expect(screen.getByText("foo")).toBeInTheDocument();
     expect(screen.getByText("bar")).toBeInTheDocument();
@@ -42,7 +43,7 @@ describe("MarkdownView", () => {
   it("renders lists", () => {
     const content = "- Item one\n- Item two\n- Item three";
     render(
-      <MarkdownView content={content} collection="test" onWikilinkClick={() => {}} />,
+      <MarkdownView content={content} collection="test" allFiles={[]} onWikilinkClick={() => {}} />,
     );
     expect(screen.getByText("Item one")).toBeInTheDocument();
     expect(screen.getByText("Item two")).toBeInTheDocument();
@@ -51,19 +52,20 @@ describe("MarkdownView", () => {
   it("strips frontmatter", () => {
     const content = "---\ntitle: Test\ntype: issue\n---\n\n# Test Heading";
     render(
-      <MarkdownView content={content} collection="test" onWikilinkClick={() => {}} />,
+      <MarkdownView content={content} collection="test" allFiles={[]} onWikilinkClick={() => {}} />,
     );
     expect(screen.queryByText("title: Test")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Test Heading");
   });
 
-  it("renders wikilinks as clickable links", async () => {
+  it("renders wikilinks as clickable links when file exists", async () => {
     const user = userEvent.setup();
     const onWikilinkClick = vi.fn();
     render(
       <MarkdownView
         content="See [[issues/123]] for details."
         collection="test"
+        allFiles={["issues/123.md"]}
         onWikilinkClick={onWikilinkClick}
       />,
     );
@@ -77,11 +79,26 @@ describe("MarkdownView", () => {
     expect(onWikilinkClick).toHaveBeenCalledWith("issues/123");
   });
 
+  it("renders wikilinks as plain text when file does not exist", () => {
+    render(
+      <MarkdownView
+        content="See [[issues/999]] for details."
+        collection="test"
+        allFiles={[]}
+        onWikilinkClick={() => {}}
+      />,
+    );
+    const span = screen.getByText("issues/999");
+    expect(span.tagName).toBe("SPAN");
+    expect(span).toHaveClass("wikilink-missing");
+  });
+
   it("renders wikilinks with labels", () => {
     render(
       <MarkdownView
         content="See [[issues/123|Issue #123]] for details."
         collection="test"
+        allFiles={["issues/123.md"]}
         onWikilinkClick={() => {}}
       />,
     );
@@ -95,6 +112,7 @@ describe("MarkdownView", () => {
       <MarkdownView
         content="![[screenshot.png]]"
         collection="my-repo"
+        allFiles={[]}
         onWikilinkClick={() => {}}
       />,
     );
@@ -107,6 +125,7 @@ describe("MarkdownView", () => {
       <MarkdownView
         content="[GitHub](https://github.com)"
         collection="test"
+        allFiles={[]}
         onWikilinkClick={() => {}}
       />,
     );
