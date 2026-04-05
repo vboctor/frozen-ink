@@ -49,7 +49,7 @@ describe("FileTree", () => {
     render(<FileTree tree={sampleTree} selectedFile={null} onSelect={onSelect} />);
 
     await user.click(screen.getByText("1-first-issue"));
-    expect(onSelect).toHaveBeenCalledWith("issues/1-first-issue.md");
+    expect(onSelect).toHaveBeenCalledWith("issues/1-first-issue.md", false);
   });
 
   it("highlights the selected file", () => {

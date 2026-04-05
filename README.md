@@ -56,21 +56,40 @@ Each crawler syncs a different data source into VeeContext. See individual docs 
 bun install
 
 # Initialize VeeContext
-bunx vctx init
+bun run packages/cli/src/index.ts init
 
 # Add a collection (examples)
-bunx vctx add obsidian --name my-vault --path ~/Documents/MyVault
-bunx vctx add git --name my-repo --path ~/projects/my-repo --include-diffs
-bunx vctx add github --name my-gh --token $GITHUB_TOKEN --owner me --repo my-repo
+bun run packages/cli/src/index.ts add obsidian --name my-vault --path ~/Documents/MyVault
+bun run packages/cli/src/index.ts add git      --name my-repo  --path ~/projects/my-repo --include-diffs
+bun run packages/cli/src/index.ts add github   --name my-gh    --token $GITHUB_TOKEN --owner me --repo my-repo
 
 # Sync all collections
-bunx vctx sync
+bun run packages/cli/src/index.ts sync
+```
 
-# Start the web UI + API server
-bunx vctx serve --ui-only
+## Running the Web UI
 
-# Or start the MCP server for AI assistants
-bunx vctx serve --mcp-only
+**Development** — API server on port 3000, Vite dev server on port 5173 with hot reload:
+
+```bash
+bun run dev
+# API:  http://localhost:3000
+# UI:   http://localhost:5173  (proxies /api → 3000)
+```
+
+**Production** — build the UI then serve everything on a single port:
+
+```bash
+bun run serve           # builds UI then serves on http://localhost:3000
+bun run serve -- --port 4000   # custom port
+```
+
+The `serve` command starts the REST API and serves the compiled UI as a static SPA from the same port. No separate process needed.
+
+**MCP server only** (for AI assistants, no web UI):
+
+```bash
+bun run packages/cli/src/index.ts serve --mcp-only
 ```
 
 ## CLI Commands
@@ -89,13 +108,27 @@ bunx vctx serve --mcp-only
 
 ## Web UI
 
-The viewer at `http://localhost:3000` provides:
+The viewer at `http://localhost:3000` (or `5173` in dev) provides:
 
-- **Collection picker** - Switch between synced data sources
-- **File tree** - Browse rendered markdown files
-- **Markdown viewer** - Rendered content with Obsidian-compatible wikilinks, callouts, image embeds, and syntax-highlighted code blocks
-- **Search** - `Cmd+K` full-text search across all collections
-- **6 display themes** - Default Light, Minimal Light, Solarized Light, Nord Dark, Catppuccin Dark, Dracula Dark
+- **Collection picker** — switch between synced data sources
+- **File tree** — browse rendered markdown files; resizable sidebar
+- **Tabs** — open multiple notes simultaneously; `Cmd+W` to close
+- **Navigation history** — `Alt+←` / `Alt+→` (or `Cmd+[` / `Cmd+]`) to go back/forward
+- **Backlinks panel** — collapsible right panel showing all notes that link to the current file
+- **Markdown viewer** — wikilinks, callouts, image embeds, and syntax-highlighted code blocks
+- **Full-text search** — `Cmd+P` or `Cmd+K` to open the quick switcher
+- **6 display themes** — Default Light, Minimal Light, Solarized Light, Nord Dark, Catppuccin Dark, Dracula Dark
+
+**Keyboard shortcuts:**
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+P` / `Cmd+K` | Quick switcher |
+| `Cmd+W` | Close current tab |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle tabs |
+| `Alt+←` / `Cmd+[` | Navigate back |
+| `Alt+→` / `Cmd+]` | Navigate forward |
+| `Cmd+\` | Toggle sidebar |
 
 ## MCP Server
 
@@ -108,6 +141,12 @@ Exposes 6 tools and 4 resources for AI assistants:
 ## Development
 
 ```bash
+# Dev server (API + UI hot reload)
+bun run dev
+
+# Build UI for production
+bun run build:ui
+
 # Type-check all packages
 bun run typecheck
 
@@ -117,9 +156,6 @@ bun test packages/crawlers/src/
 bun test packages/mcp/src/
 bun test packages/cli/src/
 cd packages/ui && npx vitest run
-
-# Build the UI
-cd packages/ui && npx vite build
 
 # Clean dist output
 bun run clean
