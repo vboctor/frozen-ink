@@ -117,9 +117,11 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
   const resizingRef = useRef(false);
   const resizeStartRef = useRef({ x: 0, width: 0 });
-  // Tracks which collection has already had its last file restored to prevent
-  // re-triggering when unrelated state causes allFiles to recompute.
-  const restoredCollectionRef = useRef<string | null>(null);
+  // Refs that mirror state so navigateTo can read current values inside functional updates
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+  const navIndexRef = useRef(navIndex);
+  navIndexRef.current = navIndex;
 
   // Derive the active file from the active tab
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
@@ -162,38 +164,84 @@ export default function App() {
       setFileTree([]);
       return;
     }
-    saveLastCollection(selectedCollection);
-    // Reset restore guard whenever the collection changes so the new collection
-    // gets a fresh restore attempt once its tree loads.
-    restoredCollectionRef.current = null;
-    fetch(`/api/collections/${encodeURIComponent(selectedCollection)}/tree`)
+    const collection = selectedCollection; // capture for async callbacks
+    saveLastCollection(collection);
+    setFileTree([]);
+    // Close tabs from other collections so a stale tab doesn't linger
+    setTabs((prev) => {
+      const kept = prev.filter((t) => t.collection === collection);
+      if (kept.length === 0) {
+        setActiveTabId(null);
+      } else {
+        const curId = activeTabIdRef.current;
+        if (!kept.find((t) => t.id === curId)) {
+          setActiveTabId(kept[0].id);
+        }
+      }
+      return kept;
+    });
+
+    let cancelled = false;
+    fetch(`/api/collections/${encodeURIComponent(collection)}/tree`)
       .then((r) => r.json())
-      .then(setFileTree)
+      .then((tree: TreeNode[]) => {
+        if (cancelled) return;
+        setFileTree(tree);
+
+        // If a tab for this collection already exists, don't auto-open
+        // (the tab filter above may have kept one).
+        setTabs((currentTabs) => {
+          if (currentTabs.some((t) => t.collection === collection)) {
+            return currentTabs; // no change needed
+          }
+
+          // Flatten tree to get file list for matching
+          function flatten(nodes: TreeNode[]): string[] {
+            const out: string[] = [];
+            for (const n of nodes) {
+              if (n.type === "file") out.push(n.path);
+              if (n.children) out.push(...flatten(n.children));
+            }
+            return out;
+          }
+          const files = flatten(tree);
+
+          // Try saved last file first
+          const lastFile = loadLastFile(collection);
+          if (lastFile && files.includes(lastFile)) {
+            const id = crypto.randomUUID();
+            setActiveTabId(id);
+            return [...currentTabs, { id, title: titleFromPath(lastFile), collection, file: lastFile }];
+          }
+
+          // Fall back to most recently updated file from backend
+          fetch(`/api/collections/${encodeURIComponent(collection)}/default-file`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data: { file: string | null } | null) => {
+              if (cancelled || !data?.file || !files.includes(data.file)) return;
+              const id = crypto.randomUUID();
+              setTabs((prev) => [...prev, { id, title: titleFromPath(data.file!), collection, file: data.file! }]);
+              setActiveTabId(id);
+            })
+            .catch(() => {});
+
+          return currentTabs; // return unchanged for now; async fetch will update
+        });
+      })
       .catch(console.error);
+
+    return () => { cancelled = true; };
   }, [selectedCollection]);
 
-  // Save the current file whenever it changes
+  // Save the current file whenever it changes.
+  // Uses activeTab (not selectedCollection) to avoid corrupting localStorage
+  // when collection switches — activeTab still holds the OLD collection until
+  // tabs are cleared, so the save goes to the right key.
   useEffect(() => {
-    if (selectedCollection && selectedFile) {
-      saveLastFile(selectedCollection, selectedFile);
+    if (activeTab) {
+      saveLastFile(activeTab.collection, activeTab.file);
     }
-  }, [selectedCollection, selectedFile]);
-
-  // Restore the last opened file once the file tree is ready for a collection.
-  // The ref guard ensures this fires exactly once per collection switch.
-  useEffect(() => {
-    if (!selectedCollection || allFiles.length === 0) return;
-    if (restoredCollectionRef.current === selectedCollection) return;
-    restoredCollectionRef.current = selectedCollection;
-    if (tabs.some((t) => t.collection === selectedCollection)) return;
-    const lastFile = loadLastFile(selectedCollection);
-    if (lastFile && allFiles.includes(lastFile)) {
-      navigateTo(selectedCollection, lastFile);
-    }
-  // navigateTo and tabs are intentionally omitted — we only want to trigger
-  // on collection/tree changes, not on every tab update.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCollection, allFiles]);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!selectedCollection || !selectedFile) {
@@ -241,71 +289,75 @@ export default function App() {
       .catch(() => setOutgoingLinks([]));
   }, [selectedCollection, selectedFile]);
 
-  // Core navigation: open a file, optionally in a new tab
+  // Core navigation: open a file, optionally in a new tab.
+  // Uses functional state updates throughout to avoid stale closure issues.
   const navigateTo = useCallback(
     (collection: string, file: string, openNewTab = false) => {
       const title = titleFromPath(file);
 
       setSelectedCollection(collection);
 
-      if (openNewTab || tabs.length === 0) {
-        const id = crypto.randomUUID();
-        setTabs((prev) => [...prev, { id, title, collection, file }]);
-        setActiveTabId(id);
-      } else {
-        setTabs((prev) =>
-          prev.map((t) =>
-            t.id === activeTabId ? { ...t, collection, file, title } : t,
-          ),
+      setTabs((prev) => {
+        if (openNewTab || prev.length === 0) {
+          const id = crypto.randomUUID();
+          setActiveTabId(id);
+          return [...prev, { id, title, collection, file }];
+        }
+        // Update the active tab — read activeTabId from ref
+        const currentTabId = activeTabIdRef.current;
+        return prev.map((t) =>
+          t.id === currentTabId ? { ...t, collection, file, title } : t,
         );
-      }
+      });
 
       // Push to history, truncating any forward entries
       setNavHistory((prev) => {
-        const trimmed = prev.slice(0, navIndex + 1);
+        const trimmed = prev.slice(0, navIndexRef.current + 1);
         return [...trimmed, { collection, file }];
       });
       setNavIndex((prev) => prev + 1);
     },
-    [tabs, activeTabId, navIndex],
+    [],
   );
 
   const navigateBack = useCallback(() => {
-    if (navIndex <= 0) return;
-    const newIndex = navIndex - 1;
+    if (navIndexRef.current <= 0) return;
+    const newIndex = navIndexRef.current - 1;
     const entry = navHistory[newIndex];
     setNavIndex(newIndex);
     setSelectedCollection(entry.collection);
+    const tabId = activeTabIdRef.current;
     setTabs((prev) =>
       prev.map((t) =>
-        t.id === activeTabId
+        t.id === tabId
           ? { ...t, collection: entry.collection, file: entry.file, title: titleFromPath(entry.file) }
           : t,
       ),
     );
-  }, [navIndex, navHistory, activeTabId]);
+  }, [navHistory]);
 
   const navigateForward = useCallback(() => {
-    if (navIndex >= navHistory.length - 1) return;
-    const newIndex = navIndex + 1;
+    if (navIndexRef.current >= navHistory.length - 1) return;
+    const newIndex = navIndexRef.current + 1;
     const entry = navHistory[newIndex];
     setNavIndex(newIndex);
     setSelectedCollection(entry.collection);
+    const tabId = activeTabIdRef.current;
     setTabs((prev) =>
       prev.map((t) =>
-        t.id === activeTabId
+        t.id === tabId
           ? { ...t, collection: entry.collection, file: entry.file, title: titleFromPath(entry.file) }
           : t,
       ),
     );
-  }, [navIndex, navHistory, activeTabId]);
+  }, [navHistory]);
 
   const handleCloseTab = useCallback(
     (id: string) => {
       setTabs((prev) => {
         const idx = prev.findIndex((t) => t.id === id);
         const next = prev.filter((t) => t.id !== id);
-        if (id === activeTabId && next.length > 0) {
+        if (id === activeTabIdRef.current && next.length > 0) {
           const newActive = next[Math.min(idx, next.length - 1)];
           setActiveTabId(newActive.id);
           setSelectedCollection(newActive.collection);
@@ -316,7 +368,7 @@ export default function App() {
         return next;
       });
     },
-    [activeTabId],
+    [],
   );
 
   // Keyboard shortcuts

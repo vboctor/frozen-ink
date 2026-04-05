@@ -50,7 +50,7 @@ function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
 
   useEffect(() => {
     if (isSelected) {
-      btnRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      btnRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   }, [isSelected]);
 

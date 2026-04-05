@@ -162,6 +162,35 @@ export function createApiServer(
         return jsonResponse(tree);
       }
 
+      // GET /api/collections/:name/default-file
+      // Returns the most recently updated file in the collection
+      const defaultFileMatch = path.match(
+        /^\/api\/collections\/([^/]+)\/default-file$/,
+      );
+      if (defaultFileMatch && req.method === "GET") {
+        const name = decodeURIComponent(defaultFileMatch[1]);
+        const db = getMasterDb(masterDbPath);
+        const [col] = db
+          .select()
+          .from(collections)
+          .where(eq(collections.name, name))
+          .all();
+        if (!col) return errorResponse("Collection not found", 404);
+        if (!existsSync(col.dbPath))
+          return errorResponse("Collection database not found", 404);
+
+        const colDb = getCollectionDb(col.dbPath);
+        const [latest] = colDb
+          .select({ markdownPath: entities.markdownPath })
+          .from(entities)
+          .orderBy(desc(entities.updatedAt))
+          .limit(1)
+          .all();
+
+        const filePath = latest?.markdownPath?.replace(/^markdown\//, "") ?? null;
+        return jsonResponse({ file: filePath });
+      }
+
       // GET /api/collections/:name/markdown/*path — serve raw markdown file content
       const markdownMatch = path.match(
         /^\/api\/collections\/([^/]+)\/markdown\/(.+)$/,
