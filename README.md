@@ -61,22 +61,52 @@ cd packages/cli && bun link && cd ../..
 
 # Initialize VeeContext
 vctx init
-
-# Add a collection (examples)
-vctx add obsidian --name my-vault --path ~/Documents/MyVault
-vctx add git      --name my-repo  --path ~/projects/my-repo --include-diffs
-vctx add github   --name my-gh    --token $GITHUB_TOKEN --owner me --repo my-repo
-
-# Sync all collections
-vctx sync
 ```
 
-> **Without global install** you can also run the CLI via the root script:
-> ```bash
-> bun run vctx -- init
-> bun run vctx -- sync
-> bun run vctx -- serve --ui-only
-> ```
+> **Without global install** use the root script instead:
+> `bun run vctx -- <command>`  e.g. `bun run vctx -- init`
+
+### Adding collections
+
+**Obsidian vault** — syncs all markdown notes and attachments:
+```bash
+vctx add obsidian --name my-vault --path ~/Documents/MyVault
+```
+
+**Git repository** — syncs commits, branches, and tags:
+```bash
+vctx add git --name my-repo --path ~/projects/my-repo
+
+# Include full commit diffs in the rendered markdown:
+vctx add git --name my-repo --path ~/projects/my-repo --include-diffs
+```
+
+**GitHub repository** — syncs issues and pull requests via the GitHub API:
+```bash
+vctx add github --name my-gh \
+  --token ghp_yourPersonalAccessToken \
+  --owner your-username \
+  --repo your-repo-name
+```
+
+### Syncing and running
+
+```bash
+# Sync all collections once
+vctx sync
+
+# Sync a single collection
+vctx sync --collection my-vault
+
+# Start the background daemon (syncs on the configured interval)
+vctx daemon start
+vctx daemon status
+vctx daemon stop
+
+# Start the web UI + API server
+bun run serve            # build UI then serve on http://localhost:3000
+bun run dev              # dev mode: API on :3000, hot-reload UI on :5173
+```
 
 ## Running the Web UI
 
