@@ -6,4 +6,4 @@ export type {
   CrawlerEntityData,
 } from "./interface";
 export { CrawlerRegistry, type CrawlerFactory } from "./registry";
-export { SyncEngine, type SyncEngineOptions } from "./sync-engine";
+export { SyncEngine, type SyncEngineOptions, extractWikilinks } from "./sync-engine";

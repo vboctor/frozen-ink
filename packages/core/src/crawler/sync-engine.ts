@@ -29,7 +29,7 @@ function statMatches(
 }
 
 /** Extract wikilink targets from rendered markdown. Returns unique target strings. */
-function extractWikilinks(markdown: string): string[] {
+export function extractWikilinks(markdown: string): string[] {
   const targets = new Set<string>();
   // Negative lookbehind excludes ![[embeds]] (images / transclusions).
   // Capture group strips [[target#section]] and [[target^blockref]] anchors.
