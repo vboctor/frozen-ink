@@ -4,13 +4,13 @@ import type { TreeNode } from "../types";
 interface FileTreeProps {
   tree: TreeNode[];
   selectedFile: string | null;
-  onSelect: (path: string) => void;
+  onSelect: (path: string, openNewTab: boolean) => void;
 }
 
 interface TreeItemProps {
   node: TreeNode;
   selectedFile: string | null;
-  onSelect: (path: string) => void;
+  onSelect: (path: string, openNewTab: boolean) => void;
   depth: number;
 }
 
@@ -50,11 +50,11 @@ function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
     <li className="tree-file" role="treeitem">
       <button
         className={`tree-file-button${isSelected ? " selected" : ""}`}
-        onClick={() => onSelect(node.path)}
+        onClick={(e) => onSelect(node.path, e.metaKey || e.ctrlKey)}
         style={{ paddingLeft: `${depth * 16 + 4}px` }}
         title={node.path}
       >
-        <span className="tree-icon">📄</span>
+        <span className="tree-icon tree-file-icon">📄</span>
         <span className="tree-name">{node.name.replace(/\.md$/, "")}</span>
       </button>
     </li>

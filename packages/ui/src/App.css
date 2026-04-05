@@ -1,6 +1,7 @@
 /* ===== Theme: Default (GitHub Light) ===== */
 :root,
 [data-theme="default"] {
+  color-scheme: light;
   --bg: #ffffff;
   --bg-secondary: #f6f8fa;
   --bg-tertiary: #eef1f5;
@@ -56,6 +57,7 @@
 
 /* ===== Theme: Minimal (Obsidian Minimal) ===== */
 [data-theme="minimal"] {
+  color-scheme: light;
   --bg: #ffffff;
   --bg-secondary: #fafafa;
   --bg-tertiary: #f0f0f0;
@@ -106,6 +108,7 @@
 
 /* ===== Theme: Nord ===== */
 [data-theme="nord"] {
+  color-scheme: dark;
   --bg: #2e3440;
   --bg-secondary: #3b4252;
   --bg-tertiary: #434c5e;
@@ -156,6 +159,7 @@
 
 /* ===== Theme: Catppuccin Mocha ===== */
 [data-theme="catppuccin"] {
+  color-scheme: dark;
   --bg: #1e1e2e;
   --bg-secondary: #313244;
   --bg-tertiary: #45475a;
@@ -206,6 +210,7 @@
 
 /* ===== Theme: Dracula ===== */
 [data-theme="dracula"] {
+  color-scheme: dark;
   --bg: #282a36;
   --bg-secondary: #343746;
   --bg-tertiary: #44475a;
@@ -256,6 +261,7 @@
 
 /* ===== Theme: Solarized Light ===== */
 [data-theme="solarized"] {
+  color-scheme: light;
   --bg: #fdf6e3;
   --bg-secondary: #eee8d5;
   --bg-tertiary: #e6dfca;
@@ -309,6 +315,9 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  /* Themed thin scrollbars (Firefox + Chrome 121+) */
+  scrollbar-color: var(--border) transparent;
+  scrollbar-width: thin;
 }
 
 body {
@@ -322,23 +331,209 @@ body {
 .layout {
   display: flex;
   height: 100vh;
+  overflow: hidden;
+}
+
+/* Narrow ribbon on the far-left for sidebar toggle */
+.sidebar-toggle-ribbon {
+  width: 20px;
+  min-width: 20px;
+  height: 100%;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle-ribbon:hover {
+  background: var(--hover-bg);
+  color: var(--text);
 }
 
 .sidebar {
-  width: 280px;
-  min-width: 280px;
+  position: relative;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Drag handle at the right edge of the sidebar */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active {
+  background: var(--accent);
+  opacity: 0.4;
 }
 
 .main-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ===== Toolbar (back/fwd + tabs + search btn) ===== */
+.toolbar {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  min-height: 36px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.toolbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: var(--radius);
+  line-height: 1;
+  transition: color 0.1s, background 0.1s;
+}
+
+.nav-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover-bg);
+}
+
+.nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Search button in toolbar — styled differently (text label) */
+.toolbar-actions .nav-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
+}
+
+/* ===== Tab Bar ===== */
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 14px;
+  min-width: 80px;
+  max-width: 180px;
+  height: 36px;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+  user-select: none;
+}
+
+.tab:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.tab-active {
+  background: var(--bg);
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+}
+
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.tab-close {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s, background 0.1s;
+}
+
+.tab:hover .tab-close,
+.tab-active .tab-close {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  color: var(--text);
+  background: var(--hover-bg);
+}
+
+/* ===== Main inner scroll area ===== */
+.main-inner {
+  flex: 1;
   overflow-y: auto;
   padding: 32px 48px;
-  background: var(--bg);
 }
 
 /* ===== Theme Switcher ===== */
@@ -751,7 +946,8 @@ body {
 }
 
 .search-dialog {
-  background: var(--bg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-dialog);
   width: 560px;
@@ -800,7 +996,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border-bottom: 1px solid var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
 }
 
 .search-result:hover,
