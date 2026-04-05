@@ -1,0 +1,12 @@
+node_modules
+*.db
+.env
+dist/
+daemon.pid
+.veecontext/
+.context
+*.tsbuildinfo
+*.d.ts
+*.d.ts.map
+*.js.map
+packages/*/src/*.js

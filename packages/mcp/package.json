@@ -1,0 +1,15 @@
+{
+  "name": "@veecontext/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@veecontext/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}
