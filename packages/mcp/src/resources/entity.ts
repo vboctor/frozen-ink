@@ -3,10 +3,9 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
-  contextExists,
-  getCollection,
+  getMasterDb,
+  collections,
   getCollectionDb,
-  getCollectionDbPath,
   entities,
   entityTags,
 } from "@veecontext/core";
@@ -37,7 +36,8 @@ export function registerEntityResources(
       const collectionName = variables.collection as string;
       const externalId = variables.externalId as string;
 
-      if (!contextExists()) {
+      const masterDbPath = join(options.veecontextHome, "master.db");
+      if (!existsSync(masterDbPath)) {
         return {
           contents: [
             {
@@ -49,8 +49,13 @@ export function registerEntityResources(
         };
       }
 
-      const col = getCollection(collectionName);
-      const dbPath = col ? getCollectionDbPath(collectionName) : null;
+      const db = getMasterDb(masterDbPath);
+      const [col] = db
+        .select()
+        .from(collections)
+        .where(eq(collections.name, collectionName))
+        .all();
+      const dbPath = col ? col.dbPath : null;
 
       if (!col || !dbPath || !existsSync(dbPath)) {
         return {
@@ -135,7 +140,8 @@ export function registerEntityResources(
       const collectionName = variables.collection as string;
       const path = variables.path as string;
 
-      if (!contextExists()) {
+      const masterDbPath = join(options.veecontextHome, "master.db");
+      if (!existsSync(masterDbPath)) {
         return {
           contents: [
             {
@@ -147,7 +153,13 @@ export function registerEntityResources(
         };
       }
 
-      const col = getCollection(collectionName);
+      const db = getMasterDb(masterDbPath);
+      const [col] = db
+        .select()
+        .from(collections)
+        .where(eq(collections.name, collectionName))
+        .all();
+
       if (!col) {
         return {
           contents: [

@@ -1,16 +1,14 @@
 import { Command } from "commander";
 import { existsSync, renameSync, rmSync } from "fs";
 import { join } from "path";
+import { eq } from "drizzle-orm";
 import {
   getVeeContextHome,
   isValidCollectionKey,
   contextExists,
-  listCollections,
-  getCollection,
-  removeCollection,
-  updateCollection,
-  renameCollection,
-  getCollectionDbPath,
+  getMasterDb,
+  getMasterDbPath,
+  collections,
 } from "@veecontext/core";
 
 function requireInit(): void {
@@ -20,7 +18,7 @@ function requireInit(): void {
   }
 }
 
-function displayName(col: { name: string; title?: string }): string {
+function displayName(col: { name: string; title?: string | null }): string {
   return col.title ? `${col.title} (${col.name})` : col.name;
 }
 
@@ -28,7 +26,8 @@ const listCommand = new Command("list")
   .description("List all collections")
   .action(() => {
     requireInit();
-    const cols = listCollections();
+    const db = getMasterDb(getMasterDbPath());
+    const cols = db.select().from(collections).all();
 
     if (cols.length === 0) {
       console.log("No collections configured");
@@ -38,7 +37,7 @@ const listCommand = new Command("list")
     for (const col of cols) {
       const status = col.enabled ? "enabled" : "disabled";
       const title = col.title ? ` — ${col.title}` : "";
-      console.log(`${col.name}${title} (${col.crawler}) [${status}]`);
+      console.log(`${col.name}${title} (${col.crawlerType}) [${status}]`);
     }
   });
 
@@ -47,7 +46,12 @@ const removeCommand = new Command("remove")
   .argument("<key>", "Collection key")
   .action((key: string) => {
     requireInit();
-    const col = getCollection(key);
+    const db = getMasterDb(getMasterDbPath());
+    const [col] = db
+      .select()
+      .from(collections)
+      .where(eq(collections.name, key))
+      .all();
 
     if (!col) {
       console.error(`Collection "${key}" not found`);
@@ -61,7 +65,7 @@ const removeCommand = new Command("remove")
       rmSync(collectionDir, { recursive: true, force: true });
     }
 
-    removeCollection(key);
+    db.delete(collections).where(eq(collections.name, key)).run();
     console.log(`Collection "${displayName(col)}" removed`);
   });
 
@@ -70,14 +74,22 @@ const enableCommand = new Command("enable")
   .argument("<key>", "Collection key")
   .action((key: string) => {
     requireInit();
-    const col = getCollection(key);
+    const db = getMasterDb(getMasterDbPath());
+    const [col] = db
+      .select()
+      .from(collections)
+      .where(eq(collections.name, key))
+      .all();
 
     if (!col) {
       console.error(`Collection "${key}" not found`);
       process.exit(1);
     }
 
-    updateCollection(key, { enabled: true });
+    db.update(collections)
+      .set({ enabled: true })
+      .where(eq(collections.name, key))
+      .run();
     console.log(`Collection "${displayName(col)}" enabled`);
   });
 
@@ -86,14 +98,22 @@ const disableCommand = new Command("disable")
   .argument("<key>", "Collection key")
   .action((key: string) => {
     requireInit();
-    const col = getCollection(key);
+    const db = getMasterDb(getMasterDbPath());
+    const [col] = db
+      .select()
+      .from(collections)
+      .where(eq(collections.name, key))
+      .all();
 
     if (!col) {
       console.error(`Collection "${key}" not found`);
       process.exit(1);
     }
 
-    updateCollection(key, { enabled: false });
+    db.update(collections)
+      .set({ enabled: false })
+      .where(eq(collections.name, key))
+      .run();
     console.log(`Collection "${displayName(col)}" disabled`);
   });
 
@@ -111,7 +131,12 @@ const renameCommand = new Command("rename")
 
     requireInit();
     const home = getVeeContextHome();
-    const col = getCollection(oldKey);
+    const db = getMasterDb(getMasterDbPath());
+    const [col] = db
+      .select()
+      .from(collections)
+      .where(eq(collections.name, oldKey))
+      .all();
 
     if (!col) {
       console.error(`Collection "${oldKey}" not found`);
@@ -119,7 +144,12 @@ const renameCommand = new Command("rename")
     }
 
     // Check new key doesn't conflict
-    if (getCollection(newKey)) {
+    const [existing] = db
+      .select()
+      .from(collections)
+      .where(eq(collections.name, newKey))
+      .all();
+    if (existing) {
       console.error(`Collection "${newKey}" already exists`);
       process.exit(1);
     }
@@ -131,7 +161,10 @@ const renameCommand = new Command("rename")
       renameSync(oldDir, newDir);
     }
 
-    renameCollection(oldKey, newKey);
+    db.update(collections)
+      .set({ name: newKey })
+      .where(eq(collections.name, oldKey))
+      .run();
     console.log(`Collection renamed: "${oldKey}" → "${newKey}"`);
   });
 
@@ -143,7 +176,12 @@ const updateCommand = new Command("update")
   .option("--no-include-diffs", "Disable commit diffs (git collections)")
   .action((key: string, opts: { title?: string; includeDiffs?: boolean }) => {
     requireInit();
-    const col = getCollection(key);
+    const db = getMasterDb(getMasterDbPath());
+    const [col] = db
+      .select()
+      .from(collections)
+      .where(eq(collections.name, key))
+      .all();
 
     if (!col) {
       console.error(`Collection "${key}" not found`);
@@ -153,14 +191,20 @@ const updateCommand = new Command("update")
     const changes: string[] = [];
 
     if (opts.title !== undefined) {
-      updateCollection(key, { title: opts.title });
+      db.update(collections)
+        .set({ title: opts.title })
+        .where(eq(collections.name, key))
+        .run();
       changes.push(`title → "${opts.title}"`);
     }
 
     if (opts.includeDiffs !== undefined) {
       const config = { ...(col.config ?? {}) };
       config.includeDiffs = opts.includeDiffs;
-      updateCollection(key, { config });
+      db.update(collections)
+        .set({ config })
+        .where(eq(collections.name, key))
+        .run();
       changes.push(`includeDiffs → ${opts.includeDiffs}`);
     }
 

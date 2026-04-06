@@ -1,10 +1,11 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
+import { eq } from "drizzle-orm";
 import {
   contextExists,
-  listCollections,
-  getCollection,
-  getCollectionDbPath,
+  getMasterDb,
+  getMasterDbPath,
+  collections,
   SearchIndexer,
   type SearchResult,
 } from "@veecontext/core";
@@ -31,22 +32,29 @@ export const searchCommand = new Command("search")
         process.exit(1);
       }
 
-      let collectionRows = opts.collection
-        ? (() => {
-            const col = getCollection(opts.collection);
-            if (!col) {
-              console.error(`Collection "${opts.collection}" not found`);
-              process.exit(1);
-            }
-            return [col];
-          })()
-        : listCollections();
+      const masterDb = getMasterDb(getMasterDbPath());
+
+      let collectionRows: Array<{ name: string; dbPath: string }>;
+      if (opts.collection) {
+        const [col] = masterDb
+          .select()
+          .from(collections)
+          .where(eq(collections.name, opts.collection))
+          .all();
+        if (!col) {
+          console.error(`Collection "${opts.collection}" not found`);
+          process.exit(1);
+        }
+        collectionRows = [col];
+      } else {
+        collectionRows = masterDb.select().from(collections).all();
+      }
 
       const limit = parseInt(opts.limit, 10);
       const allResults: Array<SearchResult & { collection: string }> = [];
 
       for (const col of collectionRows) {
-        const dbPath = getCollectionDbPath(col.name);
+        const dbPath = col.dbPath;
         if (!existsSync(dbPath)) continue;
 
         const indexer = new SearchIndexer(dbPath);

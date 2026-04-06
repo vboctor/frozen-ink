@@ -3,9 +3,9 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import {
   getVeeContextHome,
-  contextExists,
-  listCollections,
-  getCollectionDbPath,
+  getMasterDb,
+  getMasterDbPath,
+  collections,
   loadConfig,
   SyncEngine,
   ThemeEngine,
@@ -26,13 +26,22 @@ function isProcessRunning(pid: number): boolean {
   }
 }
 
+function isMasterDbInitialized(): boolean {
+  return existsSync(getMasterDbPath());
+}
+
 async function runSyncLoop(intervalMs: number): Promise<void> {
   const home = getVeeContextHome();
 
   const doSync = async () => {
-    if (!contextExists()) return;
+    if (!isMasterDbInitialized()) return;
 
-    const collectionRows = listCollections().filter((c) => c.enabled);
+    const db = getMasterDb(getMasterDbPath());
+    const collectionRows = db
+      .select()
+      .from(collections)
+      .all()
+      .filter((c) => c.enabled);
 
     if (collectionRows.length === 0) return;
 
@@ -43,7 +52,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
     themeEngine.register(gitTheme);
 
     for (const col of collectionRows) {
-      const factory = registry.get(col.crawler);
+      const factory = registry.get(col.crawlerType);
       if (!factory) continue;
 
       const crawler = factory();
@@ -58,7 +67,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
 
         const engine = new SyncEngine({
           crawler,
-          dbPath: getCollectionDbPath(col.name),
+          dbPath: col.dbPath,
           collectionName: col.name,
           themeEngine,
           storage,
@@ -84,7 +93,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
 const startCommand = new Command("start")
   .description("Start the sync daemon in the background")
   .action(async () => {
-    if (!contextExists()) {
+    if (!isMasterDbInitialized()) {
       console.error("VeeContext not initialized. Run: vctx init");
       process.exit(1);
     }

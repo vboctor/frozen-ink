@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { getVeeContextHome, defaultConfig, saveContext } from "@veecontext/core";
+import { getVeeContextHome, defaultConfig, saveContext, getMasterDb } from "@veecontext/core";
 
 export const initCommand = new Command("init")
   .description("Initialize VeeContext directory and configuration")
@@ -28,8 +28,12 @@ export const initCommand = new Command("init")
     // Create collections directory
     mkdirSync(join(home, "collections"), { recursive: true });
 
+    // Initialize master.db (creates file + schema)
+    getMasterDb(join(home, "master.db"));
+
     console.log(`Initialized VeeContext at ${home}`);
     console.log(`  config.json  - configuration`);
     console.log(`  context.yml  - collection registry`);
+    console.log(`  master.db    - master database`);
     console.log(`  collections/ - collection data`);
   });

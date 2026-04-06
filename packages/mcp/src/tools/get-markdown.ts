@@ -3,10 +3,9 @@ import { z } from "zod";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
-  contextExists,
-  getCollection,
+  getMasterDb,
+  collections,
   getCollectionDb,
-  getCollectionDbPath,
   entities,
 } from "@veecontext/core";
 import { eq } from "drizzle-orm";
@@ -29,7 +28,8 @@ export function registerGetMarkdown(
       annotations: { readOnlyHint: true },
     },
     async (args) => {
-      if (!contextExists()) {
+      const masterDbPath = join(options.veecontextHome, "master.db");
+      if (!existsSync(masterDbPath)) {
         return {
           content: [
             {
@@ -40,7 +40,13 @@ export function registerGetMarkdown(
         };
       }
 
-      const col = getCollection(args.collection);
+      const db = getMasterDb(masterDbPath);
+      const [col] = db
+        .select()
+        .from(collections)
+        .where(eq(collections.name, args.collection))
+        .all();
+
       if (!col) {
         return {
           content: [
@@ -54,7 +60,7 @@ export function registerGetMarkdown(
         };
       }
 
-      const dbPath = getCollectionDbPath(args.collection);
+      const dbPath = col.dbPath;
       if (!existsSync(dbPath)) {
         return {
           content: [

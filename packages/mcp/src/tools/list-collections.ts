@@ -1,14 +1,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { existsSync } from "fs";
+import { join } from "path";
 import {
-  contextExists,
-  listCollections,
+  getMasterDb,
   getCollectionDb,
-  getCollectionDbPath,
+  collections,
   entities,
   syncRuns,
 } from "@veecontext/core";
 import { desc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
 export function registerListCollections(
@@ -24,7 +25,8 @@ export function registerListCollections(
       annotations: { readOnlyHint: true },
     },
     async () => {
-      if (!contextExists()) {
+      const masterDbPath = join(options.veecontextHome, "master.db");
+      if (!existsSync(masterDbPath)) {
         return {
           content: [
             {
@@ -35,14 +37,15 @@ export function registerListCollections(
         };
       }
 
-      const rows = listCollections();
+      const db = getMasterDb(masterDbPath);
+      const rows = db.select().from(collections).all();
 
       const result = rows.map((col) => {
         let entityCount = 0;
         let lastSyncTime: string | null = null;
         let lastSyncStatus: string | null = null;
 
-        const dbPath = getCollectionDbPath(col.name);
+        const dbPath = col.dbPath;
         if (existsSync(dbPath)) {
           const colDb = getCollectionDb(dbPath);
           entityCount = colDb.select().from(entities).all().length;
@@ -62,7 +65,7 @@ export function registerListCollections(
 
         return {
           name: col.name,
-          crawlerType: col.crawler,
+          crawlerType: col.crawlerType,
           enabled: col.enabled,
           entityCount,
           lastSyncTime,

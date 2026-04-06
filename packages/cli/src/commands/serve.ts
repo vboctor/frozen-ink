@@ -1,13 +1,14 @@
 import { Command } from "commander";
-import { existsSync, readdirSync, statSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { join, extname } from "path";
+import { eq } from "drizzle-orm";
 import {
   getVeeContextHome,
   getCollectionDb,
   contextExists,
-  listCollections,
-  getCollection,
-  getCollectionDbPath,
+  getMasterDb,
+  getMasterDbPath,
+  collections,
   entities,
   entityTags,
   entityLinks,
@@ -22,7 +23,7 @@ import {
   mantisBTTheme,
 } from "@veecontext/crawlers";
 import { startStdioServer } from "@veecontext/mcp";
-import { eq, desc, like } from "drizzle-orm";
+import { desc, like } from "drizzle-orm";
 
 function createThemeEngine(): ThemeEngine {
   const themeEngine = new ThemeEngine();
@@ -141,6 +142,17 @@ export function createApiServer(
 ): ReturnType<typeof Bun.serve> {
   const uiDistDir = resolveUiDistDir();
   const themeEngine = createThemeEngine();
+  const masterDbPath = join(home, "master.db");
+
+  function getMasterDbInstance() {
+    return getMasterDb(masterDbPath);
+  }
+
+  function getCollectionByName(name: string) {
+    const db = getMasterDbInstance();
+    const [col] = db.select().from(collections).where(eq(collections.name, name)).all();
+    return col ?? null;
+  }
 
   const server = Bun.serve({
     port,
@@ -150,13 +162,13 @@ export function createApiServer(
 
       // GET /api/collections
       if (path === "/api/collections" && req.method === "GET") {
-        const rows = listCollections();
+        const db = getMasterDbInstance();
+        const rows = db.select().from(collections).all();
         const result = rows.map((r) => ({
           name: r.name,
           title: r.title ?? r.name,
-          crawlerType: r.crawler,
+          crawlerType: r.crawlerType,
           enabled: r.enabled,
-          syncInterval: r.syncInterval,
         }));
         return jsonResponse(result);
       }
@@ -165,7 +177,7 @@ export function createApiServer(
       const treeMatch = path.match(/^\/api\/collections\/([^/]+)\/tree$/);
       if (treeMatch && req.method === "GET") {
         const name = decodeURIComponent(treeMatch[1]);
-        const col = getCollection(name);
+        const col = getCollectionByName(name);
         if (!col) return errorResponse("Collection not found", 404);
 
         const markdownDir = join(home, "collections", name, "markdown");
@@ -179,10 +191,10 @@ export function createApiServer(
       );
       if (defaultFileMatch && req.method === "GET") {
         const name = decodeURIComponent(defaultFileMatch[1]);
-        const col = getCollection(name);
+        const col = getCollectionByName(name);
         if (!col) return errorResponse("Collection not found", 404);
 
-        const dbPath = getCollectionDbPath(name);
+        const dbPath = col.dbPath;
         if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
 
@@ -232,14 +244,14 @@ export function createApiServer(
       if (htmlMatch && req.method === "GET") {
         const name = decodeURIComponent(htmlMatch[1]);
         const filePath = decodeURIComponent(htmlMatch[2]);
-        const col = getCollection(name);
+        const col = getCollectionByName(name);
         if (!col) return errorResponse("Collection not found", 404);
 
-        if (!themeEngine.hasHtmlRenderer(col.crawler)) {
+        if (!themeEngine.hasHtmlRenderer(col.crawlerType)) {
           return errorResponse("HTML rendering not supported for this crawler", 404);
         }
 
-        const dbPath = getCollectionDbPath(name);
+        const dbPath = col.dbPath;
         if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
 
@@ -295,7 +307,7 @@ export function createApiServer(
             tags,
           },
           collectionName: name,
-          crawlerType: col.crawler,
+          crawlerType: col.crawlerType,
           lookupEntityPath,
         });
 
@@ -313,9 +325,9 @@ export function createApiServer(
       );
       if (htmlSupportMatch && req.method === "GET") {
         const name = decodeURIComponent(htmlSupportMatch[1]);
-        const col = getCollection(name);
+        const col = getCollectionByName(name);
         if (!col) return errorResponse("Collection not found", 404);
-        return jsonResponse({ supported: themeEngine.hasHtmlRenderer(col.crawler) });
+        return jsonResponse({ supported: themeEngine.hasHtmlRenderer(col.crawlerType) });
       }
 
       // GET /api/collections/:name/entities
@@ -324,10 +336,10 @@ export function createApiServer(
       );
       if (entitiesMatch && req.method === "GET") {
         const name = decodeURIComponent(entitiesMatch[1]);
-        const col = getCollection(name);
+        const col = getCollectionByName(name);
         if (!col) return errorResponse("Collection not found", 404);
 
-        const dbPath = getCollectionDbPath(name);
+        const dbPath = col.dbPath;
         if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
 
@@ -382,15 +394,15 @@ export function createApiServer(
         const typeFilter = url.searchParams.get("type");
         const limit = parseInt(url.searchParams.get("limit") || "20", 10);
 
-        let collectionRows = collectionFilter
-          ? (() => {
-              const col = getCollection(collectionFilter);
-              return col ? [col] : [];
-            })()
-          : listCollections();
-
-        if (collectionFilter && collectionRows.length === 0)
-          return errorResponse("Collection not found", 404);
+        const db = getMasterDbInstance();
+        let collectionRows: Array<{ name: string; dbPath: string }>;
+        if (collectionFilter) {
+          const col = getCollectionByName(collectionFilter);
+          if (!col) return errorResponse("Collection not found", 404);
+          collectionRows = [col];
+        } else {
+          collectionRows = db.select().from(collections).all();
+        }
 
         const allResults: Array<{
           collection: string;
@@ -403,7 +415,7 @@ export function createApiServer(
         }> = [];
 
         for (const col of collectionRows) {
-          const dbPath = getCollectionDbPath(col.name);
+          const dbPath = col.dbPath;
           if (!existsSync(dbPath)) continue;
 
           const colDb = getCollectionDb(dbPath);
@@ -443,10 +455,10 @@ export function createApiServer(
         const name = decodeURIComponent(backlinksMatch[1]);
         const targetFile = decodeURIComponent(backlinksMatch[2]);
 
-        const col = getCollection(name);
+        const col = getCollectionByName(name);
         if (!col) return errorResponse("Collection not found", 404);
 
-        const dbPath = getCollectionDbPath(name);
+        const dbPath = col.dbPath;
         if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
 
@@ -519,10 +531,10 @@ export function createApiServer(
         const name = decodeURIComponent(outgoingMatch[1]);
         const sourceFile = decodeURIComponent(outgoingMatch[2]);
 
-        const col = getCollection(name);
+        const col = getCollectionByName(name);
         if (!col) return errorResponse("Collection not found", 404);
 
-        const dbPath = getCollectionDbPath(name);
+        const dbPath = col.dbPath;
         if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
 

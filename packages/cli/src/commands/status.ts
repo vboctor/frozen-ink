@@ -2,9 +2,10 @@ import { Command } from "commander";
 import { existsSync } from "fs";
 import {
   contextExists,
-  listCollections,
+  getMasterDb,
+  getMasterDbPath,
+  collections,
   getCollectionDb,
-  getCollectionDbPath,
   entities,
   syncRuns,
 } from "@veecontext/core";
@@ -18,7 +19,8 @@ export const statusCommand = new Command("status")
       process.exit(1);
     }
 
-    const collectionRows = listCollections();
+    const masterDb = getMasterDb(getMasterDbPath());
+    const collectionRows = masterDb.select().from(collections).all();
 
     if (collectionRows.length === 0) {
       console.log("No collections configured. Run: vctx add <crawler>");
@@ -27,9 +29,9 @@ export const statusCommand = new Command("status")
 
     for (const col of collectionRows) {
       const status = col.enabled ? "enabled" : "disabled";
-      console.log(`\n${col.name} (${col.crawler}) [${status}]`);
+      console.log(`\n${col.name} (${col.crawlerType}) [${status}]`);
 
-      const dbPath = getCollectionDbPath(col.name);
+      const dbPath = col.dbPath;
       if (!existsSync(dbPath)) {
         console.log("  Database not found");
         continue;

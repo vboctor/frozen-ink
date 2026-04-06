@@ -1,14 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { existsSync } from "fs";
+import { join } from "path";
 import {
-  contextExists,
-  listCollections,
-  getCollection,
-  getCollectionDbPath,
+  getMasterDb,
+  collections,
   SearchIndexer,
   type SearchResult,
 } from "@veecontext/core";
+import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
 export function registerSearch(
@@ -42,7 +42,8 @@ export function registerSearch(
       annotations: { readOnlyHint: true },
     },
     async (args) => {
-      if (!contextExists()) {
+      const masterDbPath = join(options.veecontextHome, "master.db");
+      if (!existsSync(masterDbPath)) {
         return {
           content: [
             {
@@ -53,17 +54,24 @@ export function registerSearch(
         };
       }
 
-      let collectionRows = args.collection
-        ? (() => {
-            const col = getCollection(args.collection);
-            return col ? [col] : [];
-          })()
-        : listCollections();
+      const db = getMasterDb(masterDbPath);
+      let collectionRows: Array<{ name: string; dbPath: string }>;
+
+      if (args.collection) {
+        const [col] = db
+          .select()
+          .from(collections)
+          .where(eq(collections.name, args.collection))
+          .all();
+        collectionRows = col ? [col] : [];
+      } else {
+        collectionRows = db.select().from(collections).all();
+      }
 
       const allResults: Array<SearchResult & { collection: string }> = [];
 
       for (const col of collectionRows) {
-        const dbPath = getCollectionDbPath(col.name);
+        const dbPath = col.dbPath;
         if (!existsSync(dbPath)) continue;
 
         const indexer = new SearchIndexer(dbPath);

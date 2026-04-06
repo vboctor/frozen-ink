@@ -1,6 +1,9 @@
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
+import { join } from "path";
 import * as collectionSchema from "./collection-schema";
+import * as masterSchema from "./master-schema";
+import { getVeeContextHome } from "../config/loader";
 
 const COLLECTION_KEY_RE = /^[a-zA-Z0-9_-]+$/;
 
@@ -81,6 +84,37 @@ export function getCollectionDb(dbPath: string) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_entity_links_target ON entity_links(target_path);
+  `);
+
+  return db;
+}
+
+/** Returns the path to the master.db file for the current VeeContext home. */
+export function getMasterDbPath(): string {
+  return join(getVeeContextHome(), "master.db");
+}
+
+export function getMasterDb(dbPath: string) {
+  const sqlite = new Database(dbPath);
+  sqlite.exec("PRAGMA journal_mode = WAL;");
+  sqlite.exec("PRAGMA foreign_keys = ON;");
+
+  const db = drizzle(sqlite, { schema: masterSchema });
+
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS collections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      crawler_type TEXT NOT NULL,
+      config TEXT NOT NULL DEFAULT '{}',
+      credentials TEXT NOT NULL DEFAULT '{}',
+      db_path TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      title TEXT,
+      sync_interval INTEGER NOT NULL DEFAULT 3600,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   return db;

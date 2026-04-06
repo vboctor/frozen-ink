@@ -3,10 +3,9 @@ import { z } from "zod";
 import { existsSync, readFileSync } from "fs";
 import { basename, join, posix } from "path";
 import {
-  contextExists,
-  getCollection,
+  getMasterDb,
+  collections,
   getCollectionDb,
-  getCollectionDbPath,
   entities,
   attachments,
 } from "@veecontext/core";
@@ -99,7 +98,8 @@ export function registerGetAttachment(
       annotations: { readOnlyHint: true },
     },
     async (args) => {
-      if (!contextExists()) {
+      const masterDbPath = join(options.veecontextHome, "master.db");
+      if (!existsSync(masterDbPath)) {
         return {
           content: [
             {
@@ -110,7 +110,13 @@ export function registerGetAttachment(
         };
       }
 
-      const col = getCollection(args.collection);
+      const db = getMasterDb(masterDbPath);
+      const [col] = db
+        .select()
+        .from(collections)
+        .where(eq(collections.name, args.collection))
+        .all();
+
       if (!col) {
         return {
           content: [
@@ -124,7 +130,7 @@ export function registerGetAttachment(
         };
       }
 
-      const dbPath = getCollectionDbPath(args.collection);
+      const dbPath = col.dbPath;
       if (!existsSync(dbPath)) {
         return {
           content: [
