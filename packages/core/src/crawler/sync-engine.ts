@@ -55,6 +55,16 @@ export interface SyncEngineOptions {
   themeEngine: ThemeEngine;
   storage: StorageBackend;
   markdownBasePath: string;
+  onEntityProcessed?: (info: {
+    collectionName: string;
+    externalId: string;
+    created: boolean;
+    updated: boolean;
+  }) => void;
+  onBatchFetched?: (info: {
+    collectionName: string;
+    externalIds: string[];
+  }) => void;
 }
 
 export class SyncEngine {
@@ -65,6 +75,8 @@ export class SyncEngine {
   private storage: StorageBackend;
   private markdownBasePath: string;
   private searchIndexer: SearchIndexer;
+  private onEntityProcessed?: SyncEngineOptions["onEntityProcessed"];
+  private onBatchFetched?: SyncEngineOptions["onBatchFetched"];
 
   constructor(options: SyncEngineOptions) {
     this.crawler = options.crawler;
@@ -74,6 +86,8 @@ export class SyncEngine {
     this.storage = options.storage;
     this.markdownBasePath = options.markdownBasePath;
     this.searchIndexer = new SearchIndexer(options.dbPath);
+    this.onEntityProcessed = options.onEntityProcessed;
+    this.onBatchFetched = options.onBatchFetched;
   }
 
   async run(): Promise<{ created: number; updated: number; deleted: number }> {
@@ -110,12 +124,22 @@ export class SyncEngine {
       let hasMore = true;
       while (hasMore) {
         const result = await this.crawler.sync(cursor);
+        this.onBatchFetched?.({
+          collectionName: this.collectionName,
+          externalIds: result.entities.map((e) => e.externalId),
+        });
 
         // Process entities
         for (const entityData of result.entities) {
           const counts = await this.upsertEntity(entityData, crawlerType);
           created += counts.created;
           updated += counts.updated;
+          this.onEntityProcessed?.({
+            collectionName: this.collectionName,
+            externalId: entityData.externalId,
+            created: counts.created > 0,
+            updated: counts.updated > 0,
+          });
         }
 
         // Handle deletions

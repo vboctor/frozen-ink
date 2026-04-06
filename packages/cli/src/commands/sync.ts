@@ -108,6 +108,16 @@ export const syncCommand = new Command("sync")
         themeEngine,
         storage,
         markdownBasePath: "markdown",
+        onBatchFetched: ({ externalIds }) => {
+          if (externalIds.length === 0) return;
+          const ids = externalIds.map((externalId) => {
+            if (externalId.startsWith("issue:")) {
+              return externalId.slice("issue:".length);
+            }
+            return externalId;
+          });
+          console.log(`  page ids: ${ids.join(",")}`);
+        },
       });
 
       try {

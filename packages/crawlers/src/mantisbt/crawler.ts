@@ -16,9 +16,31 @@ interface MantisBTSyncCursor extends SyncCursor {
   page?: number;
   /** Total entities fetched so far (for --max limiting). */
   fetched?: number;
+  /** Most recent issue updated_at seen in previous completed runs. */
+  updatedSince?: string;
+  /** Most recent issue updated_at seen in the current run. */
+  newestSeenUpdatedAt?: string;
+  /** Signature of the last fetched page to detect pagination loops. */
+  lastPageSignature?: string;
+  /** Number of consecutive repeated page signatures. */
+  repeatedPageCount?: number;
 }
 
 const PAGE_SIZE = 50;
+
+function parseTimestamp(value: string | undefined): number | null {
+  if (!value) return null;
+  const ts = new Date(value).getTime();
+  return Number.isNaN(ts) ? null : ts;
+}
+
+function maxTimestamp(a: string | undefined, b: string | undefined): string | undefined {
+  const aTs = parseTimestamp(a);
+  const bTs = parseTimestamp(b);
+  if (aTs === null) return b;
+  if (bTs === null) return a;
+  return bTs > aTs ? b : a;
+}
 
 function padId(id: number): string {
   return String(id).padStart(5, "0");
@@ -72,6 +94,7 @@ export class MantisBTCrawler implements Crawler {
   private token = "";
   private projectId?: number;
   private maxEntities?: number;
+  private fetchFn: typeof fetch = globalThis.fetch;
 
   async initialize(
     config: Record<string, unknown>,
@@ -87,8 +110,14 @@ export class MantisBTCrawler implements Crawler {
 
   async sync(cursor: SyncCursor | null): Promise<SyncResult> {
     const c = (cursor as MantisBTSyncCursor) ?? {};
-    const page = c.page ?? 1;
-    const fetched = c.fetched ?? 0;
+    const isLegacyPageCursor =
+      c.page !== undefined &&
+      c.updatedSince === undefined &&
+      c.newestSeenUpdatedAt === undefined &&
+      c.lastPageSignature === undefined;
+    const page = isLegacyPageCursor ? 1 : (c.page ?? 1);
+    const fetched = isLegacyPageCursor ? 0 : (c.fetched ?? 0);
+    const updatedSinceTs = parseTimestamp(c.updatedSince);
 
     // Build URL
     let url = `${this.baseUrl}/api/rest/issues?page_size=${PAGE_SIZE}&page=${page}`;
@@ -106,20 +135,56 @@ export class MantisBTCrawler implements Crawler {
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     );
 
-    // Apply max entities limit
-    let remaining = issues.length;
+    const pageSignature = issues.map((i) => `${i.id}:${i.updated_at}`).join("|");
+    const repeatedPageCount = pageSignature && c.lastPageSignature === pageSignature
+      ? (c.repeatedPageCount ?? 0) + 1
+      : 0;
+
+    let newestSeenUpdatedAt = c.newestSeenUpdatedAt;
+    for (const issue of issues) {
+      newestSeenUpdatedAt = maxTimestamp(newestSeenUpdatedAt, issue.updated_at);
+    }
+
+    // Incremental filtering: re-process entities with timestamp >= updatedSince.
+    // Keeping equality avoids missing updates when many issues share the same second.
     let issuesToProcess = issues;
+    if (updatedSinceTs !== null) {
+      issuesToProcess = issues.filter((issue) => {
+        const issueUpdatedAtTs = parseTimestamp(issue.updated_at);
+        return issueUpdatedAtTs !== null && issueUpdatedAtTs >= updatedSinceTs;
+      });
+    }
+
+    // Apply max entities limit to entities that passed incremental filtering.
+    let remaining = issuesToProcess.length;
     if (this.maxEntities) {
-      remaining = this.maxEntities - fetched;
+      remaining = Math.max(0, this.maxEntities - fetched);
       if (remaining <= 0) {
+        const finalUpdatedSince = maxTimestamp(c.updatedSince, newestSeenUpdatedAt);
         return {
           entities: [],
-          nextCursor: null,
+          nextCursor: finalUpdatedSince ? { updatedSince: finalUpdatedSince } : null,
           hasMore: false,
           deletedExternalIds: [],
         };
       }
-      issuesToProcess = issues.slice(0, remaining);
+      issuesToProcess = issuesToProcess.slice(0, remaining);
+    }
+
+    const apiHasMore = issues.length === PAGE_SIZE;
+    const reachedMax = this.maxEntities ? (fetched + issuesToProcess.length) >= this.maxEntities : false;
+    const hasMore = apiHasMore && !reachedMax;
+    const finalUpdatedSince = maxTimestamp(c.updatedSince, newestSeenUpdatedAt);
+
+    // Some MantisBT instances appear to return the same "page" repeatedly.
+    // If the signature repeats, stop paginating to avoid an infinite loop.
+    if (page > 1 && repeatedPageCount > 0) {
+      return {
+        entities: [],
+        nextCursor: finalUpdatedSince ? { updatedSince: finalUpdatedSince } : null,
+        hasMore: false,
+        deletedExternalIds: [],
+      };
     }
 
     const entities: CrawlerEntityData[] = await Promise.all(
@@ -127,15 +192,19 @@ export class MantisBTCrawler implements Crawler {
     );
 
     const newFetched = fetched + issuesToProcess.length;
-    const apiHasMore = issues.length === PAGE_SIZE;
-    const reachedMax = this.maxEntities ? newFetched >= this.maxEntities : false;
-    const hasMore = apiHasMore && !reachedMax;
 
     return {
       entities,
       nextCursor: hasMore
-        ? { page: page + 1, fetched: newFetched }
-        : null,
+        ? {
+            page: page + 1,
+            fetched: newFetched,
+            updatedSince: c.updatedSince,
+            newestSeenUpdatedAt,
+            lastPageSignature: pageSignature,
+            repeatedPageCount,
+          }
+        : (finalUpdatedSince ? { updatedSince: finalUpdatedSince } : null),
       hasMore,
       deletedExternalIds: [],
     };
@@ -156,7 +225,7 @@ export class MantisBTCrawler implements Crawler {
         headers["Authorization"] = token;
       }
 
-      const response = await fetch(
+      const response = await this.fetchFn(
         `${baseUrl}/api/rest/issues?page_size=1&page=1`,
         { headers },
       );
@@ -176,6 +245,10 @@ export class MantisBTCrawler implements Crawler {
 
   async dispose(): Promise<void> {}
 
+  setFetch(fn: typeof fetch): void {
+    this.fetchFn = fn;
+  }
+
   private async apiFetch(url: string): Promise<Response> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -184,7 +257,7 @@ export class MantisBTCrawler implements Crawler {
       headers["Authorization"] = this.token;
     }
 
-    const response = await fetch(url, { headers });
+    const response = await this.fetchFn(url, { headers });
     if (!response.ok) {
       throw new Error(
         `MantisBT API request failed: ${response.status} ${response.statusText}`,
@@ -328,7 +401,7 @@ export class MantisBTCrawler implements Crawler {
 
     const url = `${this.baseUrl}/api/rest/issues/${issueId}/files/${fileId}`;
     try {
-      const res = await fetch(url, { headers });
+      const res = await this.fetchFn(url, { headers });
       if (!res.ok) {
         console.warn(`  Warning: could not download attachment ${label} (${res.status} ${res.statusText})`);
         return null;
