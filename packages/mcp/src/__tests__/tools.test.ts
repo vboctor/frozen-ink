@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import {
-  getMasterDb,
   getCollectionDb,
-  collections,
   entities,
   entityTags,
   attachments,
   syncRuns,
   SearchIndexer,
+  addCollection as coreAddCollection,
+  saveContext,
 } from "@veecontext/core";
 import { createMcpServer, type McpServerOptions } from "../server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -23,8 +23,11 @@ let client: Client;
 function setupTestEnv() {
   mkdirSync(TEST_DIR, { recursive: true });
   options = { veecontextHome: TEST_DIR };
+  // Required so getVeeContextHome() / listCollections() / getCollection() etc. resolve to TEST_DIR
+  process.env.VEECONTEXT_HOME = TEST_DIR;
 
-  getMasterDb(join(TEST_DIR, "master.db"));
+  // Create context.yml (required by contextExists() checks in MCP tools/resources)
+  saveContext({ collections: {}, deployments: {} });
   mkdirSync(join(TEST_DIR, "collections"), { recursive: true });
 }
 
@@ -32,7 +35,6 @@ function addCollection(
   name: string,
   opts?: { enabled?: boolean },
 ): { dbPath: string } {
-  const db = getMasterDb(join(TEST_DIR, "master.db"));
   const collectionDir = join(TEST_DIR, "collections", name);
   const dbPath = join(collectionDir, "data.db");
 
@@ -40,16 +42,12 @@ function addCollection(
   mkdirSync(join(collectionDir, "markdown"), { recursive: true });
   getCollectionDb(dbPath);
 
-  db.insert(collections)
-    .values({
-      name,
-      crawlerType: "github",
-      config: { owner: "test", repo: name },
-      credentials: { token: "tok" },
-      enabled: opts?.enabled ?? true,
-      dbPath,
-    })
-    .run();
+  coreAddCollection(name, {
+    crawler: "github",
+    config: { owner: "test", repo: name },
+    credentials: { token: "tok" },
+    enabled: opts?.enabled ?? true,
+  });
 
   return { dbPath };
 }
@@ -119,12 +117,7 @@ function addAttachment(
     })
     .run();
 
-  const attachmentFile = join(
-    TEST_DIR,
-    "collections",
-    collectionName,
-    data.storagePath,
-  );
+  const attachmentFile = join(TEST_DIR, "collections", collectionName, data.storagePath);
   mkdirSync(dirname(attachmentFile), { recursive: true });
   writeFileSync(attachmentFile, data.content);
 }
@@ -145,6 +138,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
+  delete process.env.VEECONTEXT_HOME;
 });
 
 describe("collection_list tool", () => {
@@ -161,28 +155,10 @@ describe("collection_list tool", () => {
     const { dbPath } = addCollection("my-repo");
     const colDb = getCollectionDb(dbPath);
 
-    addEntity(dbPath, {
-      externalId: "issue-1",
-      entityType: "issue",
-      title: "Bug report",
-      data: { number: 1 },
-    });
-    addEntity(dbPath, {
-      externalId: "issue-2",
-      entityType: "issue",
-      title: "Feature request",
-      data: { number: 2 },
-    });
+    addEntity(dbPath, { externalId: "issue-1", entityType: "issue", title: "Bug report", data: { number: 1 } });
+    addEntity(dbPath, { externalId: "issue-2", entityType: "issue", title: "Feature request", data: { number: 2 } });
 
-    colDb
-      .insert(syncRuns)
-      .values({
-        status: "completed",
-        entitiesCreated: 2,
-        startedAt: "2025-01-15 10:00:00",
-        completedAt: "2025-01-15 10:01:00",
-      })
-      .run();
+    colDb.insert(syncRuns).values({ status: "completed", entitiesCreated: 2, startedAt: "2025-01-15 10:00:00", completedAt: "2025-01-15 10:01:00" }).run();
 
     await setupClient();
     const result = await client.callTool({ name: "collection_list" });
@@ -210,21 +186,11 @@ describe("entity_search tool", () => {
     });
 
     const indexer = new SearchIndexer(dbPath);
-    indexer.updateIndex({
-      id: entityId,
-      externalId: "issue-42",
-      entityType: "issue",
-      title: "Authentication bug",
-      content: "Users cannot login with OAuth",
-      tags: ["bug"],
-    });
+    indexer.updateIndex({ id: entityId, externalId: "issue-42", entityType: "issue", title: "Authentication bug", content: "Users cannot login with OAuth", tags: ["bug"] });
     indexer.close();
 
     await setupClient();
-    const result = await client.callTool({
-      name: "entity_search",
-      arguments: { query: "authentication" },
-    });
+    const result = await client.callTool({ name: "entity_search", arguments: { query: "authentication" } });
     const data = JSON.parse((result.content as Array<{ text: string }>)[0].text);
 
     expect(data).toHaveLength(1);
@@ -237,46 +203,19 @@ describe("entity_search tool", () => {
     const { dbPath: dbPath1 } = addCollection("repo-a");
     const { dbPath: dbPath2 } = addCollection("repo-b");
 
-    const id1 = addEntity(dbPath1, {
-      externalId: "e-1",
-      entityType: "issue",
-      title: "Widget feature",
-      data: {},
-    });
-    const id2 = addEntity(dbPath2, {
-      externalId: "e-2",
-      entityType: "issue",
-      title: "Widget improvement",
-      data: {},
-    });
+    const id1 = addEntity(dbPath1, { externalId: "e-1", entityType: "issue", title: "Widget feature", data: {} });
+    const id2 = addEntity(dbPath2, { externalId: "e-2", entityType: "issue", title: "Widget improvement", data: {} });
 
     const idx1 = new SearchIndexer(dbPath1);
-    idx1.updateIndex({
-      id: id1,
-      externalId: "e-1",
-      entityType: "issue",
-      title: "Widget feature",
-      content: "Add widgets",
-      tags: [],
-    });
+    idx1.updateIndex({ id: id1, externalId: "e-1", entityType: "issue", title: "Widget feature", content: "Add widgets", tags: [] });
     idx1.close();
 
     const idx2 = new SearchIndexer(dbPath2);
-    idx2.updateIndex({
-      id: id2,
-      externalId: "e-2",
-      entityType: "issue",
-      title: "Widget improvement",
-      content: "Better widgets",
-      tags: [],
-    });
+    idx2.updateIndex({ id: id2, externalId: "e-2", entityType: "issue", title: "Widget improvement", content: "Better widgets", tags: [] });
     idx2.close();
 
     await setupClient();
-    const result = await client.callTool({
-      name: "entity_search",
-      arguments: { query: "widget", collection: "repo-a" },
-    });
+    const result = await client.callTool({ name: "entity_search", arguments: { query: "widget", collection: "repo-a" } });
     const data = JSON.parse((result.content as Array<{ text: string }>)[0].text);
 
     expect(data).toHaveLength(1);
@@ -298,10 +237,7 @@ describe("entity_get_data tool", () => {
     });
 
     await setupClient();
-    const result = await client.callTool({
-      name: "entity_get_data",
-      arguments: { collection: "get-test", externalId: "issue-5" },
-    });
+    const result = await client.callTool({ name: "entity_get_data", arguments: { collection: "get-test", externalId: "issue-5" } });
     const data = JSON.parse((result.content as Array<{ text: string }>)[0].text);
 
     expect(data.externalId).toBe("issue-5");
@@ -312,7 +248,6 @@ describe("entity_get_data tool", () => {
     expect(data.url).toBe("https://github.com/test/get-test/issues/5");
     expect(data.tags).toEqual(["bug", "critical"]);
   });
-
 });
 
 describe("entity_get_markdown tool", () => {
@@ -325,19 +260,10 @@ describe("entity_get_markdown tool", () => {
     mkdirSync(join(collectionDir, "markdown", "issues"), { recursive: true });
     writeFileSync(join(collectionDir, mdPath), mdContent);
 
-    addEntity(dbPath, {
-      externalId: "issue-3",
-      entityType: "issue",
-      title: "Test issue",
-      data: { number: 3 },
-      markdownPath: mdPath,
-    });
+    addEntity(dbPath, { externalId: "issue-3", entityType: "issue", title: "Test issue", data: { number: 3 }, markdownPath: mdPath });
 
     await setupClient();
-    const result = await client.callTool({
-      name: "entity_get_markdown",
-      arguments: { collection: "md-test", externalId: "issue-3" },
-    });
+    const result = await client.callTool({ name: "entity_get_markdown", arguments: { collection: "md-test", externalId: "issue-3" } });
     const data = JSON.parse((result.content as Array<{ text: string }>)[0].text);
 
     expect(data.markdown).toBe(mdContent);
@@ -366,11 +292,7 @@ describe("entity_get_attachment tool", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_attachment",
-      arguments: {
-        collection: "attach-col",
-        externalId: "commit-1",
-        reference: "![[git/abc123/logo.png]]",
-      },
+      arguments: { collection: "attach-col", externalId: "commit-1", reference: "![[git/abc123/logo.png]]" },
     });
     const data = JSON.parse((result.content as Array<{ text: string }>)[0].text);
 
@@ -389,9 +311,7 @@ describe("MCP resources", () => {
     await setupClient();
     const result = await client.listResources();
 
-    const collectionsRes = result.resources.find(
-      (r) => r.uri === "veecontext://collections",
-    );
+    const collectionsRes = result.resources.find((r) => r.uri === "veecontext://collections");
     expect(collectionsRes).toBeDefined();
   });
 
@@ -399,9 +319,7 @@ describe("MCP resources", () => {
     addCollection("read-col");
 
     await setupClient();
-    const result = await client.readResource({
-      uri: "veecontext://collections",
-    });
+    const result = await client.readResource({ uri: "veecontext://collections" });
 
     const data = JSON.parse(result.contents[0].text as string);
     expect(data).toHaveLength(1);
@@ -410,17 +328,10 @@ describe("MCP resources", () => {
 
   it("reads a specific collection resource template", async () => {
     const { dbPath } = addCollection("detail-col");
-    addEntity(dbPath, {
-      externalId: "e-1",
-      entityType: "issue",
-      title: "Test",
-      data: {},
-    });
+    addEntity(dbPath, { externalId: "e-1", entityType: "issue", title: "Test", data: {} });
 
     await setupClient();
-    const result = await client.readResource({
-      uri: "veecontext://collections/detail-col",
-    });
+    const result = await client.readResource({ uri: "veecontext://collections/detail-col" });
 
     const data = JSON.parse(result.contents[0].text as string);
     expect(data.name).toBe("detail-col");
@@ -430,18 +341,10 @@ describe("MCP resources", () => {
 
   it("reads an entity resource by collection and externalId", async () => {
     const { dbPath } = addCollection("ent-res-col");
-    addEntity(dbPath, {
-      externalId: "issue-99",
-      entityType: "issue",
-      title: "Resource entity",
-      data: { number: 99 },
-      tags: ["test"],
-    });
+    addEntity(dbPath, { externalId: "issue-99", entityType: "issue", title: "Resource entity", data: { number: 99 }, tags: ["test"] });
 
     await setupClient();
-    const result = await client.readResource({
-      uri: "veecontext://entities/ent-res-col/issue-99",
-    });
+    const result = await client.readResource({ uri: "veecontext://entities/ent-res-col/issue-99" });
 
     const data = JSON.parse(result.contents[0].text as string);
     expect(data.externalId).toBe("issue-99");
@@ -454,15 +357,10 @@ describe("MCP resources", () => {
     const collectionDir = join(TEST_DIR, "collections", "md-res-col");
 
     mkdirSync(join(collectionDir, "markdown", "issues"), { recursive: true });
-    writeFileSync(
-      join(collectionDir, "markdown", "issues", "1-test.md"),
-      "# Test Issue\n\nBody content.",
-    );
+    writeFileSync(join(collectionDir, "markdown", "issues", "1-test.md"), "# Test Issue\n\nBody content.");
 
     await setupClient();
-    const result = await client.readResource({
-      uri: "veecontext://markdown/md-res-col/markdown/issues/1-test.md",
-    });
+    const result = await client.readResource({ uri: "veecontext://markdown/md-res-col/markdown/issues/1-test.md" });
 
     expect(result.contents[0].text).toBe("# Test Issue\n\nBody content.");
     expect(result.contents[0].mimeType).toBe("text/markdown");

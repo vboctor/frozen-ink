@@ -76,7 +76,7 @@ describe("MarkdownView", () => {
     expect(link).toHaveClass("wikilink");
 
     await user.click(link);
-    expect(onWikilinkClick).toHaveBeenCalledWith("issues/123");
+    expect(onWikilinkClick).toHaveBeenCalledWith("issues/123", false);
   });
 
   it("renders wikilinks as plain text when file does not exist", () => {

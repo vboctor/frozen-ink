@@ -46,6 +46,7 @@ beforeEach(() => {
   );
   mkdirSync(repoDir, { recursive: true });
   git("init");
+  git("symbolic-ref", "HEAD", "refs/heads/main");
   git("config", "user.name", "Test Author");
   git("config", "user.email", "test@example.com");
 
