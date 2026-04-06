@@ -3,8 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { registerListCollections } from "./tools/list-collections";
 import { registerSearch } from "./tools/search";
 import { registerGetEntity } from "./tools/get-entity";
-import { registerQuery } from "./tools/query";
-import { registerSync } from "./tools/sync";
+import { registerGetMarkdown } from "./tools/get-markdown";
+import { registerGetAttachment } from "./tools/get-attachment";
 import { registerCollectionResources } from "./resources/collection";
 import { registerEntityResources } from "./resources/entity";
 
@@ -20,18 +20,16 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     },
     {
       instructions:
-        "VeeContext MCP server. Provides tools to search, query, and sync data across your connected collections.",
+        "VeeContext MCP server. Provides collection and entity retrieval tools over synced collections for LLM clients.",
     },
   );
 
-  // Register tools
   registerListCollections(server, options);
   registerSearch(server, options);
   registerGetEntity(server, options);
-  registerQuery(server, options);
-  registerSync(server, options);
+  registerGetMarkdown(server, options);
+  registerGetAttachment(server, options);
 
-  // Register resources
   registerCollectionResources(server, options);
   registerEntityResources(server, options);
 

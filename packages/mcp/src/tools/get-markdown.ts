@@ -2,26 +2,20 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import {
-  getMasterDb,
-  getCollectionDb,
-  collections,
-  entities,
-  entityTags,
-} from "@veecontext/core";
+import { getMasterDb, getCollectionDb, collections, entities } from "@veecontext/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
-export function registerGetEntity(
+export function registerGetMarkdown(
   server: McpServer,
   options: McpServerOptions,
 ): void {
   server.registerTool(
-    "entity_get_data",
+    "entity_get_markdown",
     {
-      title: "Get Entity",
+      title: "Get Entity Markdown",
       description:
-        "Returns full entity data and rendered markdown by collection name and external ID",
+        "Returns rendered markdown content for an entity by collection name and external ID",
       inputSchema: {
         collection: z.string().describe("Collection name"),
         externalId: z.string().describe("External ID of the entity"),
@@ -92,41 +86,51 @@ export function registerGetEntity(
         };
       }
 
-      const tags = colDb
-        .select()
-        .from(entityTags)
-        .where(eq(entityTags.entityId, entity.id))
-        .all()
-        .map((t) => t.tag);
-
-      let markdown: string | null = null;
-      if (entity.markdownPath) {
-        const collectionDir = join(
-          options.veecontextHome,
-          "collections",
-          args.collection,
-        );
-        const mdPath = join(collectionDir, entity.markdownPath);
-        if (existsSync(mdPath)) {
-          markdown = readFileSync(mdPath, "utf-8");
-        }
+      if (!entity.markdownPath) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: `Entity "${args.externalId}" has no rendered markdown`,
+              }),
+            },
+          ],
+        };
       }
 
-      const result = {
-        id: entity.id,
-        externalId: entity.externalId,
-        entityType: entity.entityType,
-        title: entity.title,
-        data: entity.data,
-        url: entity.url,
-        tags,
-        markdown,
-        createdAt: entity.createdAt,
-        updatedAt: entity.updatedAt,
-      };
+      const collectionDir = join(options.veecontextHome, "collections", args.collection);
+      const markdownPath = join(collectionDir, entity.markdownPath);
+
+      if (!existsSync(markdownPath)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: `Markdown file not found: ${entity.markdownPath}`,
+              }),
+            },
+          ],
+        };
+      }
+
+      const markdown = readFileSync(markdownPath, "utf-8");
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              collection: args.collection,
+              externalId: entity.externalId,
+              title: entity.title,
+              markdownPath: entity.markdownPath,
+              markdown,
+              updatedAt: entity.updatedAt,
+            }),
+          },
+        ],
       };
     },
   );

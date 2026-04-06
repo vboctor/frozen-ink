@@ -161,9 +161,9 @@ The viewer at `http://localhost:3000` (or `5173` in dev) provides:
 
 ## MCP Server
 
-Exposes 6 tools and 4 resources for AI assistants:
+Exposes 5 tools and 4 resources for AI assistants:
 
-**Tools:** `list_collections`, `search_entities`, `get_entity`, `query_entities`, `trigger_sync`, `get_sync_status`
+**Tools:** `collection_list`, `entity_search`, `entity_get_data`, `entity_get_markdown`, `entity_get_attachment`
 
 **Resources:** `veecontext://collections`, `veecontext://collections/{name}`, `veecontext://entities/{collection}/{externalId}`, `veecontext://markdown/{collection}/{+path}`
 

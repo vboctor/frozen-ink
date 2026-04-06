@@ -16,7 +16,7 @@ export function registerListCollections(
   options: McpServerOptions,
 ): void {
   server.registerTool(
-    "list_collections",
+    "collection_list",
     {
       title: "List Collections",
       description:

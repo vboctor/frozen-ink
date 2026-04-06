@@ -15,7 +15,7 @@ export function registerSearch(
   options: McpServerOptions,
 ): void {
   server.registerTool(
-    "search_entities",
+    "entity_search",
     {
       title: "Search Entities",
       description:
