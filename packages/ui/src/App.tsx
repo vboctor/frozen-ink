@@ -110,7 +110,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<LinkItem[]>([]);
-  const [backlinksOpen, setBacklinksOpen] = useState(true);
+  const [backlinksOpen, setBacklinksOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("markdown");
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [htmlAvailable, setHtmlAvailable] = useState(false);
@@ -322,19 +322,24 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : { supported: false }))
       .then((data: { supported: boolean }) => {
         setHtmlAvailable(data.supported);
-        if (!data.supported && viewMode === "html") {
+        // Default to HTML when supported, fall back to markdown when not
+        if (data.supported) {
+          setViewMode("html");
+        } else if (viewMode === "html") {
           setViewMode("markdown");
         }
       })
       .catch(() => setHtmlAvailable(false));
   }, [selectedCollection]);
 
-  // Fetch HTML content when in HTML mode
+  // Fetch HTML content whenever htmlAvailable and a file is selected.
+  // Not gated by viewMode so it's ready when the user toggles.
   useEffect(() => {
-    if (viewMode !== "html" || !selectedCollection || !selectedFile) {
+    if (!htmlAvailable || !selectedCollection || !selectedFile) {
       setHtmlContent(null);
       return;
     }
+    setHtmlContent(null); // clear while loading
     fetch(
       `/api/collections/${encodeURIComponent(selectedCollection)}/html/${selectedFile}`,
     )
@@ -345,9 +350,8 @@ export default function App() {
       .then(setHtmlContent)
       .catch(() => {
         setHtmlContent(null);
-        setViewMode("markdown");
       });
-  }, [viewMode, selectedCollection, selectedFile]);
+  }, [htmlAvailable, selectedCollection, selectedFile]);
 
   // Core navigation: open a file, optionally in a new tab.
   // Uses functional state updates throughout to avoid stale closure issues.
@@ -659,16 +663,16 @@ export default function App() {
       <div className="main-body">
         <div className="main-inner">
           {loading && <div className="loading">Loading...</div>}
-          {!loading && selectedFile && fileContent !== null && viewMode === "markdown" && (
+          {!loading && selectedFile && viewMode === "html" && htmlContent !== null && (
+            <HtmlView html={htmlContent} onWikilinkClick={handleWikilinkNavigate} />
+          )}
+          {!loading && selectedFile && fileContent !== null && !(viewMode === "html" && htmlContent !== null) && (
             <MarkdownView
               content={fileContent}
               collection={selectedCollection || ""}
               allFiles={allFiles}
               onWikilinkClick={handleWikilinkNavigate}
             />
-          )}
-          {!loading && selectedFile && viewMode === "html" && htmlContent !== null && (
-            <HtmlView html={htmlContent} />
           )}
           {!selectedFile && !loading && (
             <div className="empty-state">

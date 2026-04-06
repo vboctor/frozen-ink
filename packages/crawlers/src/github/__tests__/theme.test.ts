@@ -372,6 +372,101 @@ describe("GitHubTheme", () => {
       expect(md).toContain("Should we also update the docs?");
     });
 
+    it("renders reviews with diff-level comments in markdown", () => {
+      const ctx = makePRContext({
+        data: {
+          ...makePRContext().entity.data,
+          reviews: [
+            {
+              id: 200,
+              user: { login: "reviewer", avatarUrl: "https://avatars.githubusercontent.com/u/3?v=4", url: "https://github.com/reviewer" },
+              state: "COMMENTED",
+              body: null,
+              submittedAt: "2024-01-12T10:00:00Z",
+              url: "https://github.com/acme/app/pull/89#pullrequestreview-200",
+              reviewComments: [
+                {
+                  id: 500,
+                  user: { login: "reviewer", avatarUrl: "https://avatars.githubusercontent.com/u/3?v=4", url: "https://github.com/reviewer" },
+                  body: "This needs a type annotation",
+                  path: "src/index.ts",
+                  diffHunk: "@@ -10,3 +10,4 @@\n+const x = 1;",
+                  createdAt: "2024-01-12T10:00:00Z",
+                  url: "https://github.com/acme/app/pull/89#discussion_r500",
+                  inReplyToId: null,
+                  reactions: null,
+                },
+              ],
+            },
+          ],
+        },
+      });
+      const md = theme.render(ctx);
+      expect(md).toContain("### Reviews");
+      expect(md).toContain("src/index.ts");
+      expect(md).toContain("const x = 1;");
+      expect(md).toContain("This needs a type annotation");
+    });
+
+    it("renders reviews with diff-level comments in HTML", () => {
+      const ctx = makePRContext({
+        data: {
+          ...makePRContext().entity.data,
+          reviews: [
+            {
+              id: 200,
+              user: { login: "reviewer", avatarUrl: "https://avatars.githubusercontent.com/u/3?v=4", url: "https://github.com/reviewer" },
+              state: "COMMENTED",
+              body: null,
+              submittedAt: "2024-01-12T10:00:00Z",
+              url: "https://github.com/acme/app/pull/89#pullrequestreview-200",
+              reviewComments: [
+                {
+                  id: 500,
+                  user: { login: "reviewer", avatarUrl: "https://avatars.githubusercontent.com/u/3?v=4", url: "https://github.com/reviewer" },
+                  body: "Should this be `unknown`?",
+                  path: "src/lib/es5.d.ts",
+                  diffHunk: "@@ -1443,7 +1443,8 @@\n isArray(arg: any): arg is any[];",
+                  createdAt: "2024-01-12T10:00:00Z",
+                  url: "https://github.com/acme/app/pull/89#discussion_r500",
+                  inReplyToId: null,
+                  reactions: null,
+                },
+              ],
+            },
+          ],
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("gh-diff-comment");
+      expect(html).toContain("gh-diff-file");
+      expect(html).toContain("src/lib/es5.d.ts");
+      expect(html).toContain("gh-diff-hunk");
+      expect(html).toContain("isArray");
+      expect(html).toContain("Should this be");
+    });
+
+    it("filters out empty reviews with no body and no review comments", () => {
+      const ctx = makePRContext({
+        data: {
+          ...makePRContext().entity.data,
+          reviews: [
+            {
+              id: 200,
+              user: { login: "bot", avatarUrl: "", url: "" },
+              state: "COMMENTED",
+              body: null,
+              submittedAt: "2024-01-12T10:00:00Z",
+              url: "",
+              reviewComments: [],
+            },
+          ],
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).not.toContain("gh-review-box");
+    });
+
     it("renders author with avatar in metadata", () => {
       const md = theme.render(makePRContext());
       expect(md).toContain("**Author:** ![octocat]");
@@ -494,6 +589,121 @@ describe("GitHubTheme", () => {
       expect(html).toContain("https://github.com/acme/app/issues/427");
     });
 
+    it("strips HTML comments from body", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          body: "<!-- Please try to reproduce -->\n**Version:** 2.9\n<!-- Search terms -->",
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).not.toContain("Please try to reproduce");
+      expect(html).not.toContain("Search terms");
+      expect(html).toContain("Version:");
+    });
+
+    it("converts emoji shortcodes to emoji characters", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          body: ":adhesive_bandage: Proposed fix :slightly_smiling_face:",
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).not.toContain(":adhesive_bandage:");
+      expect(html).not.toContain(":slightly_smiling_face:");
+      expect(html).toContain("\u{1FA79}"); // 🩹
+      expect(html).toContain("\u{1F642}"); // 🙂
+    });
+
+    it("renders setext-style headers (underlined with === or ---)", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          body: "Suggestion\n=======\n\nSome text\n\nDetails\n-------\n\nMore text",
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("<h1>Suggestion</h1>");
+      expect(html).toContain("<h2>Details</h2>");
+      expect(html).not.toContain("=======");
+      expect(html).not.toContain("-------");
+    });
+
+    it("converts #nnn shorthand to issue/PR links", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          body: "Related to #5334 and #23906",
+        },
+      });
+      // With repo context from entity URL
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("gh-issue-ref");
+      expect(html).toContain(">#5334</a>");
+      expect(html).toContain(">#23906</a>");
+    });
+
+    it("shortens full GitHub issue/PR URLs to #nnn", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          body: "See https://github.com/acme/app/issues/100 and https://github.com/acme/app/pull/200",
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain(">#100</a>");
+      expect(html).toContain(">#200</a>");
+      expect(html).not.toContain(">https://github.com/acme/app/issues/100<");
+    });
+
+    it("extracts code blocks with extra lang text (e.g. ```ts repro)", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          body: "```ts repro\nconst x = 1;\n```\n\nDone.",
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("gh-code-block");
+      expect(html).toContain("language-ts");
+      expect(html).toContain("gh-copy-btn");
+      expect(html).toContain("const x = 1;");
+      // No bare backticks outside code
+      expect(html).not.toMatch(/[^;]```/);
+    });
+
+    it("preserves HTML <a> tags from body", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          body: 'See <a href="https://example.com/doc">the docs</a> for details.',
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain('href="https://example.com/doc"');
+      expect(html).toContain(">the docs</a>");
+    });
+
+    it("wraps avatars in clickable links", () => {
+      const html = theme.renderHtml!(makeIssueContext());
+      expect(html).toContain("gh-avatar-link");
+      // Avatar img should be inside an anchor
+      expect(html).toMatch(/gh-avatar-link[^>]*>.*?<img/);
+    });
+
+    it("converts @mentions to links", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          body: "cc @octocat and @microsoft/team",
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("gh-mention");
+      expect(html).toContain(">@octocat</a>");
+    });
+
     it("renders user entity as HTML", () => {
       const ctx: ThemeRenderContext = {
         entity: {
@@ -522,9 +732,9 @@ describe("GitHubTheme", () => {
         crawlerType: "github",
       };
       const html = theme.renderHtml!(ctx);
-      expect(html).toContain("gh-issue-view");
+      expect(html).toContain("gh-user-card");
       expect(html).toContain("The Octocat");
-      expect(html).toContain("@octocat");
+      expect(html).toContain("octocat");
       expect(html).toContain("GitHub");
       expect(html).toContain("San Francisco");
       expect(html).toContain("Hi there!");
@@ -567,6 +777,18 @@ describe("GitHubTheme", () => {
       expect(md).toContain("**Company:** GitHub");
       expect(md).toContain("**Location:** San Francisco");
       expect(md).toContain("**Followers:** 10000");
+    });
+
+    it("shortens GitHub URLs to compact refs in markdown body", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          body: "See https://github.com/acme/app/issues/100 for details.",
+        },
+      });
+      const md = theme.render(ctx);
+      // Should be a markdown link with compact label
+      expect(md).toContain("[#100](https://github.com/acme/app/issues/100)");
     });
 
     it("generates correct file path for user", () => {

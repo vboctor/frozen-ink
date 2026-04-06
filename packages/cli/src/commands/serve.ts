@@ -271,6 +271,20 @@ export function createApiServer(
           ? JSON.parse(entity.data)
           : entity.data;
 
+        // Build entity path lookup for resolving cross-references (e.g. user pages)
+        const lookupEntityPath = (externalId: string): string | undefined => {
+          const [row] = colDb
+            .select({ markdownPath: entities.markdownPath })
+            .from(entities)
+            .where(eq(entities.externalId, externalId))
+            .all();
+          const mdPath = row?.markdownPath;
+          if (!mdPath) return undefined;
+          const prefix = "markdown/";
+          const relative = mdPath.startsWith(prefix) ? mdPath.slice(prefix.length) : mdPath;
+          return relative.endsWith(".md") ? relative.slice(0, -3) : relative;
+        };
+
         const html = themeEngine.renderHtml({
           entity: {
             externalId: entity.externalId,
@@ -282,6 +296,7 @@ export function createApiServer(
           },
           collectionName: name,
           crawlerType: col.crawler,
+          lookupEntityPath,
         });
 
         if (!html) return errorResponse("HTML rendering not available", 404);

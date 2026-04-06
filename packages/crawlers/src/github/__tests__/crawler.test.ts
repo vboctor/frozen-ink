@@ -445,6 +445,46 @@ describe("GitHubCrawler", () => {
       expect(reviews[0].user.login).toBe("reviewer");
     });
 
+    it("fetches review comments (diff-level) and attaches to reviews", async () => {
+      const pr = samplePR();
+      const review = sampleReview({ id: 200, state: "COMMENTED", body: null });
+
+      crawler.setFetch(
+        mockFetch({
+          "/issues?": [],
+          "/pulls?": [pr],
+          "/pulls/20/reviews?": [review],
+          "/pulls/20/comments?": [
+            {
+              id: 500,
+              pull_request_review_id: 200,
+              body: "Should this be `unknown`?",
+              user: { login: "reviewer", avatar_url: "https://avatars.githubusercontent.com/u/3?v=4", html_url: "https://github.com/reviewer" },
+              path: "src/index.ts",
+              diff_hunk: "@@ -10,3 +10,4 @@\n+const x = 1;",
+              created_at: "2024-01-04T10:00:00Z",
+              updated_at: "2024-01-04T10:00:00Z",
+              html_url: "https://github.com/owner/repo/pull/20#discussion_r500",
+            },
+          ],
+          "/check-runs?": { total_count: 0, check_runs: [] },
+        }),
+      );
+
+      const r1 = await crawler.sync(null);
+      const r2 = await crawler.sync(r1.nextCursor);
+
+      const reviews = r2.entities[0].data.reviews as Array<{
+        id: number;
+        reviewComments: Array<{ id: number; body: string; path: string; diffHunk: string }>;
+      }>;
+      expect(reviews).toHaveLength(1);
+      expect(reviews[0].reviewComments).toHaveLength(1);
+      expect(reviews[0].reviewComments[0].body).toBe("Should this be `unknown`?");
+      expect(reviews[0].reviewComments[0].path).toBe("src/index.ts");
+      expect(reviews[0].reviewComments[0].diffHunk).toContain("const x = 1;");
+    });
+
     it("fetches check runs for pull requests", async () => {
       const pr = samplePR();
 

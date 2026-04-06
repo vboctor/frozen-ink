@@ -122,6 +122,21 @@ export interface GitHubPullRequest {
   comments: number; // comment count
 }
 
+/** Review comment on a specific diff line (from /pulls/{number}/comments) */
+export interface GitHubReviewComment {
+  id: number;
+  pull_request_review_id: number;
+  body: string;
+  user: GitHubUser | null;
+  path: string;
+  diff_hunk: string;
+  created_at: string;
+  updated_at: string;
+  html_url: string;
+  in_reply_to_id?: number;
+  reactions?: GitHubReactions;
+}
+
 /** Full user profile from GET /users/:login */
 export interface GitHubUserProfile {
   login: string;

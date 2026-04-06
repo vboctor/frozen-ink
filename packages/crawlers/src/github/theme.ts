@@ -1,5 +1,21 @@
 import type { Theme, ThemeRenderContext } from "@veecontext/core";
 import { frontmatter, wikilink, callout } from "@veecontext/core";
+import { gemoji } from "gemoji";
+
+// Build emoji shortcode lookup map once
+const emojiMap = new Map<string, string>();
+for (const g of gemoji) {
+  for (const name of g.names) {
+    emojiMap.set(name, g.emoji);
+  }
+}
+
+/** Replace GitHub-style :emoji_name: shortcodes with actual emoji characters */
+function emojify(text: string): string {
+  return text.replace(/:([a-z0-9_+-]+):/g, (match, name) => {
+    return emojiMap.get(name) ?? match;
+  });
+}
 
 function slugify(text: string): string {
   return text
@@ -24,6 +40,18 @@ interface MappedComment {
   reactions: MappedReactions | null;
 }
 
+interface MappedReviewComment {
+  id: number;
+  user: MappedUser | null;
+  body: string;
+  path: string;
+  diffHunk: string;
+  createdAt: string;
+  url: string;
+  inReplyToId: number | null;
+  reactions: MappedReactions | null;
+}
+
 interface MappedReview {
   id: number;
   user: MappedUser | null;
@@ -31,6 +59,7 @@ interface MappedReview {
   body: string | null;
   submittedAt: string;
   url: string;
+  reviewComments?: MappedReviewComment[];
 }
 
 interface MappedCheckRun {
@@ -114,31 +143,172 @@ function esc(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function avatarImg(user: MappedUser | null, size: number): string {
-  if (!user) return "";
-  return `<img class="gh-avatar" src="${esc(user.avatarUrl)}&amp;size=${size * 2}" width="${size}" height="${size}" alt="${esc(user.login)}" />`;
+type UserUrlResolver = (login: string) => string;
+
+function makeUserUrlResolver(
+  lookup?: (externalId: string) => string | undefined,
+): UserUrlResolver {
+  return (login: string) => {
+    if (lookup) {
+      const localPath = lookup(`user-${login}`);
+      if (localPath) return `#wikilink/${encodeURIComponent(localPath)}`;
+    }
+    return `https://github.com/${login}`;
+  };
 }
 
-function simpleMarkdown(text: string): string {
-  // Minimal markdown: paragraphs, code blocks, inline code, bold, italic, links
-  let html = esc(text);
-  // Code blocks
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) =>
-    `<pre><code>${code}</code></pre>`);
+function avatarImg(user: MappedUser | null, size: number, resolve?: UserUrlResolver): string {
+  if (!user) return "";
+  const href = resolve ? resolve(user.login) : esc(user.url);
+  const isLocal = href.startsWith("#");
+  const target = isLocal ? "" : ` target="_blank" rel="noopener noreferrer"`;
+  return `<a href="${href}"${target} class="gh-avatar-link"><img class="gh-avatar" src="${esc(user.avatarUrl)}&amp;size=${size * 2}" width="${size}" height="${size}" alt="${esc(user.login)}" /></a>`;
+}
+
+function userLink(user: MappedUser | null, bold = true, resolve?: UserUrlResolver): string {
+  if (!user) return "Unknown";
+  const name = esc(user.login);
+  const tag = bold ? "strong" : "span";
+  const href = resolve ? resolve(user.login) : esc(user.url);
+  const isLocal = href.startsWith("#");
+  const target = isLocal ? "" : ` target="_blank" rel="noopener noreferrer"`;
+  return `<a class="gh-user-link" href="${href}"${target}><${tag}>${name}</${tag}></a>`;
+}
+
+interface MarkdownOptions {
+  resolveUser?: UserUrlResolver;
+  /** owner/repo for shortening GitHub URLs (e.g. "microsoft/TypeScript") */
+  repo?: string;
+  /** Resolve an externalId to a local wikilink path */
+  lookupEntityPath?: (externalId: string) => string | undefined;
+}
+
+function simpleMarkdown(text: string, opts?: MarkdownOptions): string {
+  const resolve = opts?.resolveUser;
+  // Normalize line endings, strip HTML comments, convert emoji shortcodes
+  let raw = text.replace(/\r\n/g, "\n");
+  raw = raw.replace(/<!--[\s\S]*?-->/g, "");
+  raw = emojify(raw);
+
+  // Setext-style headers: text followed by === or --- on the next line
+  raw = raw.replace(/^(.+)\n={3,}\s*$/gm, "# $1");
+  raw = raw.replace(/^(.+)\n-{3,}\s*$/gm, "## $1");
+
+  // Extract HTML anchor tags before escaping (GitHub renders these)
+  const htmlLinks: string[] = [];
+  raw = raw.replace(/<a\s+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, url, text) => {
+    const idx = htmlLinks.length;
+    htmlLinks.push(`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`);
+    return `\x00HTMLLINK${idx}\x00`;
+  });
+
+  // Extract markdown links before escaping (URLs may contain parens, special chars)
+  const links: string[] = [];
+  raw = raw.replace(/\[([^\]]+)\]\(([^)]*(?:\([^)]*\))*[^)]*)\)/g, (_m, text, url) => {
+    const idx = links.length;
+    links.push(`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`);
+    return `\x00LINK${idx}\x00`;
+  });
+
+  // Extract code blocks before escaping so their content stays literal
+  // Language hint can be "ts", "ts repro", "typescript", etc. — take the first word only.
+  const codeBlocks: string[] = [];
+  raw = raw.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_m, langLine, code) => {
+    const idx = codeBlocks.length;
+    const lang = langLine.trim().split(/\s/)[0] || "";
+    const escapedCode = esc(code.replace(/\n$/, ""));
+    const langClass = lang ? ` class="language-${esc(lang)}"` : "";
+    codeBlocks.push(
+      `<div class="gh-code-block"><pre><code${langClass}>${escapedCode}</code></pre>` +
+      `<button class="gh-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.gh-code-block').querySelector('code').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',2000)})" title="Copy code">Copy</button></div>`,
+    );
+    return `\x00CODEBLOCK${idx}\x00`;
+  });
+
+  let html = esc(raw);
+
+  // Restore code blocks, HTML links, and markdown links
+  html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_m, idx) => codeBlocks[parseInt(idx)]);
+  html = html.replace(/\x00HTMLLINK(\d+)\x00/g, (_m, idx) => htmlLinks[parseInt(idx)]);
+  html = html.replace(/\x00LINK(\d+)\x00/g, (_m, idx) => links[parseInt(idx)]);
+
   // Inline code
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   // Bold
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  // Italic
-  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
-  // Links
+  // Italic (not inside words)
+  html = html.replace(/(?<!\w)\*(.+?)\*(?!\w)/g, "<em>$1</em>");
+  // Shorten GitHub issue/PR URLs to compact #nnn references
+  // Matches: https://github.com/owner/repo/issues/123 or .../pull/123 (with optional #fragment)
   html = html.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+    /(?<!="|>)https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/(issues|pull)\/(\d+)(#[^\s<]*)?/g,
+    (_m, owner, repo, type, num, fragment) => {
+      const fullRepo = `${owner}/${repo}`;
+      const externalId = type === "pull" ? `pr-${num}` : `issue-${num}`;
+      const isSameRepo = opts?.repo && fullRepo === opts.repo;
+
+      // Try local link first (only for same-repo refs)
+      if (isSameRepo && opts?.lookupEntityPath) {
+        const localPath = opts.lookupEntityPath(externalId);
+        if (localPath) {
+          return `<a class="gh-issue-ref" href="#wikilink/${encodeURIComponent(localPath)}">#${num}</a>`;
+        }
+      }
+
+      // Render as compact ref linking to GitHub
+      const url = `https://github.com/${owner}/${repo}/${type}/${num}${fragment ?? ""}`;
+      const label = isSameRepo ? `#${num}` : `${fullRepo}#${num}`;
+      return `<a class="gh-issue-ref" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    },
   );
-  // Paragraphs
+
+  // Bare URLs (not already inside an href or anchor)
+  html = html.replace(
+    /(?<!="|>)(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
+  );
+  // @mentions → link to user page (local if available, otherwise GitHub)
+  html = html.replace(
+    /(?<![\/\w])@([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)/g,
+    (_m, login) => {
+      const href = resolve ? resolve(login) : `https://github.com/${login}`;
+      const isLocal = href.startsWith("#");
+      const target = isLocal ? "" : ` target="_blank" rel="noopener noreferrer"`;
+      return `<a class="gh-mention" href="${href}"${target}>@${esc(login)}</a>`;
+    },
+  );
+  // #nnn issue/PR references → link to local page or GitHub
+  // Must come after @mentions and URL shortening. Avoid matching headings (^#) or HTML entities (&#).
+  html = html.replace(
+    /(?<![&\/\w#])#(\d+)\b/g,
+    (_m, num) => {
+      // Try issue first, then PR
+      if (opts?.lookupEntityPath) {
+        const issuePath = opts.lookupEntityPath(`issue-${num}`);
+        if (issuePath) return `<a class="gh-issue-ref" href="#wikilink/${encodeURIComponent(issuePath)}">#${num}</a>`;
+        const prPath = opts.lookupEntityPath(`pr-${num}`);
+        if (prPath) return `<a class="gh-issue-ref" href="#wikilink/${encodeURIComponent(prPath)}">#${num}</a>`;
+      }
+      // Fallback to GitHub (assume issue — GitHub redirects PRs correctly)
+      if (opts?.repo) {
+        return `<a class="gh-issue-ref" href="https://github.com/${opts.repo}/issues/${num}" target="_blank" rel="noopener noreferrer">#${num}</a>`;
+      }
+      return `#${num}`;
+    },
+  );
+
+  // Headings (### etc)
+  html = html.replace(/^(#{1,6})\s+(.+)$/gm, (_m, hashes, text) => {
+    const level = hashes.length;
+    return `<h${level}>${text}</h${level}>`;
+  });
+  // Paragraphs — split on blank lines, skip blocks that already have block-level HTML
   html = html.replace(/\n\n+/g, "</p><p>");
   html = `<p>${html}</p>`;
+  // Clean up empty paragraphs and paragraphs wrapping block elements
+  html = html.replace(/<p>\s*<\/p>/g, "");
+  html = html.replace(/<p>\s*(<div|<h[1-6]|<pre)/g, "$1");
+  html = html.replace(/(<\/div>|<\/h[1-6]>|<\/pre>)\s*<\/p>/g, "$1");
   return html;
 }
 
@@ -147,13 +317,14 @@ function commentBox(
   createdAt: string,
   body: string,
   reactions: MappedReactions | null,
+  mdOpts?: MarkdownOptions,
 ): string {
   const parts: string[] = [];
   parts.push(`<div class="gh-comment-box">`);
   parts.push(`<div class="gh-comment-header">`);
-  parts.push(`${avatarImg(user, 24)} <strong>${esc(user?.login ?? "Unknown")}</strong> commented on ${formatDate(createdAt)}`);
+  parts.push(`${avatarImg(user, 32, mdOpts?.resolveUser)} ${userLink(user, true, mdOpts?.resolveUser)} <span class="gh-comment-date">commented on ${formatDate(createdAt)}</span>`);
   parts.push(`</div>`);
-  parts.push(`<div class="gh-comment-body">${simpleMarkdown(body)}</div>`);
+  parts.push(`<div class="gh-comment-body">${simpleMarkdown(body, mdOpts)}</div>`);
   const reactionsStr = formatReactions(reactions);
   if (reactionsStr) {
     parts.push(`<div class="gh-comment-reactions">${reactionsStr}</div>`);
@@ -288,9 +459,9 @@ export class GitHubTheme implements Theme {
     if (reactionsStr) metaParts.push(`**Reactions:** ${reactionsStr}`);
     sections.push(callout("info", "Metadata", metaParts.join("\n")));
 
-    // Body
+    // Body — shorten GitHub issue/PR URLs to compact refs
     if (d.body) {
-      sections.push(d.body as string);
+      sections.push(this.shortenGitHubRefs(d.body as string, entity.url, context.lookupEntityPath));
     }
 
     // Related issues via wikilinks
@@ -388,9 +559,9 @@ export class GitHubTheme implements Theme {
       sections.push(this.renderCheckRuns(checkRuns));
     }
 
-    // Body
+    // Body — shorten GitHub issue/PR URLs to compact refs
     if (d.body) {
-      sections.push(d.body as string);
+      sections.push(this.shortenGitHubRefs(d.body as string, entity.url, context.lookupEntityPath));
     }
 
     // Linked issues via wikilinks
@@ -433,13 +604,33 @@ export class GitHubTheme implements Theme {
   }
 
   private renderReviews(reviews: MappedReview[]): string {
-    const reviewBlocks = reviews.map((r) => {
-      const stateLabel = reviewStateLabel(r.state);
-      const header = `**${formatUserAvatar(r.user)} | ${stateLabel} | ${formatDate(r.submittedAt)}**`;
-      const parts = [header];
-      if (r.body) parts.push(r.body);
-      return parts.join("\n\n");
-    });
+    const reviewBlocks = reviews
+      .filter((r) => r.body || (r.reviewComments && r.reviewComments.length > 0))
+      .map((r) => {
+        const stateLabel = reviewStateLabel(r.state);
+        const header = `**${formatUserAvatar(r.user)} | ${stateLabel} | ${formatDate(r.submittedAt)}**`;
+        const parts = [header];
+        if (r.body) parts.push(r.body);
+
+        // Render diff-level review comments
+        const reviewComments = r.reviewComments ?? [];
+        if (reviewComments.length > 0) {
+          const rootComments = reviewComments.filter((rc) => !rc.inReplyToId);
+          for (const rc of rootComments) {
+            parts.push(`**${rc.path}**`);
+            parts.push("```diff\n" + rc.diffHunk + "\n```");
+            parts.push(`> **${rc.user?.login ?? "Unknown"}** (${formatDate(rc.createdAt)}):\n> ${rc.body.split("\n").join("\n> ")}`);
+            // Threaded replies
+            const replies = reviewComments.filter((reply) => reply.inReplyToId === rc.id);
+            for (const reply of replies) {
+              parts.push(`> **${reply.user?.login ?? "Unknown"}** (${formatDate(reply.createdAt)}):\n> ${reply.body.split("\n").join("\n> ")}`);
+            }
+          }
+        }
+
+        return parts.join("\n\n");
+      });
+    if (reviewBlocks.length === 0) return "";
     return `### Reviews\n\n${reviewBlocks.join("\n\n---\n\n")}`;
   }
 
@@ -496,22 +687,27 @@ export class GitHubTheme implements Theme {
 
   renderHtml(context: ThemeRenderContext): string | null {
     const { entity } = context;
+    const resolve = makeUserUrlResolver(context.lookupEntityPath);
     if (entity.entityType === "pull_request") {
-      return this.renderPullRequestHtml(context);
+      return this.renderPullRequestHtml(context, resolve);
     }
     if (entity.entityType === "user") {
       return this.renderUserHtml(context);
     }
-    return this.renderIssueHtml(context);
+    return this.renderIssueHtml(context, resolve);
   }
 
-  private renderIssueHtml(context: ThemeRenderContext): string {
+  private renderIssueHtml(context: ThemeRenderContext, resolve: UserUrlResolver): string {
     const { entity } = context;
     const d = entity.data;
     const user = d.user as MappedUser | null;
     const assignees = d.assignees as MappedUser[] | undefined;
     const comments = d.comments as MappedComment[] | undefined;
     const reactions = d.reactions as MappedReactions | null;
+
+    // Build repo slug from entity URL for GitHub ref shortening
+    const repoSlug = this.extractRepoSlug(entity.url);
+    const mdOpts: MarkdownOptions = { resolveUser: resolve, repo: repoSlug, lookupEntityPath: context.lookupEntityPath };
 
     const stateClass = d.state === "open" ? "gh-state-open" : "gh-state-closed";
     const stateIcon = d.state === "open" ? openIssueIcon : closedIssueIcon;
@@ -528,7 +724,7 @@ export class GitHubTheme implements Theme {
     parts.push(`<div class="gh-header-meta">`);
     parts.push(`<span class="gh-state-badge ${stateClass}">${stateIcon} ${esc(stateLabel)}</span>`);
     if (user) {
-      parts.push(`<span class="gh-meta-text">${avatarImg(user, 20)} <strong>${esc(user.login)}</strong> opened this on ${formatDate(d.createdAt as string)}</span>`);
+      parts.push(`<span class="gh-meta-text">${avatarImg(user, 28, resolve)} ${userLink(user, true, resolve)} opened this on ${formatDate(d.createdAt as string)}</span>`);
     }
     if (d.commentCount) {
       parts.push(`<span class="gh-meta-text">&middot; ${d.commentCount} comment${(d.commentCount as number) !== 1 ? "s" : ""}</span>`);
@@ -544,13 +740,13 @@ export class GitHubTheme implements Theme {
 
     // Body as first "comment" from the author
     if (d.body) {
-      parts.push(commentBox(user, d.createdAt as string, d.body as string, reactions));
+      parts.push(commentBox(user, d.createdAt as string, d.body as string, reactions, mdOpts));
     }
 
     // Comments
     if (comments && comments.length > 0) {
       for (const c of comments) {
-        parts.push(commentBox(c.user, c.createdAt, c.body, c.reactions));
+        parts.push(commentBox(c.user, c.createdAt, c.body, c.reactions, mdOpts));
       }
     }
 
@@ -559,7 +755,7 @@ export class GitHubTheme implements Theme {
     // Sidebar
     parts.push(`<div class="gh-sidebar-col">`);
     parts.push(sidebarSection("Assignees", assignees && assignees.length > 0
-      ? assignees.map((a) => `<div class="gh-sidebar-user">${avatarImg(a, 20)} ${esc(a.login)}</div>`).join("")
+      ? assignees.map((a) => `<div class="gh-sidebar-user">${avatarImg(a, 24, resolve)} ${userLink(a, false, resolve)}</div>`).join("")
       : `<span class="gh-sidebar-empty">No one assigned</span>`));
 
     parts.push(sidebarSection("Labels", entity.tags && entity.tags.length > 0
@@ -586,13 +782,15 @@ export class GitHubTheme implements Theme {
     return parts.join("\n");
   }
 
-  private renderPullRequestHtml(context: ThemeRenderContext): string {
+  private renderPullRequestHtml(context: ThemeRenderContext, resolve: UserUrlResolver): string {
     const { entity } = context;
     const d = entity.data;
     const user = d.user as MappedUser | null;
     const assignees = d.assignees as MappedUser[] | undefined;
     const comments = d.comments as MappedComment[] | undefined;
     const reviews = d.reviews as MappedReview[] | undefined;
+    const repoSlug = this.extractRepoSlug(entity.url);
+    const mdOpts: MarkdownOptions = { resolveUser: resolve, repo: repoSlug, lookupEntityPath: context.lookupEntityPath };
     const checkRuns = d.checkRuns as MappedCheckRun[] | undefined;
     const reactions = d.reactions as MappedReactions | null;
 
@@ -622,7 +820,7 @@ export class GitHubTheme implements Theme {
     parts.push(`<div class="gh-header-meta">`);
     parts.push(`<span class="gh-state-badge ${stateClass}">${stateIcon} ${esc(stateLabel)}</span>`);
     if (user) {
-      parts.push(`<span class="gh-meta-text">${avatarImg(user, 20)} <strong>${esc(user.login)}</strong> wants to merge into <code>${esc(d.base as string)}</code> from <code>${esc(d.head as string)}</code></span>`);
+      parts.push(`<span class="gh-meta-text">${avatarImg(user, 28, resolve)} ${userLink(user, true, resolve)} wants to merge into <code>${esc(d.base as string)}</code> from <code>${esc(d.head as string)}</code></span>`);
     }
     parts.push(`</div>`);
     parts.push(`</div>`);
@@ -635,7 +833,7 @@ export class GitHubTheme implements Theme {
 
     // Body as first "comment" from author
     if (d.body) {
-      parts.push(commentBox(user, d.createdAt as string, d.body as string, reactions));
+      parts.push(commentBox(user, d.createdAt as string, d.body as string, reactions, mdOpts));
     }
 
     // Check runs
@@ -654,17 +852,57 @@ export class GitHubTheme implements Theme {
       parts.push(`</div>`);
     }
 
-    // Reviews
+    // Reviews (with diff-level comments)
     if (reviews && reviews.length > 0) {
       for (const r of reviews) {
         const stateLabel = reviewStateLabel(r.state);
+        const reviewComments = r.reviewComments ?? [];
+        // Skip reviews with no body and no review comments (nothing to show)
+        if (!r.body && reviewComments.length === 0) continue;
+
         parts.push(`<div class="gh-review-box gh-review-${r.state.toLowerCase()}">`);
         parts.push(`<div class="gh-comment-header">`);
-        parts.push(`${avatarImg(r.user, 24)} <strong>${esc(r.user?.login ?? "Unknown")}</strong> <span class="gh-review-state">${stateLabel}</span> on ${formatDate(r.submittedAt)}`);
+        parts.push(`${avatarImg(r.user, 32, resolve)} ${userLink(r.user, true, resolve)} <span class="gh-review-state">${stateLabel}</span> <span class="gh-comment-date">on ${formatDate(r.submittedAt)}</span>`);
         parts.push(`</div>`);
         if (r.body) {
-          parts.push(`<div class="gh-comment-body">${simpleMarkdown(r.body)}</div>`);
+          parts.push(`<div class="gh-comment-body">${simpleMarkdown(r.body, mdOpts)}</div>`);
         }
+
+        // Render diff-level review comments grouped by file
+        if (reviewComments.length > 0) {
+          // Group by path, preserving order, and thread replies
+          const rootComments = reviewComments.filter((rc) => !rc.inReplyToId);
+          const repliesByParent = new Map<number, MappedReviewComment[]>();
+          for (const rc of reviewComments) {
+            if (rc.inReplyToId) {
+              const list = repliesByParent.get(rc.inReplyToId) ?? [];
+              list.push(rc);
+              repliesByParent.set(rc.inReplyToId, list);
+            }
+          }
+
+          for (const rc of rootComments) {
+            parts.push(`<div class="gh-diff-comment">`);
+            parts.push(`<div class="gh-diff-file">${esc(rc.path)}</div>`);
+            parts.push(`<pre class="gh-diff-hunk"><code>${esc(rc.diffHunk)}</code></pre>`);
+            parts.push(`<div class="gh-diff-comment-body">`);
+            parts.push(`<div class="gh-diff-comment-header">${avatarImg(rc.user, 24, resolve)} ${userLink(rc.user, true, resolve)} <span class="gh-comment-date">${formatDate(rc.createdAt)}</span></div>`);
+            parts.push(`<div class="gh-comment-body">${simpleMarkdown(rc.body, mdOpts)}</div>`);
+            parts.push(`</div>`);
+
+            // Render threaded replies
+            const replies = repliesByParent.get(rc.id) ?? [];
+            for (const reply of replies) {
+              parts.push(`<div class="gh-diff-comment-body gh-diff-reply">`);
+              parts.push(`<div class="gh-diff-comment-header">${avatarImg(reply.user, 24, resolve)} ${userLink(reply.user, true, resolve)} <span class="gh-comment-date">${formatDate(reply.createdAt)}</span></div>`);
+              parts.push(`<div class="gh-comment-body">${simpleMarkdown(reply.body, mdOpts)}</div>`);
+              parts.push(`</div>`);
+            }
+
+            parts.push(`</div>`);
+          }
+        }
+
         parts.push(`</div>`);
       }
     }
@@ -672,7 +910,7 @@ export class GitHubTheme implements Theme {
     // Comments
     if (comments && comments.length > 0) {
       for (const c of comments) {
-        parts.push(commentBox(c.user, c.createdAt, c.body, c.reactions));
+        parts.push(commentBox(c.user, c.createdAt, c.body, c.reactions, mdOpts));
       }
     }
 
@@ -688,14 +926,14 @@ export class GitHubTheme implements Theme {
         .filter((r) => r.user && !seen.has(r.user.login) && (seen.add(r.user.login), true))
         .map((r) => {
           const icon = reviewStateIcon(r.state);
-          return `<div class="gh-sidebar-user">${avatarImg(r.user, 20)} ${esc(r.user!.login)} ${icon}</div>`;
+          return `<div class="gh-sidebar-user">${avatarImg(r.user, 24, resolve)} ${userLink(r.user, false, resolve)} <span class="gh-review-icon">${icon}</span></div>`;
         })
         .join("");
       if (reviewerHtml) parts.push(sidebarSection("Reviewers", reviewerHtml));
     }
 
     parts.push(sidebarSection("Assignees", assignees && assignees.length > 0
-      ? assignees.map((a) => `<div class="gh-sidebar-user">${avatarImg(a, 20)} ${esc(a.login)}</div>`).join("")
+      ? assignees.map((a) => `<div class="gh-sidebar-user">${avatarImg(a, 24, resolve)} ${userLink(a, false, resolve)}</div>`).join("")
       : `<span class="gh-sidebar-empty">No one assigned</span>`));
 
     parts.push(sidebarSection("Labels", entity.tags && entity.tags.length > 0
@@ -729,52 +967,93 @@ export class GitHubTheme implements Theme {
   private renderUserHtml(context: ThemeRenderContext): string {
     const { entity } = context;
     const d = entity.data;
+    const login = esc(d.login as string);
 
     const parts: string[] = [];
     parts.push(`<div class="gh-issue-view">`);
+    parts.push(`<div class="gh-user-card">`);
 
-    parts.push(`<div class="gh-header">`);
-    parts.push(`<div style="display:flex;align-items:center;gap:16px">`);
+    // Avatar + name header
+    parts.push(`<div class="gh-user-header">`);
     if (d.avatarUrl) {
-      parts.push(`<img class="gh-avatar" src="${esc(d.avatarUrl as string)}&amp;size=128" width="64" height="64" alt="${esc(d.login as string)}" style="border-radius:50%" />`);
+      parts.push(`<img class="gh-avatar gh-user-avatar-lg" src="${esc(d.avatarUrl as string)}&amp;size=200" width="96" height="96" alt="${login}" />`);
     }
     parts.push(`<div>`);
-    parts.push(`<h1 class="gh-title" style="margin:0">${esc(entity.title)}</h1>`);
-    parts.push(`<span class="gh-meta-text">@${esc(d.login as string)}</span>`);
-    parts.push(`</div>`);
+    if (entity.title !== d.login) {
+      parts.push(`<h1 class="gh-user-name">${esc(entity.title)}</h1>`);
+      parts.push(`<div class="gh-user-login">${login}</div>`);
+    } else {
+      parts.push(`<h1 class="gh-user-name">${login}</h1>`);
+    }
     parts.push(`</div>`);
     parts.push(`</div>`);
 
-    parts.push(`<div class="gh-columns">`);
-    parts.push(`<div class="gh-main-col">`);
-
+    // Bio
     if (d.bio) {
-      parts.push(`<div class="gh-comment-box"><div class="gh-comment-body">${simpleMarkdown(d.bio as string)}</div></div>`);
+      parts.push(`<p class="gh-user-bio">${esc(d.bio as string)}</p>`);
     }
 
-    parts.push(`</div>`);
-    parts.push(`<div class="gh-sidebar-col">`);
+    // Meta items
+    const meta: string[] = [];
+    if (d.company) meta.push(`<span class="gh-user-meta-item">\u{1F3E2} ${esc(d.company as string)}</span>`);
+    if (d.location) meta.push(`<span class="gh-user-meta-item">\u{1F4CD} ${esc(d.location as string)}</span>`);
+    if (d.blog) {
+      const blogUrl = (d.blog as string).startsWith("http") ? d.blog as string : `https://${d.blog as string}`;
+      meta.push(`<span class="gh-user-meta-item">\u{1F517} <a class="gh-user-link" href="${esc(blogUrl)}" target="_blank" rel="noopener noreferrer">${esc(d.blog as string)}</a></span>`);
+    }
+    if (meta.length > 0) {
+      parts.push(`<div class="gh-user-meta">${meta.join("")}</div>`);
+    }
 
-    if (d.company) parts.push(sidebarSection("Company", `<span>${esc(d.company as string)}</span>`));
-    if (d.location) parts.push(sidebarSection("Location", `<span>${esc(d.location as string)}</span>`));
-    if (d.blog) parts.push(sidebarSection("Blog", `<a class="gh-sidebar-link" href="${esc(d.blog as string)}" target="_blank" rel="noopener noreferrer">${esc(d.blog as string)}</a>`));
-
-    const stats = [
-      `<strong>${d.publicRepos ?? 0}</strong> repos`,
-      `<strong>${d.followers ?? 0}</strong> followers`,
-      `<strong>${d.following ?? 0}</strong> following`,
-    ].join(" &middot; ");
-    parts.push(sidebarSection("Stats", `<span>${stats}</span>`));
+    // Stats
+    const stats: string[] = [];
+    stats.push(`<strong>${d.followers ?? 0}</strong> followers`);
+    stats.push(`<strong>${d.following ?? 0}</strong> following`);
+    stats.push(`<strong>${d.publicRepos ?? 0}</strong> repositories`);
+    parts.push(`<div class="gh-user-stats">${stats.join(" &middot; ")}</div>`);
 
     if (entity.url) {
-      parts.push(sidebarSection("", `<a class="gh-sidebar-link" href="${esc(entity.url)}" target="_blank" rel="noopener noreferrer">View on GitHub &rarr;</a>`));
+      parts.push(`<a class="gh-user-link" href="${esc(entity.url)}" target="_blank" rel="noopener noreferrer">View on GitHub &rarr;</a>`);
     }
 
-    parts.push(`</div>`);
-    parts.push(`</div>`);
-    parts.push(`</div>`);
+    parts.push(`</div>`); // gh-user-card
+    parts.push(`</div>`); // gh-issue-view
 
     return parts.join("\n");
+  }
+
+  /**
+   * Shorten GitHub issue/PR URLs in body text to compact #nnn markdown links.
+   * Same-repo refs become [#nnn](url), cross-repo become [owner/repo#nnn](url).
+   */
+  private shortenGitHubRefs(body: string, entityUrl?: string, lookupEntityPath?: (id: string) => string | undefined): string {
+    const repoSlug = this.extractRepoSlug(entityUrl);
+    return body.replace(
+      /https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/(issues|pull)\/(\d+)(#[^\s)]*)?/g,
+      (fullMatch, owner, repo, type, num, fragment) => {
+        const fullRepo = `${owner}/${repo}`;
+        const isSameRepo = repoSlug && fullRepo === repoSlug;
+        const externalId = type === "pull" ? `pr-${num}` : `issue-${num}`;
+
+        // Try local wikilink for same-repo refs
+        if (isSameRepo && lookupEntityPath) {
+          const localPath = lookupEntityPath(externalId);
+          if (localPath) {
+            return `[[${localPath}|#${num}]]`;
+          }
+        }
+
+        const label = isSameRepo ? `#${num}` : `${fullRepo}#${num}`;
+        return `[${label}](${fullMatch})`;
+      },
+    );
+  }
+
+  /** Extract "owner/repo" from a GitHub entity URL like https://github.com/owner/repo/issues/123 */
+  private extractRepoSlug(url?: string): string | undefined {
+    if (!url) return undefined;
+    const m = url.match(/github\.com\/([^/]+\/[^/]+)/);
+    return m ? m[1] : undefined;
   }
 
   private extractIssueRefs(body: string | null): string[] {

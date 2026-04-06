@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@veecontext/core": "workspace:*"
+    "@veecontext/core": "workspace:*",
+    "gemoji": "^8.1.0"
   }
 }

@@ -12,6 +12,7 @@ import type {
   GitHubPullRequest,
   GitHubComment,
   GitHubReview,
+  GitHubReviewComment,
   GitHubCheckRun,
   GitHubUserProfile,
 } from "./types";
@@ -468,6 +469,27 @@ export class GitHubCrawler implements Crawler {
     return allReviews;
   }
 
+  private async fetchReviewComments(prNumber: number): Promise<GitHubReviewComment[]> {
+    const allComments: GitHubReviewComment[] = [];
+    let page = 1;
+    while (true) {
+      const params = new URLSearchParams({
+        per_page: String(PER_PAGE),
+        page: String(page),
+      });
+      const res = await this.fetchFn(
+        `${API_BASE}/repos/${this.owner}/${this.repo}/pulls/${prNumber}/comments?${params}`,
+        { headers: this.buildHeaders(this.token) },
+      );
+      if (!res.ok) break;
+      const batch = (await res.json()) as GitHubReviewComment[];
+      allComments.push(...batch);
+      if (batch.length < PER_PAGE) break;
+      page++;
+    }
+    return allComments;
+  }
+
   private async fetchCheckRuns(sha: string): Promise<GitHubCheckRun[]> {
     const allRuns: GitHubCheckRun[] = [];
     let page = 1;
@@ -523,8 +545,13 @@ export class GitHubCrawler implements Crawler {
     for (const a of assignees) out.add(a.login);
     if (reviews) {
       for (const r of reviews) {
-        const login = (r as { user?: { login?: string } })?.user?.login;
-        if (login) out.add(login);
+        const review = r as { user?: { login?: string }; reviewComments?: Array<{ user?: { login?: string } }> };
+        if (review.user?.login) out.add(review.user.login);
+        if (review.reviewComments) {
+          for (const rc of review.reviewComments) {
+            if (rc.user?.login) out.add(rc.user.login);
+          }
+        }
       }
     }
     if (comments) {
@@ -689,6 +716,16 @@ export class GitHubCrawler implements Crawler {
     let reviews: unknown[] = [];
     if (this.syncComments) {
       const rawReviews = await this.fetchReviews(pr.number);
+      const rawReviewComments = await this.fetchReviewComments(pr.number);
+
+      // Group review comments by their parent review ID
+      const commentsByReview = new Map<number, typeof rawReviewComments>();
+      for (const rc of rawReviewComments) {
+        const list = commentsByReview.get(rc.pull_request_review_id) ?? [];
+        list.push(rc);
+        commentsByReview.set(rc.pull_request_review_id, list);
+      }
+
       reviews = rawReviews.map((r) => ({
         id: r.id,
         user: this.mapUser(r.user),
@@ -696,6 +733,18 @@ export class GitHubCrawler implements Crawler {
         body: r.body,
         submittedAt: r.submitted_at,
         url: r.html_url,
+        // Attach diff-level comments to this review
+        reviewComments: (commentsByReview.get(r.id) ?? []).map((rc) => ({
+          id: rc.id,
+          user: this.mapUser(rc.user),
+          body: rc.body,
+          path: rc.path,
+          diffHunk: rc.diff_hunk,
+          createdAt: rc.created_at,
+          url: rc.html_url,
+          inReplyToId: rc.in_reply_to_id ?? null,
+          reactions: this.mapReactions(rc.reactions),
+        })),
       }));
       // Add reviewer relations
       for (const r of rawReviews) {
