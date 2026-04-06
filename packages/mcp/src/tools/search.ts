@@ -1,10 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { existsSync } from "fs";
-import { join } from "path";
 import {
-  getMasterDb,
-  collections,
+  contextExists,
+  listCollections,
+  getCollection,
+  getCollectionDbPath,
   SearchIndexer,
   type SearchResult,
 } from "@veecontext/core";
@@ -41,8 +42,7 @@ export function registerSearch(
       annotations: { readOnlyHint: true },
     },
     async (args) => {
-      const masterDbPath = join(options.veecontextHome, "master.db");
-      if (!existsSync(masterDbPath)) {
+      if (!contextExists()) {
         return {
           content: [
             {
@@ -53,21 +53,20 @@ export function registerSearch(
         };
       }
 
-      const db = getMasterDb(masterDbPath);
-      let collectionRows = db.select().from(collections).all();
-
-      if (args.collection) {
-        collectionRows = collectionRows.filter(
-          (c) => c.name === args.collection,
-        );
-      }
+      let collectionRows = args.collection
+        ? (() => {
+            const col = getCollection(args.collection);
+            return col ? [col] : [];
+          })()
+        : listCollections();
 
       const allResults: Array<SearchResult & { collection: string }> = [];
 
       for (const col of collectionRows) {
-        if (!existsSync(col.dbPath)) continue;
+        const dbPath = getCollectionDbPath(col.name);
+        if (!existsSync(dbPath)) continue;
 
-        const indexer = new SearchIndexer(col.dbPath);
+        const indexer = new SearchIndexer(dbPath);
         try {
           const results = indexer.search(args.query, {
             entityType: args.entityType,

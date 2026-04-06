@@ -1,11 +1,10 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
-import { join } from "path";
 import {
-  getVeeContextHome,
-  getMasterDb,
+  contextExists,
+  listCollections,
   getCollectionDb,
-  collections,
+  getCollectionDbPath,
   entities,
   syncRuns,
 } from "@veecontext/core";
@@ -14,16 +13,12 @@ import { desc } from "drizzle-orm";
 export const statusCommand = new Command("status")
   .description("Show sync status for all collections")
   .action(() => {
-    const home = getVeeContextHome();
-    const masterDbPath = join(home, "master.db");
-
-    if (!existsSync(masterDbPath)) {
+    if (!contextExists()) {
       console.error("VeeContext not initialized. Run: vctx init");
       process.exit(1);
     }
 
-    const db = getMasterDb(masterDbPath);
-    const collectionRows = db.select().from(collections).all();
+    const collectionRows = listCollections();
 
     if (collectionRows.length === 0) {
       console.log("No collections configured. Run: vctx add <crawler>");
@@ -32,14 +27,15 @@ export const statusCommand = new Command("status")
 
     for (const col of collectionRows) {
       const status = col.enabled ? "enabled" : "disabled";
-      console.log(`\n${col.name} (${col.crawlerType}) [${status}]`);
+      console.log(`\n${col.name} (${col.crawler}) [${status}]`);
 
-      if (!existsSync(col.dbPath)) {
+      const dbPath = getCollectionDbPath(col.name);
+      if (!existsSync(dbPath)) {
         console.log("  Database not found");
         continue;
       }
 
-      const colDb = getCollectionDb(col.dbPath);
+      const colDb = getCollectionDb(dbPath);
 
       // Entity count
       const entityRows = colDb.select().from(entities).all();

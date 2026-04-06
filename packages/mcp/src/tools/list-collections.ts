@@ -1,10 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { existsSync } from "fs";
-import { join } from "path";
 import {
-  getMasterDb,
+  contextExists,
+  listCollections,
   getCollectionDb,
-  collections,
+  getCollectionDbPath,
   entities,
   syncRuns,
 } from "@veecontext/core";
@@ -24,8 +24,7 @@ export function registerListCollections(
       annotations: { readOnlyHint: true },
     },
     async () => {
-      const masterDbPath = join(options.veecontextHome, "master.db");
-      if (!existsSync(masterDbPath)) {
+      if (!contextExists()) {
         return {
           content: [
             {
@@ -36,16 +35,16 @@ export function registerListCollections(
         };
       }
 
-      const db = getMasterDb(masterDbPath);
-      const rows = db.select().from(collections).all();
+      const rows = listCollections();
 
       const result = rows.map((col) => {
         let entityCount = 0;
         let lastSyncTime: string | null = null;
         let lastSyncStatus: string | null = null;
 
-        if (existsSync(col.dbPath)) {
-          const colDb = getCollectionDb(col.dbPath);
+        const dbPath = getCollectionDbPath(col.name);
+        if (existsSync(dbPath)) {
+          const colDb = getCollectionDb(dbPath);
           entityCount = colDb.select().from(entities).all().length;
 
           const runs = colDb
@@ -63,7 +62,7 @@ export function registerListCollections(
 
         return {
           name: col.name,
-          crawlerType: col.crawlerType,
+          crawlerType: col.crawler,
           enabled: col.enabled,
           entityCount,
           lastSyncTime,

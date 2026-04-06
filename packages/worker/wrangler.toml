@@ -1,0 +1,17 @@
+# Local development template — actual deployment is done via CF API in `vctx publish`
+name = "vctx-dev"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+PASSWORD_HASH = ""
+WORKER_NAME = "vctx-dev"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vctx-dev-db"
+database_id = "local"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "vctx-dev-bucket"

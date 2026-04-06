@@ -11,6 +11,9 @@ export default function CollectionPicker({
   selected,
   onSelect,
 }: CollectionPickerProps) {
+  // Hide picker when there's only one collection
+  if (collections.length <= 1) return null;
+
   return (
     <div className="collection-picker">
       <label htmlFor="collection-select">Collection</label>

@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
-import { join } from "path";
 import {
-  getVeeContextHome,
-  getMasterDb,
-  collections,
+  contextExists,
+  listCollections,
+  getCollection,
+  getCollectionDbPath,
   SearchIndexer,
   type SearchResult,
 } from "@veecontext/core";
@@ -26,34 +26,30 @@ export const searchCommand = new Command("search")
         json?: boolean;
       },
     ) => {
-      const home = getVeeContextHome();
-      const masterDbPath = join(home, "master.db");
-
-      if (!existsSync(masterDbPath)) {
+      if (!contextExists()) {
         console.error("VeeContext not initialized. Run: vctx init");
         process.exit(1);
       }
 
-      const db = getMasterDb(masterDbPath);
-      let collectionRows = db.select().from(collections).all();
-
-      if (opts.collection) {
-        collectionRows = collectionRows.filter(
-          (c) => c.name === opts.collection,
-        );
-        if (collectionRows.length === 0) {
-          console.error(`Collection "${opts.collection}" not found`);
-          process.exit(1);
-        }
-      }
+      let collectionRows = opts.collection
+        ? (() => {
+            const col = getCollection(opts.collection);
+            if (!col) {
+              console.error(`Collection "${opts.collection}" not found`);
+              process.exit(1);
+            }
+            return [col];
+          })()
+        : listCollections();
 
       const limit = parseInt(opts.limit, 10);
       const allResults: Array<SearchResult & { collection: string }> = [];
 
       for (const col of collectionRows) {
-        if (!existsSync(col.dbPath)) continue;
+        const dbPath = getCollectionDbPath(col.name);
+        if (!existsSync(dbPath)) continue;
 
-        const indexer = new SearchIndexer(col.dbPath);
+        const indexer = new SearchIndexer(dbPath);
         try {
           const results = indexer.search(query, {
             entityType: opts.type,

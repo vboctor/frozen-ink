@@ -3,9 +3,11 @@ import { existsSync } from "fs";
 import { join } from "path";
 import {
   getVeeContextHome,
-  getMasterDb,
   getCollectionDb,
-  collections,
+  contextExists,
+  listCollections,
+  getCollection,
+  getCollectionDbPath,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
@@ -26,26 +28,22 @@ export const syncCommand = new Command("sync")
   .option("--full", "Full re-sync (ignore cursors)")
   .option("--max <count>", "Maximum entities to sync (overrides collection config)", parseInt)
   .action(async (collection: string, opts: { full?: boolean; max?: number }) => {
-    const home = getVeeContextHome();
-    const masterDbPath = join(home, "master.db");
-
-    if (!existsSync(masterDbPath)) {
+    if (!contextExists()) {
       console.error("VeeContext not initialized. Run: vctx init");
       process.exit(1);
     }
 
-    const db = getMasterDb(masterDbPath);
-    let collectionRows = db.select().from(collections).all();
-
-    if (collection !== "*") {
-      collectionRows = collectionRows.filter(
-        (c) => c.name === collection,
-      );
-      if (collectionRows.length === 0) {
-        console.error(`Collection "${collection}" not found`);
-        process.exit(1);
-      }
-    }
+    const home = getVeeContextHome();
+    let collectionRows = collection === "*"
+      ? listCollections()
+      : (() => {
+          const col = getCollection(collection);
+          if (!col) {
+            console.error(`Collection "${collection}" not found`);
+            process.exit(1);
+          }
+          return [col];
+        })();
 
     // Filter to enabled collections
     collectionRows = collectionRows.filter((c) => c.enabled);
@@ -63,12 +61,12 @@ export const syncCommand = new Command("sync")
     themeEngine.register(mantisBTTheme);
 
     for (const col of collectionRows) {
-      console.log(`Syncing "${col.name}" (${col.crawlerType})...`);
+      console.log(`Syncing "${col.name}" (${col.crawler})...`);
 
-      const factory = registry.get(col.crawlerType);
+      const factory = registry.get(col.crawler);
       if (!factory) {
         console.error(
-          `  No crawler for type: ${col.crawlerType}, skipping`,
+          `  No crawler for type: ${col.crawler}, skipping`,
         );
         continue;
       }
@@ -83,16 +81,18 @@ export const syncCommand = new Command("sync")
         col.credentials as Record<string, unknown>,
       );
 
+      const dbPath = getCollectionDbPath(col.name);
+
       // Full re-sync: wipe all collection data so the sync starts clean
       if (opts.full) {
-        const colDb = getCollectionDb(col.dbPath);
+        const colDb = getCollectionDb(dbPath);
         colDb.delete(entityLinks).run();
         colDb.delete(entityRelations).run();
         colDb.delete(attachments).run();
         colDb.delete(entityTags).run();
         colDb.delete(entities).run();
         colDb.delete(syncState).run();
-        const indexer = new SearchIndexer(col.dbPath);
+        const indexer = new SearchIndexer(dbPath);
         indexer.clearIndex();
         indexer.close();
         console.log(`  Cleared all data for full re-sync`);
@@ -103,7 +103,7 @@ export const syncCommand = new Command("sync")
 
       const engine = new SyncEngine({
         crawler,
-        dbPath: col.dbPath,
+        dbPath,
         collectionName: col.name,
         themeEngine,
         storage,
@@ -122,7 +122,7 @@ export const syncCommand = new Command("sync")
 
       try {
         const stats = await engine.run();
-        const colDb = getCollectionDb(col.dbPath);
+        const colDb = getCollectionDb(dbPath);
         const [{ total }] = colDb
           .select({ total: sql<number>`count(*)` })
           .from(entities)

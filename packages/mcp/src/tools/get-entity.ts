@@ -3,9 +3,10 @@ import { z } from "zod";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
-  getMasterDb,
+  contextExists,
+  getCollection,
   getCollectionDb,
-  collections,
+  getCollectionDbPath,
   entities,
   entityTags,
 } from "@veecontext/core";
@@ -29,8 +30,7 @@ export function registerGetEntity(
       annotations: { readOnlyHint: true },
     },
     async (args) => {
-      const masterDbPath = join(options.veecontextHome, "master.db");
-      if (!existsSync(masterDbPath)) {
+      if (!contextExists()) {
         return {
           content: [
             {
@@ -41,13 +41,7 @@ export function registerGetEntity(
         };
       }
 
-      const db = getMasterDb(masterDbPath);
-      const [col] = db
-        .select()
-        .from(collections)
-        .where(eq(collections.name, args.collection))
-        .all();
-
+      const col = getCollection(args.collection);
       if (!col) {
         return {
           content: [
@@ -61,7 +55,8 @@ export function registerGetEntity(
         };
       }
 
-      if (!existsSync(col.dbPath)) {
+      const dbPath = getCollectionDbPath(args.collection);
+      if (!existsSync(dbPath)) {
         return {
           content: [
             {
@@ -72,7 +67,7 @@ export function registerGetEntity(
         };
       }
 
-      const colDb = getCollectionDb(col.dbPath);
+      const colDb = getCollectionDb(dbPath);
       const [entity] = colDb
         .select()
         .from(entities)

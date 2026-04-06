@@ -3,9 +3,11 @@ import { existsSync, readdirSync, statSync, readFileSync } from "fs";
 import { join, extname } from "path";
 import {
   getVeeContextHome,
-  getMasterDb,
   getCollectionDb,
-  collections,
+  contextExists,
+  listCollections,
+  getCollection,
+  getCollectionDbPath,
   entities,
   entityTags,
   entityLinks,
@@ -121,7 +123,6 @@ export function createApiServer(
   home: string,
   port: number,
 ): ReturnType<typeof Bun.serve> {
-  const masterDbPath = join(home, "master.db");
   const uiDistDir = resolveUiDistDir();
 
   const server = Bun.serve({
@@ -132,16 +133,13 @@ export function createApiServer(
 
       // GET /api/collections
       if (path === "/api/collections" && req.method === "GET") {
-        const db = getMasterDb(masterDbPath);
-        const rows = db.select().from(collections).all();
+        const rows = listCollections();
         const result = rows.map((r) => ({
           name: r.name,
           title: r.title ?? r.name,
-          crawlerType: r.crawlerType,
+          crawlerType: r.crawler,
           enabled: r.enabled,
           syncInterval: r.syncInterval,
-          createdAt: r.createdAt,
-          updatedAt: r.updatedAt,
         }));
         return jsonResponse(result);
       }
@@ -150,12 +148,7 @@ export function createApiServer(
       const treeMatch = path.match(/^\/api\/collections\/([^/]+)\/tree$/);
       if (treeMatch && req.method === "GET") {
         const name = decodeURIComponent(treeMatch[1]);
-        const db = getMasterDb(masterDbPath);
-        const [col] = db
-          .select()
-          .from(collections)
-          .where(eq(collections.name, name))
-          .all();
+        const col = getCollection(name);
         if (!col) return errorResponse("Collection not found", 404);
 
         const markdownDir = join(home, "collections", name, "markdown");
@@ -164,23 +157,19 @@ export function createApiServer(
       }
 
       // GET /api/collections/:name/default-file
-      // Returns the most recently updated file in the collection
       const defaultFileMatch = path.match(
         /^\/api\/collections\/([^/]+)\/default-file$/,
       );
       if (defaultFileMatch && req.method === "GET") {
         const name = decodeURIComponent(defaultFileMatch[1]);
-        const db = getMasterDb(masterDbPath);
-        const [col] = db
-          .select()
-          .from(collections)
-          .where(eq(collections.name, name))
-          .all();
+        const col = getCollection(name);
         if (!col) return errorResponse("Collection not found", 404);
-        if (!existsSync(col.dbPath))
+
+        const dbPath = getCollectionDbPath(name);
+        if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
 
-        const colDb = getCollectionDb(col.dbPath);
+        const colDb = getCollectionDb(dbPath);
         const [latest] = colDb
           .select({ markdownPath: entities.markdownPath })
           .from(entities)
@@ -192,7 +181,7 @@ export function createApiServer(
         return jsonResponse({ file: filePath });
       }
 
-      // GET /api/collections/:name/markdown/*path — serve raw markdown file content
+      // GET /api/collections/:name/markdown/*path
       const markdownMatch = path.match(
         /^\/api\/collections\/([^/]+)\/markdown\/(.+)$/,
       );
@@ -225,17 +214,14 @@ export function createApiServer(
       );
       if (entitiesMatch && req.method === "GET") {
         const name = decodeURIComponent(entitiesMatch[1]);
-        const db = getMasterDb(masterDbPath);
-        const [col] = db
-          .select()
-          .from(collections)
-          .where(eq(collections.name, name))
-          .all();
+        const col = getCollection(name);
         if (!col) return errorResponse("Collection not found", 404);
-        if (!existsSync(col.dbPath))
+
+        const dbPath = getCollectionDbPath(name);
+        if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
 
-        const colDb = getCollectionDb(col.dbPath);
+        const colDb = getCollectionDb(dbPath);
         const limit = parseInt(url.searchParams.get("limit") || "50", 10);
         const offset = parseInt(url.searchParams.get("offset") || "0", 10);
         const entityType = url.searchParams.get("type");
@@ -286,16 +272,15 @@ export function createApiServer(
         const typeFilter = url.searchParams.get("type");
         const limit = parseInt(url.searchParams.get("limit") || "20", 10);
 
-        const db = getMasterDb(masterDbPath);
-        let collectionRows = db.select().from(collections).all();
+        let collectionRows = collectionFilter
+          ? (() => {
+              const col = getCollection(collectionFilter);
+              return col ? [col] : [];
+            })()
+          : listCollections();
 
-        if (collectionFilter) {
-          collectionRows = collectionRows.filter(
-            (c) => c.name === collectionFilter,
-          );
-          if (collectionRows.length === 0)
-            return errorResponse("Collection not found", 404);
-        }
+        if (collectionFilter && collectionRows.length === 0)
+          return errorResponse("Collection not found", 404);
 
         const allResults: Array<{
           collection: string;
@@ -308,23 +293,21 @@ export function createApiServer(
         }> = [];
 
         for (const col of collectionRows) {
-          if (!existsSync(col.dbPath)) continue;
+          const dbPath = getCollectionDbPath(col.name);
+          if (!existsSync(dbPath)) continue;
 
-          const colDb = getCollectionDb(col.dbPath);
-          const indexer = new SearchIndexer(col.dbPath);
+          const colDb = getCollectionDb(dbPath);
+          const indexer = new SearchIndexer(dbPath);
           try {
             const results = indexer.search(query, {
               entityType: typeFilter || undefined,
             });
             for (const r of results) {
-              // Look up markdownPath from entities table
               const [entity] = colDb
                 .select({ markdownPath: entities.markdownPath })
                 .from(entities)
                 .where(eq(entities.id, r.entityId))
                 .all();
-              // Strip the "markdown/" base path prefix so the UI receives a path
-              // relative to the markdown directory (matching what the file tree returns)
               const rawPath = entity?.markdownPath ?? null;
               const markdownPath = rawPath ? rawPath.replace(/^markdown\//, "") : null;
               allResults.push({
@@ -343,7 +326,6 @@ export function createApiServer(
       }
 
       // GET /api/collections/:name/backlinks/*targetPath
-      // Returns all entities whose markdown links to the given target path
       const backlinksMatch = path.match(
         /^\/api\/collections\/([^/]+)\/backlinks\/(.+)$/,
       );
@@ -351,31 +333,21 @@ export function createApiServer(
         const name = decodeURIComponent(backlinksMatch[1]);
         const targetFile = decodeURIComponent(backlinksMatch[2]);
 
-        const db = getMasterDb(masterDbPath);
-        const [col] = db
-          .select()
-          .from(collections)
-          .where(eq(collections.name, name))
-          .all();
+        const col = getCollection(name);
         if (!col) return errorResponse("Collection not found", 404);
-        if (!existsSync(col.dbPath))
+
+        const dbPath = getCollectionDbPath(name);
+        if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
 
-        const colDb = getCollectionDb(col.dbPath);
+        const colDb = getCollectionDb(dbPath);
 
-        // The UI passes the file path relative to the markdown dir (e.g. "issues/42.md").
-        // Links in the DB store the full path including the base dir (e.g. "markdown/issues/42.md").
         const targetVariants = [targetFile, `markdown/${targetFile}`];
 
-        // Also match without .md extension since wikilinks resolve to path + ".md"
         if (!targetFile.endsWith(".md")) {
           targetVariants.push(`${targetFile}.md`, `markdown/${targetFile}.md`);
         }
 
-        // Obsidian-style: wikilinks like [[VeeClaw - Use Cases]] store the stem without
-        // the folder prefix (e.g. "markdown/VeeClaw - Use Cases.md") even when the actual
-        // file lives in a subdirectory ("Projects/VeeClaw - Use Cases.md").
-        // Add filename-only variants to catch those cross-folder backlinks.
         const filename = targetFile.includes("/") ? targetFile.split("/").pop()! : null;
         if (filename) {
           targetVariants.push(filename, `markdown/${filename}`);
@@ -411,8 +383,6 @@ export function createApiServer(
               .all();
 
             if (entity) {
-              // Use filename stem as title (more reliable than entity.title which
-              // can match H1 headings inside code blocks)
               const relPath = entity.markdownPath?.replace(/^markdown\//, "");
               const displayTitle = relPath
                 ? relPath.replace(/\.md$/, "").split("/").pop()!
@@ -432,7 +402,6 @@ export function createApiServer(
       }
 
       // GET /api/collections/:name/outgoing-links/*sourcePath
-      // Returns all entities that the given file links to
       const outgoingMatch = path.match(
         /^\/api\/collections\/([^/]+)\/outgoing-links\/(.+)$/,
       );
@@ -440,15 +409,15 @@ export function createApiServer(
         const name = decodeURIComponent(outgoingMatch[1]);
         const sourceFile = decodeURIComponent(outgoingMatch[2]);
 
-        const db = getMasterDb(masterDbPath);
-        const [col] = db.select().from(collections).where(eq(collections.name, name)).all();
+        const col = getCollection(name);
         if (!col) return errorResponse("Collection not found", 404);
-        if (!existsSync(col.dbPath))
+
+        const dbPath = getCollectionDbPath(name);
+        if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
 
-        const colDb = getCollectionDb(col.dbPath);
+        const colDb = getCollectionDb(dbPath);
 
-        // sourceMarkdownPath in DB includes the "markdown/" prefix
         const sourceVariants = [sourceFile, `markdown/${sourceFile}`];
 
         const seen = new Set<string>();
@@ -468,9 +437,6 @@ export function createApiServer(
             if (seen.has(link.targetPath)) continue;
             seen.add(link.targetPath);
 
-            // targetPath is already stored as "markdown/{target}.md" by syncLinks().
-            // Entity markdownPath may include subfolders: "markdown/VeeClaw/VeeClaw - Design.md".
-            // 1. Direct match (works when target has no subfolder mismatch)
             let entity = null;
             const [e1] = colDb
               .select()
@@ -479,7 +445,6 @@ export function createApiServer(
               .all();
             if (e1) { entity = e1; }
 
-            // 2. Stem match by filename (Obsidian resolves wikilinks by filename alone)
             if (!entity) {
               const filename = link.targetPath.split("/").pop();
               if (filename) {
@@ -496,14 +461,11 @@ export function createApiServer(
               const relPath = entity.markdownPath
                 ? entity.markdownPath.replace(/^markdown\//, "")
                 : null;
-              // Use filename stem as title (more reliable than entity.title which
-              // can match H1 headings inside code blocks)
               const displayTitle = relPath
                 ? relPath.replace(/\.md$/, "").split("/").pop()!
                 : entity.title;
               results.push({ title: displayTitle, markdownPath: relPath });
             }
-            // Dangling links (no matching entity) are silently excluded
           }
         }
 
@@ -564,9 +526,8 @@ export const serveCommand = new Command("serve")
   .option("--port <port>", "Port for the REST API server")
   .action(async (opts: { mcpOnly?: boolean; uiOnly?: boolean; port?: string }) => {
     const home = getVeeContextHome();
-    const masterDbPath = join(home, "master.db");
 
-    if (!existsSync(masterDbPath)) {
+    if (!contextExists()) {
       console.error("VeeContext not initialized. Run: vctx init");
       process.exit(1);
     }

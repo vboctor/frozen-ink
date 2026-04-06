@@ -1,12 +1,14 @@
 import { Command } from "commander";
-import { existsSync, mkdirSync } from "fs";
+import { mkdirSync } from "fs";
 import { join } from "path";
 import {
   getVeeContextHome,
-  getMasterDb,
   getCollectionDb,
-  collections,
   isValidCollectionKey,
+  contextExists,
+  getCollection,
+  addCollection,
+  getCollectionDbPath,
 } from "@veecontext/core";
 import { createDefaultRegistry } from "@veecontext/crawlers";
 
@@ -24,10 +26,7 @@ export const addCommand = new Command("add")
   .option("--project-id <id>", "Project ID (for mantisbt)", parseInt)
   .option("--max <count>", "Maximum entities to sync (for mantisbt)", parseInt)
   .action(async (crawlerType: string, opts: Record<string, string>) => {
-    const home = getVeeContextHome();
-    const masterDbPath = join(home, "master.db");
-
-    if (!existsSync(masterDbPath)) {
+    if (!contextExists()) {
       console.error("VeeContext not initialized. Run: vctx init");
       process.exit(1);
     }
@@ -36,6 +35,11 @@ export const addCommand = new Command("add")
       console.error(
         `Invalid collection key "${opts.name}". Keys must contain only letters, numbers, dashes, and underscores.`,
       );
+      process.exit(1);
+    }
+
+    if (getCollection(opts.name)) {
+      console.error(`Collection "${opts.name}" already exists`);
       process.exit(1);
     }
 
@@ -112,26 +116,22 @@ export const addCommand = new Command("add")
     }
 
     // Create collection directory and database
+    const home = getVeeContextHome();
     const collectionDir = join(home, "collections", opts.name);
     mkdirSync(collectionDir, { recursive: true });
-    const collectionDbPath = join(collectionDir, "data.db");
+    const collectionDbPath = getCollectionDbPath(opts.name);
     getCollectionDb(collectionDbPath);
 
     // Create markdown output directory
     mkdirSync(join(collectionDir, "markdown"), { recursive: true });
 
-    // Insert into master DB
-    const db = getMasterDb(masterDbPath);
-    db.insert(collections)
-      .values({
-        name: opts.name,
-        title: opts.title || null,
-        crawlerType,
-        config,
-        credentials,
-        dbPath: collectionDbPath,
-      })
-      .run();
+    // Save to context.yml
+    addCollection(opts.name, {
+      title: opts.title || undefined,
+      crawler: crawlerType,
+      config,
+      credentials,
+    });
 
     const displayName = opts.title ? `${opts.title} (${opts.name})` : opts.name;
     console.log(`Collection "${displayName}" created (${crawlerType})`);

@@ -3,9 +3,11 @@ import { existsSync } from "fs";
 import { join } from "path";
 import {
   getVeeContextHome,
-  getMasterDb,
   getCollectionDb,
-  collections,
+  contextExists,
+  listCollections,
+  getCollection,
+  getCollectionDbPath,
   entities,
   entityTags,
   entityLinks,
@@ -23,24 +25,22 @@ export const generateCommand = new Command("generate")
   )
   .argument("<collection>", 'Collection name or "*" for all collections')
   .action(async (collection: string) => {
-    const home = getVeeContextHome();
-    const masterDbPath = join(home, "master.db");
-
-    if (!existsSync(masterDbPath)) {
+    if (!contextExists()) {
       console.error("VeeContext not initialized. Run: vctx init");
       process.exit(1);
     }
 
-    const db = getMasterDb(masterDbPath);
-    let collectionRows = db.select().from(collections).all();
-
-    if (collection !== "*") {
-      collectionRows = collectionRows.filter((c) => c.name === collection);
-      if (collectionRows.length === 0) {
-        console.error(`Collection "${collection}" not found`);
-        process.exit(1);
-      }
-    }
+    const home = getVeeContextHome();
+    let collectionRows = collection === "*"
+      ? listCollections()
+      : (() => {
+          const col = getCollection(collection);
+          if (!col) {
+            console.error(`Collection "${collection}" not found`);
+            process.exit(1);
+          }
+          return [col];
+        })();
 
     collectionRows = collectionRows.filter((c) => c.enabled);
 
@@ -56,19 +56,20 @@ export const generateCommand = new Command("generate")
     themeEngine.register(mantisBTTheme);
 
     for (const col of collectionRows) {
-      console.log(`Generating "${col.name}" (${col.crawlerType})...`);
+      console.log(`Generating "${col.name}" (${col.crawler})...`);
 
-      if (!existsSync(col.dbPath)) {
-        console.error(`  Database not found at ${col.dbPath}, skipping`);
+      const dbPath = getCollectionDbPath(col.name);
+      if (!existsSync(dbPath)) {
+        console.error(`  Database not found at ${dbPath}, skipping`);
         continue;
       }
 
-      if (!themeEngine.has(col.crawlerType)) {
-        console.error(`  No theme registered for type: ${col.crawlerType}, skipping`);
+      if (!themeEngine.has(col.crawler)) {
+        console.error(`  No theme registered for type: ${col.crawler}, skipping`);
         continue;
       }
 
-      const colDb = getCollectionDb(col.dbPath);
+      const colDb = getCollectionDb(dbPath);
       const collectionDir = join(home, "collections", col.name);
       const storage = new LocalStorageBackend(collectionDir);
       const markdownBasePath = "markdown";
@@ -89,7 +90,7 @@ export const generateCommand = new Command("generate")
         return relative.endsWith(".md") ? relative.slice(0, -3) : relative;
       };
 
-      const indexer = new SearchIndexer(col.dbPath);
+      const indexer = new SearchIndexer(dbPath);
       indexer.clearIndex();
       colDb.delete(entityLinks).run();
 
@@ -115,7 +116,7 @@ export const generateCommand = new Command("generate")
             tags,
           },
           collectionName: col.name,
-          crawlerType: col.crawlerType,
+          crawlerType: col.crawler,
           lookupEntityPath: entityPathLookup,
         };
 

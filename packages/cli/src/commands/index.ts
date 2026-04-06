@@ -3,9 +3,11 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
   getVeeContextHome,
-  getMasterDb,
   getCollectionDb,
-  collections,
+  contextExists,
+  listCollections,
+  getCollection,
+  getCollectionDbPath,
   entities,
   entityTags,
   entityLinks,
@@ -20,26 +22,22 @@ export const indexCommand = new Command("index")
   )
   .argument("<collection>", 'Collection name or "*" for all collections')
   .action(async (collection: string) => {
-    const home = getVeeContextHome();
-    const masterDbPath = join(home, "master.db");
-
-    if (!existsSync(masterDbPath)) {
+    if (!contextExists()) {
       console.error("VeeContext not initialized. Run: vctx init");
       process.exit(1);
     }
 
-    const db = getMasterDb(masterDbPath);
-    let collectionRows = db.select().from(collections).all();
-
-    if (collection !== "*") {
-      collectionRows = collectionRows.filter(
-        (c) => c.name === collection,
-      );
-      if (collectionRows.length === 0) {
-        console.error(`Collection "${collection}" not found`);
-        process.exit(1);
-      }
-    }
+    const home = getVeeContextHome();
+    let collectionRows = collection === "*"
+      ? listCollections()
+      : (() => {
+          const col = getCollection(collection);
+          if (!col) {
+            console.error(`Collection "${collection}" not found`);
+            process.exit(1);
+          }
+          return [col];
+        })();
 
     collectionRows = collectionRows.filter((c) => c.enabled);
 
@@ -51,17 +49,18 @@ export const indexCommand = new Command("index")
     for (const col of collectionRows) {
       console.log(`Indexing "${col.name}"...`);
 
-      if (!existsSync(col.dbPath)) {
-        console.error(`  Database not found at ${col.dbPath}, skipping`);
+      const dbPath = getCollectionDbPath(col.name);
+      if (!existsSync(dbPath)) {
+        console.error(`  Database not found at ${dbPath}, skipping`);
         continue;
       }
 
-      const colDb = getCollectionDb(col.dbPath);
+      const colDb = getCollectionDb(dbPath);
       const collectionDir = join(home, "collections", col.name);
       const markdownBasePath = "markdown";
 
       // Clear existing search index and links
-      const indexer = new SearchIndexer(col.dbPath);
+      const indexer = new SearchIndexer(dbPath);
       indexer.clearIndex();
       colDb.delete(entityLinks).run();
 

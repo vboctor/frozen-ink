@@ -1,6 +1,5 @@
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
-import * as masterSchema from "./master-schema";
 import * as collectionSchema from "./collection-schema";
 
 const COLLECTION_KEY_RE = /^[a-zA-Z0-9_-]+$/;
@@ -8,40 +7,6 @@ const COLLECTION_KEY_RE = /^[a-zA-Z0-9_-]+$/;
 /** Validate a collection key: alphanumeric, underscore, dash only. */
 export function isValidCollectionKey(key: string): boolean {
   return COLLECTION_KEY_RE.test(key);
-}
-
-export function getMasterDb(dbPath: string) {
-  const sqlite = new Database(dbPath);
-  sqlite.exec("PRAGMA journal_mode = WAL;");
-  sqlite.exec("PRAGMA foreign_keys = ON;");
-
-  const db = drizzle(sqlite, { schema: masterSchema });
-
-  // Create tables if they don't exist
-  sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS collections (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      title TEXT,
-      crawler_type TEXT NOT NULL,
-      config TEXT NOT NULL DEFAULT '{}',
-      credentials TEXT NOT NULL DEFAULT '{}',
-      sync_interval INTEGER NOT NULL DEFAULT 3600,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      db_path TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-
-  // Migrate: add title column if missing (pre-existing databases)
-  try {
-    sqlite.exec("ALTER TABLE collections ADD COLUMN title TEXT;");
-  } catch {
-    // Column already exists
-  }
-
-  return db;
 }
 
 export function getCollectionDb(dbPath: string) {

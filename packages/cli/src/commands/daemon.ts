@@ -3,8 +3,9 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import {
   getVeeContextHome,
-  getMasterDb,
-  collections,
+  contextExists,
+  listCollections,
+  getCollectionDbPath,
   loadConfig,
   SyncEngine,
   ThemeEngine,
@@ -27,17 +28,11 @@ function isProcessRunning(pid: number): boolean {
 
 async function runSyncLoop(intervalMs: number): Promise<void> {
   const home = getVeeContextHome();
-  const masterDbPath = join(home, "master.db");
 
   const doSync = async () => {
-    if (!existsSync(masterDbPath)) return;
+    if (!contextExists()) return;
 
-    const db = getMasterDb(masterDbPath);
-    const collectionRows = db
-      .select()
-      .from(collections)
-      .all()
-      .filter((c) => c.enabled);
+    const collectionRows = listCollections().filter((c) => c.enabled);
 
     if (collectionRows.length === 0) return;
 
@@ -48,7 +43,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
     themeEngine.register(gitTheme);
 
     for (const col of collectionRows) {
-      const factory = registry.get(col.crawlerType);
+      const factory = registry.get(col.crawler);
       if (!factory) continue;
 
       const crawler = factory();
@@ -63,7 +58,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
 
         const engine = new SyncEngine({
           crawler,
-          dbPath: col.dbPath,
+          dbPath: getCollectionDbPath(col.name),
           collectionName: col.name,
           themeEngine,
           storage,
@@ -89,14 +84,12 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
 const startCommand = new Command("start")
   .description("Start the sync daemon in the background")
   .action(async () => {
-    const home = getVeeContextHome();
-    const masterDbPath = join(home, "master.db");
-
-    if (!existsSync(masterDbPath)) {
+    if (!contextExists()) {
       console.error("VeeContext not initialized. Run: vctx init");
       process.exit(1);
     }
 
+    const home = getVeeContextHome();
     const pidPath = getPidPath();
 
     // Check if already running

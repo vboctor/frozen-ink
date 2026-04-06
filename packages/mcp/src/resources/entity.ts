@@ -3,9 +3,10 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
-  getMasterDb,
+  contextExists,
+  getCollection,
   getCollectionDb,
-  collections,
+  getCollectionDbPath,
   entities,
   entityTags,
 } from "@veecontext/core";
@@ -35,9 +36,8 @@ export function registerEntityResources(
     async (uri, variables) => {
       const collectionName = variables.collection as string;
       const externalId = variables.externalId as string;
-      const masterDbPath = join(options.veecontextHome, "master.db");
 
-      if (!existsSync(masterDbPath)) {
+      if (!contextExists()) {
         return {
           contents: [
             {
@@ -49,14 +49,10 @@ export function registerEntityResources(
         };
       }
 
-      const db = getMasterDb(masterDbPath);
-      const [col] = db
-        .select()
-        .from(collections)
-        .where(eq(collections.name, collectionName))
-        .all();
+      const col = getCollection(collectionName);
+      const dbPath = col ? getCollectionDbPath(collectionName) : null;
 
-      if (!col || !existsSync(col.dbPath)) {
+      if (!col || !dbPath || !existsSync(dbPath)) {
         return {
           contents: [
             {
@@ -70,7 +66,7 @@ export function registerEntityResources(
         };
       }
 
-      const colDb = getCollectionDb(col.dbPath);
+      const colDb = getCollectionDb(dbPath);
       const [entity] = colDb
         .select()
         .from(entities)
@@ -138,9 +134,8 @@ export function registerEntityResources(
     async (uri, variables) => {
       const collectionName = variables.collection as string;
       const path = variables.path as string;
-      const masterDbPath = join(options.veecontextHome, "master.db");
 
-      if (!existsSync(masterDbPath)) {
+      if (!contextExists()) {
         return {
           contents: [
             {
@@ -152,13 +147,7 @@ export function registerEntityResources(
         };
       }
 
-      const db = getMasterDb(masterDbPath);
-      const [col] = db
-        .select()
-        .from(collections)
-        .where(eq(collections.name, collectionName))
-        .all();
-
+      const col = getCollection(collectionName);
       if (!col) {
         return {
           contents: [

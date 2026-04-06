@@ -11,6 +11,8 @@ import { indexCommand } from "./commands/index";
 import { generateCommand } from "./commands/generate";
 import { serveCommand } from "./commands/serve";
 import { daemonCommand } from "./commands/daemon";
+import { publishCommand } from "./commands/publish";
+import { unpublishCommand } from "./commands/unpublish";
 
 const program = new Command();
 
@@ -30,5 +32,7 @@ program.addCommand(indexCommand);
 program.addCommand(generateCommand);
 program.addCommand(serveCommand);
 program.addCommand(daemonCommand);
+program.addCommand(publishCommand);
+program.addCommand(unpublishCommand);
 
-program.parse();
+await program.parseAsync();

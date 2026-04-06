@@ -9,6 +9,11 @@ interface LayoutProps {
   onToggleSidebar: () => void;
 }
 
+function isPublishedDeployment(): boolean {
+  // Published deployments run on workers.dev — show logout there
+  return window.location.hostname.endsWith(".workers.dev");
+}
+
 export default function Layout({
   sidebar,
   main,
@@ -17,15 +22,17 @@ export default function Layout({
   onResizeStart,
   onToggleSidebar,
 }: LayoutProps) {
+  const showLogout = isPublishedDeployment();
+
   return (
     <div className="layout">
       <button
         className="sidebar-toggle-ribbon"
         onClick={onToggleSidebar}
-        title={`${sidebarOpen ? "Collapse" : "Expand"} sidebar (⌘\\)`}
+        title={`${sidebarOpen ? "Collapse" : "Expand"} sidebar`}
         aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
       >
-        {sidebarOpen ? "◀" : "▶"}
+        {sidebarOpen ? "\u25C0" : "\u25B6"}
       </button>
       {sidebarOpen && (
         <aside
@@ -33,6 +40,13 @@ export default function Layout({
           style={{ width: sidebarWidth, minWidth: sidebarWidth }}
         >
           {sidebar}
+          {showLogout && (
+            <form method="POST" action="/logout" className="sidebar-logout">
+              <button type="submit" className="logout-btn" title="Sign out">
+                Logout
+              </button>
+            </form>
+          )}
           <div
             className="sidebar-resize-handle"
             onMouseDown={onResizeStart}

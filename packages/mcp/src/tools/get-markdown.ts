@@ -2,7 +2,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { getMasterDb, getCollectionDb, collections, entities } from "@veecontext/core";
+import {
+  contextExists,
+  getCollection,
+  getCollectionDb,
+  getCollectionDbPath,
+  entities,
+} from "@veecontext/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
@@ -23,8 +29,7 @@ export function registerGetMarkdown(
       annotations: { readOnlyHint: true },
     },
     async (args) => {
-      const masterDbPath = join(options.veecontextHome, "master.db");
-      if (!existsSync(masterDbPath)) {
+      if (!contextExists()) {
         return {
           content: [
             {
@@ -35,13 +40,7 @@ export function registerGetMarkdown(
         };
       }
 
-      const db = getMasterDb(masterDbPath);
-      const [col] = db
-        .select()
-        .from(collections)
-        .where(eq(collections.name, args.collection))
-        .all();
-
+      const col = getCollection(args.collection);
       if (!col) {
         return {
           content: [
@@ -55,7 +54,8 @@ export function registerGetMarkdown(
         };
       }
 
-      if (!existsSync(col.dbPath)) {
+      const dbPath = getCollectionDbPath(args.collection);
+      if (!existsSync(dbPath)) {
         return {
           content: [
             {
@@ -66,7 +66,7 @@ export function registerGetMarkdown(
         };
       }
 
-      const colDb = getCollectionDb(col.dbPath);
+      const colDb = getCollectionDb(dbPath);
       const [entity] = colDb
         .select()
         .from(entities)

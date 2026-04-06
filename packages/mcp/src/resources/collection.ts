@@ -1,15 +1,16 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { existsSync } from "fs";
-import { join } from "path";
 import {
-  getMasterDb,
+  contextExists,
+  listCollections,
+  getCollection,
   getCollectionDb,
-  collections,
+  getCollectionDbPath,
   entities,
   syncRuns,
 } from "@veecontext/core";
-import { eq, desc } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
 export function registerCollectionResources(
@@ -25,8 +26,7 @@ export function registerCollectionResources(
       mimeType: "application/json",
     },
     async () => {
-      const masterDbPath = join(options.veecontextHome, "master.db");
-      if (!existsSync(masterDbPath)) {
+      if (!contextExists()) {
         return {
           contents: [
             {
@@ -38,12 +38,10 @@ export function registerCollectionResources(
         };
       }
 
-      const db = getMasterDb(masterDbPath);
-      const rows = db.select().from(collections).all();
-
+      const rows = listCollections();
       const result = rows.map((col) => ({
         name: col.name,
-        crawlerType: col.crawlerType,
+        crawlerType: col.crawler,
         enabled: col.enabled,
       }));
 
@@ -64,17 +62,15 @@ export function registerCollectionResources(
     "veecontext://collections/{name}",
     {
       list: async () => {
-        const masterDbPath = join(options.veecontextHome, "master.db");
-        if (!existsSync(masterDbPath)) return { resources: [] };
+        if (!contextExists()) return { resources: [] };
 
-        const db = getMasterDb(masterDbPath);
-        const rows = db.select().from(collections).all();
+        const rows = listCollections();
 
         return {
           resources: rows.map((col) => ({
             uri: `veecontext://collections/${col.name}`,
             name: col.name,
-            description: `${col.crawlerType} collection: ${col.name}`,
+            description: `${col.crawler} collection: ${col.name}`,
             mimeType: "application/json",
           })),
         };
@@ -91,9 +87,8 @@ export function registerCollectionResources(
     },
     async (uri, variables) => {
       const name = variables.name as string;
-      const masterDbPath = join(options.veecontextHome, "master.db");
 
-      if (!existsSync(masterDbPath)) {
+      if (!contextExists()) {
         return {
           contents: [
             {
@@ -105,13 +100,7 @@ export function registerCollectionResources(
         };
       }
 
-      const db = getMasterDb(masterDbPath);
-      const [col] = db
-        .select()
-        .from(collections)
-        .where(eq(collections.name, name))
-        .all();
-
+      const col = getCollection(name);
       if (!col) {
         return {
           contents: [
@@ -127,8 +116,9 @@ export function registerCollectionResources(
       let entityCount = 0;
       let lastSyncTime: string | null = null;
 
-      if (existsSync(col.dbPath)) {
-        const colDb = getCollectionDb(col.dbPath);
+      const dbPath = getCollectionDbPath(name);
+      if (existsSync(dbPath)) {
+        const colDb = getCollectionDb(dbPath);
         entityCount = colDb.select().from(entities).all().length;
 
         const runs = colDb
@@ -145,13 +135,11 @@ export function registerCollectionResources(
 
       const result = {
         name: col.name,
-        crawlerType: col.crawlerType,
+        crawlerType: col.crawler,
         enabled: col.enabled,
         entityCount,
         lastSyncTime,
         syncInterval: col.syncInterval,
-        createdAt: col.createdAt,
-        updatedAt: col.updatedAt,
       };
 
       return {
