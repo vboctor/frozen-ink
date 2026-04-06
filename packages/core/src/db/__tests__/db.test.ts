@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
 import { eq } from "drizzle-orm";
-import { getMasterDb, getCollectionDb } from "../client";
-import { collections } from "../master-schema";
+import { getCollectionDb } from "../client";
 import {
   entities,
   entityTags,
@@ -21,62 +20,6 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
-});
-
-describe("Master Database", () => {
-  it("creates a database with collections table", () => {
-    const dbPath = join(TEST_DIR, "master.db");
-    const db = getMasterDb(dbPath);
-
-    expect(existsSync(dbPath)).toBe(true);
-
-    // Verify collections table exists by querying it
-    const result = db.select().from(collections).all();
-    expect(result).toEqual([]);
-  });
-
-  it("supports CRUD operations on collections", () => {
-    const dbPath = join(TEST_DIR, "master-crud.db");
-    const db = getMasterDb(dbPath);
-
-    // Create
-    db.insert(collections)
-      .values({
-        name: "My GitHub",
-        crawlerType: "github",
-        config: { org: "acme" },
-        credentials: { token: "ghp_xxx" },
-        dbPath: "/data/github.db",
-      })
-      .run();
-
-    // Read
-    const rows = db.select().from(collections).all();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].name).toBe("My GitHub");
-    expect(rows[0].crawlerType).toBe("github");
-    expect(rows[0].config).toEqual({ org: "acme" });
-    expect(rows[0].credentials).toEqual({ token: "ghp_xxx" });
-    expect(rows[0].syncInterval).toBe(3600);
-    expect(rows[0].enabled).toBe(true);
-    expect(rows[0].dbPath).toBe("/data/github.db");
-    expect(rows[0].createdAt).toBeTruthy();
-    expect(rows[0].updatedAt).toBeTruthy();
-
-    // Update
-    db.update(collections)
-      .set({ enabled: false })
-      .where(eq(collections.id, rows[0].id))
-      .run();
-
-    const updated = db.select().from(collections).where(eq(collections.id, rows[0].id)).all();
-    expect(updated[0].enabled).toBe(false);
-
-    // Delete
-    db.delete(collections).where(eq(collections.id, rows[0].id)).run();
-    const afterDelete = db.select().from(collections).all();
-    expect(afterDelete).toHaveLength(0);
-  });
 });
 
 describe("Collection Database", () => {

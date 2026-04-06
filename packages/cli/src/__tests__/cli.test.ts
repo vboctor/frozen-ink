@@ -2,16 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
-  getMasterDb,
   getCollectionDb,
-  collections,
   entities,
-  entityTags,
   syncRuns,
-  syncState,
   SearchIndexer,
+  addCollection,
+  getCollection,
+  listCollections,
 } from "@veecontext/core";
-import { eq } from "drizzle-orm";
 
 const TEST_DIR = join(import.meta.dir, ".test-cli");
 
@@ -26,10 +24,9 @@ afterEach(() => {
 });
 
 describe("CLI: init", () => {
-  it("creates directory structure with config.json and master DB", async () => {
+  it("creates directory structure with config.json and context.yml", async () => {
     const { initCommand } = await import("../commands/init");
 
-    // Capture console output
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (...args: unknown[]) => logs.push(args.join(" "));
@@ -38,25 +35,14 @@ describe("CLI: init", () => {
 
     console.log = origLog;
 
-    // config.json created
     expect(existsSync(join(TEST_DIR, "config.json"))).toBe(true);
-    const config = JSON.parse(
-      readFileSync(join(TEST_DIR, "config.json"), "utf-8"),
-    );
+    const config = JSON.parse(readFileSync(join(TEST_DIR, "config.json"), "utf-8"));
     expect(config.db.mode).toBe("local");
     expect(config.sync.interval).toBe(900);
 
-    // master.db created
-    expect(existsSync(join(TEST_DIR, "master.db"))).toBe(true);
-
-    // collections dir created
+    expect(existsSync(join(TEST_DIR, "context.yml"))).toBe(true);
     expect(existsSync(join(TEST_DIR, "collections"))).toBe(true);
-
-    // Verify master DB has collections table
-    const db = getMasterDb(join(TEST_DIR, "master.db"));
-    const rows = db.select().from(collections).all();
-    expect(rows).toHaveLength(0);
-
+    expect(listCollections()).toHaveLength(0);
     expect(logs.some((l) => l.includes("Initialized VeeContext"))).toBe(true);
   });
 
@@ -67,10 +53,8 @@ describe("CLI: init", () => {
     const origLog = console.log;
     console.log = (...args: unknown[]) => logs.push(args.join(" "));
 
-    // First init
     await initCmd1.parseAsync([], { from: "user" });
 
-    // Second init
     const { initCommand: initCmd2 } = await import("../commands/init");
     await initCmd2.parseAsync([], { from: "user" });
 
@@ -81,42 +65,31 @@ describe("CLI: init", () => {
 });
 
 describe("CLI: add", () => {
-  it("creates collection in master DB and collection directory", async () => {
-    // Initialize first
+  it("creates collection in context.yml and collection directory", async () => {
     const { initCommand } = await import("../commands/init");
     const origLog = console.log;
     console.log = () => {};
     await initCommand.parseAsync([], { from: "user" });
 
-    // Add a collection by directly inserting (skip credential validation)
-    const masterDbPath = join(TEST_DIR, "master.db");
-    const db = getMasterDb(masterDbPath);
     const collectionDir = join(TEST_DIR, "collections", "test-gh");
-    mkdirSync(collectionDir, { recursive: true });
     const dbPath = join(collectionDir, "data.db");
-    getCollectionDb(dbPath);
+    mkdirSync(collectionDir, { recursive: true });
     mkdirSync(join(collectionDir, "markdown"), { recursive: true });
+    getCollectionDb(dbPath);
 
-    db.insert(collections)
-      .values({
-        name: "test-gh",
-        crawlerType: "github",
-        config: { owner: "test", repo: "repo" },
-        credentials: { token: "tok", owner: "test", repo: "repo" },
-        dbPath,
-      })
-      .run();
+    addCollection("test-gh", {
+      crawler: "github",
+      config: { owner: "test", repo: "repo" },
+      credentials: { token: "tok", owner: "test", repo: "repo" },
+    });
 
     console.log = origLog;
 
-    // Verify collection exists in master DB
-    const rows = db.select().from(collections).all();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].name).toBe("test-gh");
-    expect(rows[0].crawlerType).toBe("github");
-    expect(rows[0].enabled).toBe(true);
-
-    // Verify collection directory
+    const cols = listCollections();
+    expect(cols).toHaveLength(1);
+    expect(cols[0].name).toBe("test-gh");
+    expect(cols[0].crawler).toBe("github");
+    expect(cols[0].enabled).toBe(true);
     expect(existsSync(collectionDir)).toBe(true);
     expect(existsSync(dbPath)).toBe(true);
     expect(existsSync(join(collectionDir, "markdown"))).toBe(true);
@@ -132,28 +105,15 @@ describe("CLI: collections", () => {
 
     await initCommand.parseAsync([], { from: "user" });
 
-    // Add a collection directly
-    const db = getMasterDb(join(TEST_DIR, "master.db"));
-    const dbPath = join(TEST_DIR, "collections", "my-col", "data.db");
     mkdirSync(join(TEST_DIR, "collections", "my-col"), { recursive: true });
-    db.insert(collections)
-      .values({
-        name: "my-col",
-        crawlerType: "github",
-        config: {},
-        credentials: {},
-        dbPath,
-      })
-      .run();
+    addCollection("my-col", { crawler: "github", config: {}, credentials: {} });
 
     const { collectionsCommand } = await import("../commands/collections");
     await collectionsCommand.parseAsync(["list"], { from: "user" });
 
     console.log = origLog;
 
-    expect(logs.some((l) => l.includes("my-col") && l.includes("github"))).toBe(
-      true,
-    );
+    expect(logs.some((l) => l.includes("my-col") && l.includes("github"))).toBe(true);
   });
 
   it("enable/disable toggles collection state", async () => {
@@ -163,44 +123,20 @@ describe("CLI: collections", () => {
 
     await initCommand.parseAsync([], { from: "user" });
 
-    const db = getMasterDb(join(TEST_DIR, "master.db"));
-    const dbPath = join(TEST_DIR, "collections", "toggled", "data.db");
     mkdirSync(join(TEST_DIR, "collections", "toggled"), { recursive: true });
-    db.insert(collections)
-      .values({
-        name: "toggled",
-        crawlerType: "github",
-        config: {},
-        credentials: {},
-        dbPath,
-      })
-      .run();
+    addCollection("toggled", { crawler: "github", config: {}, credentials: {} });
 
-    // Disable
-    const { collectionsCommand: cc1 } = await import(
-      "../commands/collections"
-    );
+    const { collectionsCommand: cc1 } = await import("../commands/collections");
     await cc1.parseAsync(["disable", "toggled"], { from: "user" });
 
-    let [row] = db
-      .select()
-      .from(collections)
-      .where(eq(collections.name, "toggled"))
-      .all();
-    expect(row.enabled).toBe(false);
+    let col = getCollection("toggled");
+    expect(col!.enabled).toBe(false);
 
-    // Enable
-    const { collectionsCommand: cc2 } = await import(
-      "../commands/collections"
-    );
+    const { collectionsCommand: cc2 } = await import("../commands/collections");
     await cc2.parseAsync(["enable", "toggled"], { from: "user" });
 
-    [row] = db
-      .select()
-      .from(collections)
-      .where(eq(collections.name, "toggled"))
-      .all();
-    expect(row.enabled).toBe(true);
+    col = getCollection("toggled");
+    expect(col!.enabled).toBe(true);
 
     console.log = origLog;
   });
@@ -212,37 +148,18 @@ describe("CLI: collections", () => {
 
     await initCommand.parseAsync([], { from: "user" });
 
-    const db = getMasterDb(join(TEST_DIR, "master.db"));
     const collectionDir = join(TEST_DIR, "collections", "to-remove");
     const dbPath = join(collectionDir, "data.db");
     mkdirSync(collectionDir, { recursive: true });
     getCollectionDb(dbPath);
-    db.insert(collections)
-      .values({
-        name: "to-remove",
-        crawlerType: "github",
-        config: {},
-        credentials: {},
-        dbPath,
-      })
-      .run();
+    addCollection("to-remove", { crawler: "github", config: {}, credentials: {} });
 
     const { collectionsCommand } = await import("../commands/collections");
-    await collectionsCommand.parseAsync(["remove", "to-remove"], {
-      from: "user",
-    });
+    await collectionsCommand.parseAsync(["remove", "to-remove"], { from: "user" });
 
     console.log = origLog;
 
-    // Verify removed from DB
-    const rows = db
-      .select()
-      .from(collections)
-      .where(eq(collections.name, "to-remove"))
-      .all();
-    expect(rows).toHaveLength(0);
-
-    // Verify directory removed
+    expect(getCollection("to-remove")).toBeNull();
     expect(existsSync(collectionDir)).toBe(false);
   });
 });
@@ -255,53 +172,16 @@ describe("CLI: status", () => {
 
     await initCommand.parseAsync([], { from: "user" });
 
-    // Setup collection with entities and sync run
-    const db = getMasterDb(join(TEST_DIR, "master.db"));
     const collectionDir = join(TEST_DIR, "collections", "status-test");
     const dbPath = join(collectionDir, "data.db");
     mkdirSync(collectionDir, { recursive: true });
     const colDb = getCollectionDb(dbPath);
 
-    db.insert(collections)
-      .values({
-        name: "status-test",
-        crawlerType: "github",
-        config: {},
-        credentials: {},
-        dbPath,
-      })
-      .run();
+    addCollection("status-test", { crawler: "github", config: {}, credentials: {} });
 
-    // Add entities
-    colDb
-      .insert(entities)
-      .values({
-        externalId: "issue-1",
-        entityType: "issue",
-        title: "Test Issue",
-        data: { number: 1 },
-      })
-      .run();
-    colDb
-      .insert(entities)
-      .values({
-        externalId: "pr-1",
-        entityType: "pull_request",
-        title: "Test PR",
-        data: { number: 2 },
-      })
-      .run();
-
-    // Add sync run
-    colDb
-      .insert(syncRuns)
-      .values({
-        status: "completed",
-        entitiesCreated: 2,
-        startedAt: "2025-01-01 00:00:00",
-        completedAt: "2025-01-01 00:01:00",
-      })
-      .run();
+    colDb.insert(entities).values({ externalId: "issue-1", entityType: "issue", title: "Test Issue", data: { number: 1 } }).run();
+    colDb.insert(entities).values({ externalId: "pr-1", entityType: "pull_request", title: "Test PR", data: { number: 2 } }).run();
+    colDb.insert(syncRuns).values({ status: "completed", entitiesCreated: 2, startedAt: "2025-01-01 00:00:00", completedAt: "2025-01-01 00:01:00" }).run();
 
     const logs: string[] = [];
     console.log = (...args: unknown[]) => logs.push(args.join(" "));
@@ -326,44 +206,17 @@ describe("CLI: search", () => {
 
     await initCommand.parseAsync([], { from: "user" });
 
-    // Setup collection with entities and FTS index
-    const db = getMasterDb(join(TEST_DIR, "master.db"));
     const collectionDir = join(TEST_DIR, "collections", "search-test");
     const dbPath = join(collectionDir, "data.db");
     mkdirSync(collectionDir, { recursive: true });
     const colDb = getCollectionDb(dbPath);
 
-    db.insert(collections)
-      .values({
-        name: "search-test",
-        crawlerType: "github",
-        config: {},
-        credentials: {},
-        dbPath,
-      })
-      .run();
+    addCollection("search-test", { crawler: "github", config: {}, credentials: {} });
 
-    // Add entity
-    colDb
-      .insert(entities)
-      .values({
-        externalId: "issue-42",
-        entityType: "issue",
-        title: "Authentication login bug",
-        data: { number: 42, body: "Users cannot login with OAuth" },
-      })
-      .run();
+    colDb.insert(entities).values({ externalId: "issue-42", entityType: "issue", title: "Authentication login bug", data: { number: 42 } }).run();
 
-    // Build FTS index
     const indexer = new SearchIndexer(dbPath);
-    indexer.updateIndex({
-      id: 1,
-      externalId: "issue-42",
-      entityType: "issue",
-      title: "Authentication login bug",
-      content: "Users cannot login with OAuth",
-      tags: ["bug"],
-    });
+    indexer.updateIndex({ id: 1, externalId: "issue-42", entityType: "issue", title: "Authentication login bug", content: "Users cannot login with OAuth", tags: ["bug"] });
     indexer.close();
 
     const logs: string[] = [];
@@ -385,45 +238,26 @@ describe("CLI: search", () => {
 
     await initCommand.parseAsync([], { from: "user" });
 
-    const db = getMasterDb(join(TEST_DIR, "master.db"));
     const collectionDir = join(TEST_DIR, "collections", "json-test");
     const dbPath = join(collectionDir, "data.db");
     mkdirSync(collectionDir, { recursive: true });
     getCollectionDb(dbPath);
 
-    db.insert(collections)
-      .values({
-        name: "json-test",
-        crawlerType: "github",
-        config: {},
-        credentials: {},
-        dbPath,
-      })
-      .run();
+    addCollection("json-test", { crawler: "github", config: {}, credentials: {} });
 
     const indexer = new SearchIndexer(dbPath);
-    indexer.updateIndex({
-      id: 1,
-      externalId: "issue-10",
-      entityType: "issue",
-      title: "Performance optimization",
-      content: "Optimize database queries",
-      tags: ["performance"],
-    });
+    indexer.updateIndex({ id: 1, externalId: "issue-10", entityType: "issue", title: "Performance optimization", content: "Optimize database queries", tags: ["performance"] });
     indexer.close();
 
     const logs: string[] = [];
     console.log = (...args: unknown[]) => logs.push(args.join(" "));
 
     const { searchCommand } = await import("../commands/search");
-    await searchCommand.parseAsync(["--json", "optimization"], {
-      from: "user",
-    });
+    await searchCommand.parseAsync(["--json", "optimization"], { from: "user" });
 
     console.log = origLog;
 
-    const output = logs.join("\n");
-    const parsed = JSON.parse(output);
+    const parsed = JSON.parse(logs.join("\n"));
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed[0].externalId).toBe("issue-10");
     expect(parsed[0].collection).toBe("json-test");
@@ -459,13 +293,9 @@ describe("CLI: config", () => {
     const { configCommand: cc1 } = await import("../commands/config");
     await cc1.parseAsync(["set", "sync.interval", "1800"], { from: "user" });
 
-    // Verify file updated
-    const config = JSON.parse(
-      readFileSync(join(TEST_DIR, "config.json"), "utf-8"),
-    );
+    const config = JSON.parse(readFileSync(join(TEST_DIR, "config.json"), "utf-8"));
     expect(config.sync.interval).toBe(1800);
 
-    // Verify get reflects new value
     const logs: string[] = [];
     console.log = (...args: unknown[]) => logs.push(args.join(" "));
 
@@ -492,8 +322,7 @@ describe("CLI: config", () => {
 
     console.log = origLog;
 
-    const output = logs.join("\n");
-    const parsed = JSON.parse(output);
+    const parsed = JSON.parse(logs.join("\n"));
     expect(parsed.db.mode).toBe("local");
     expect(parsed.sync.interval).toBe(900);
     expect(parsed.logging.level).toBe("info");
@@ -508,30 +337,23 @@ describe("CLI: sync triggers crawler", () => {
 
     await initCommand.parseAsync([], { from: "user" });
 
-    // Create a collection with a mock-friendly setup
-    const db = getMasterDb(join(TEST_DIR, "master.db"));
     const collectionDir = join(TEST_DIR, "collections", "sync-test");
     const dbPath = join(collectionDir, "data.db");
     mkdirSync(collectionDir, { recursive: true });
     mkdirSync(join(collectionDir, "markdown"), { recursive: true });
     getCollectionDb(dbPath);
 
-    db.insert(collections)
-      .values({
-        name: "sync-test",
-        crawlerType: "github",
-        config: { owner: "test", repo: "repo" },
-        credentials: { token: "test-token", owner: "test", repo: "repo" },
-        dbPath,
-      })
-      .run();
+    addCollection("sync-test", {
+      crawler: "github",
+      config: { owner: "test", repo: "repo" },
+      credentials: { token: "test-token", owner: "test", repo: "repo" },
+    });
 
     console.log = origLog;
 
-    // Verify collection was set up correctly
-    const rows = db.select().from(collections).all();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].name).toBe("sync-test");
+    const cols = listCollections();
+    expect(cols).toHaveLength(1);
+    expect(cols[0].name).toBe("sync-test");
     expect(existsSync(dbPath)).toBe(true);
   });
 });
