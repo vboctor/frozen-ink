@@ -1800,3 +1800,282 @@ body {
   color: var(--text-secondary);
   margin-bottom: 12px;
 }
+
+/* ===== Mobile panel overlays ===== */
+.mobile-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-bg);
+  z-index: 50;
+  display: flex;
+}
+
+/* Mobile sidebar: slide from left, fill most of the width */
+.mobile-sidebar {
+  width: 85vw !important;
+  max-width: 320px;
+  min-width: unset !important;
+  height: 100% !important;
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.15);
+  animation: slideInLeft 0.2s ease-out;
+}
+
+/* Mobile sidebar header with title and close button */
+.mobile-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mobile-sidebar-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.mobile-sidebar-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-sidebar-close svg {
+  width: 20px;
+  height: 20px;
+}
+
+.mobile-sidebar-close:active {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+/* Mobile right panel: slide from right */
+.mobile-panel-right {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 85vw;
+  max-width: 320px;
+  animation: slideInRight 0.2s ease-out;
+}
+
+.mobile-panel-right .backlinks-panel {
+  width: 100%;
+  min-width: unset;
+  height: 100%;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+/* ===== Mobile bottom action bar ===== */
+.mobile-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 48px;
+  min-height: 48px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  padding: 0 4px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  flex-shrink: 0;
+}
+
+.mobile-bar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  transition: color 0.1s, background 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-bar-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.mobile-bar-btn:active:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.mobile-bar-btn.active {
+  color: var(--accent);
+}
+
+.mobile-bar-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ===== Logout icon in toolbar ===== */
+.logout-form-inline {
+  display: contents;
+}
+
+.logout-icon-btn {
+  color: var(--text-muted) !important;
+}
+
+.logout-icon-btn:hover {
+  color: var(--text) !important;
+}
+
+/* ===== Mobile layout class ===== */
+.layout-mobile > .sidebar-toggle-ribbon {
+  display: none !important;
+}
+
+/* Hide only the inline sidebar (direct child), not mobile overlay sidebar */
+.layout-mobile > .sidebar {
+  display: none !important;
+}
+
+.layout-mobile > .main-content {
+  width: 100% !important;
+  flex: 1 !important;
+}
+
+/* Hide only the inline backlinks panel (inside main-body), not mobile overlay */
+.layout-mobile .main-body > .backlinks-panel {
+  display: none !important;
+}
+
+/* ===== Mobile responsive overrides ===== */
+@media (max-width: 768px) {
+  /* CSS-only fallback: force hide sidebar ribbon */
+  .sidebar-toggle-ribbon {
+    display: none !important;
+  }
+
+  /* CSS-only fallback: inline sidebar and backlinks should never show */
+  .layout > .sidebar {
+    display: none !important;
+  }
+
+  .main-body > .backlinks-panel {
+    display: none !important;
+  }
+
+  /* Main content takes full width */
+  .main-content {
+    width: 100% !important;
+    max-width: 100vw !important;
+  }
+
+  /* Main content padding — reduced for mobile */
+  .main-inner {
+    padding: 16px;
+  }
+
+  /* Markdown max-width: fill the screen */
+  .markdown-view {
+    max-width: 100%;
+    font-size: 15px;
+  }
+
+  /* Search dialog: full-width on mobile */
+  .search-dialog {
+    width: calc(100vw - 24px);
+    max-width: 100%;
+    border-radius: 10px;
+  }
+
+  .search-overlay {
+    padding-top: 10vh;
+  }
+
+  /* Tab bar: scroll horizontally, smaller tabs */
+  .tab {
+    min-width: 60px;
+    max-width: 140px;
+    padding: 0 8px 0 10px;
+    font-size: 11px;
+  }
+
+  /* Toolbar adjustments */
+  .toolbar {
+    height: 40px;
+    min-height: 40px;
+  }
+
+  .tab {
+    height: 40px;
+  }
+
+  /* Callouts: reduced padding */
+  .callout {
+    padding: 10px 12px;
+  }
+
+  /* Code blocks: reduce padding, smaller text */
+  .markdown-view pre {
+    padding: 12px;
+    font-size: 12px;
+  }
+
+  /* Tables: horizontal scroll */
+  .markdown-view table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Headings: slightly smaller */
+  .markdown-view h1 { font-size: 24px; }
+  .markdown-view h2 { font-size: 19px; margin-top: 24px; }
+  .markdown-view h3 { font-size: 16px; }
+
+  /* Images: prevent overflow */
+  .markdown-view img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Empty state: account for bottom bar */
+  .empty-state {
+    padding-bottom: 48px;
+  }
+
+  /* File tree touch targets — larger for mobile */
+  .tree-toggle,
+  .tree-file-button {
+    padding: 8px 8px;
+    font-size: 14px;
+  }
+
+  /* Collection picker and theme switcher: more touch-friendly */
+  .collection-picker select,
+  .theme-switcher select {
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+}

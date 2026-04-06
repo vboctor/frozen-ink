@@ -7,10 +7,10 @@ interface LayoutProps {
   sidebarWidth: number;
   onResizeStart: (e: React.MouseEvent) => void;
   onToggleSidebar: () => void;
+  isMobile?: boolean;
 }
 
-function isPublishedDeployment(): boolean {
-  // Published deployments run on workers.dev — show logout there
+export function isPublishedDeployment(): boolean {
   return window.location.hostname.endsWith(".workers.dev");
 }
 
@@ -21,32 +21,52 @@ export default function Layout({
   sidebarWidth,
   onResizeStart,
   onToggleSidebar,
+  isMobile = false,
 }: LayoutProps) {
-  const showLogout = isPublishedDeployment();
-
   return (
-    <div className="layout">
-      <button
-        className="sidebar-toggle-ribbon"
-        onClick={onToggleSidebar}
-        title={`${sidebarOpen ? "Collapse" : "Expand"} sidebar`}
-        aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-      >
-        {sidebarOpen ? "\u25C0" : "\u25B6"}
-      </button>
-      {sidebarOpen && (
+    <div className={`layout${isMobile ? " layout-mobile" : ""}`}>
+      {/* Desktop: narrow ribbon toggle */}
+      {!isMobile && (
+        <button
+          className="sidebar-toggle-ribbon"
+          onClick={onToggleSidebar}
+          title={`${sidebarOpen ? "Collapse" : "Expand"} sidebar`}
+          aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+        >
+          {sidebarOpen ? "\u25C0" : "\u25B6"}
+        </button>
+      )}
+      {/* Mobile: sidebar as full-screen overlay */}
+      {isMobile && sidebarOpen && (
+        <div className="mobile-panel-overlay" onClick={onToggleSidebar}>
+          <aside
+            className="sidebar mobile-sidebar"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mobile-sidebar-header">
+              <span className="mobile-sidebar-title">Files</span>
+              <button
+                className="mobile-sidebar-close"
+                onClick={onToggleSidebar}
+                aria-label="Close sidebar"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            {sidebar}
+          </aside>
+        </div>
+      )}
+      {/* Desktop: inline sidebar */}
+      {!isMobile && sidebarOpen && (
         <aside
           className="sidebar"
           style={{ width: sidebarWidth, minWidth: sidebarWidth }}
         >
           {sidebar}
-          {showLogout && (
-            <form method="POST" action="/logout" className="sidebar-logout">
-              <button type="submit" className="logout-btn" title="Sign out">
-                Logout
-              </button>
-            </form>
-          )}
           <div
             className="sidebar-resize-handle"
             onMouseDown={onResizeStart}

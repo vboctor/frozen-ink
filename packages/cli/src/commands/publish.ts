@@ -81,12 +81,14 @@ async function runConcurrent<T>(
 
 export const publishCommand = new Command("publish")
   .description("Publish collections to Cloudflare as a password-protected website with MCP access")
-  .argument("<collections...>", "Collection names to publish")
+  .argument("[collections...]", "Collection names to publish")
   .option("--password <password>", "Password to protect access")
   .option("--name <name>", "Worker name (default: vctx-<first-collection>-<random>)")
-  .action(async (collectionNames: string[], opts: {
+  .option("--worker-only", "Deploy worker code only (skip D1/R2 data upload); requires --name for an existing deployment")
+  .action(async (collectionNamesArg: string[], opts: {
     password?: string;
     name?: string;
+    workerOnly?: boolean;
   }) => {
     try {
     if (!contextExists()) {
@@ -97,28 +99,65 @@ export const publishCommand = new Command("publish")
     // Step 0: Check wrangler auth
     await checkWranglerAuth();
 
-    // Validate collections
-    const home = getVeeContextHome();
-    for (const name of collectionNames) {
-      const col = getCollection(name);
-      if (!col) {
-        console.error(`Collection "${name}" not found`);
-        process.exit(1);
-      }
-      const dbPath = getCollectionDbPath(name);
-      if (!existsSync(dbPath)) {
-        console.error(`Collection "${name}" database not found at ${dbPath}`);
-        process.exit(1);
-      }
+    const workerOnly = !!opts.workerOnly;
+    let collectionNames = collectionNamesArg ?? [];
+
+    if (!workerOnly && collectionNames.length === 0) {
+      console.error("No collections specified. Provide at least one collection name.");
+      process.exit(1);
+    }
+    if (workerOnly && !opts.name) {
+      console.error("--worker-only requires --name <deployment-name>.");
+      process.exit(1);
     }
 
     const workerName = opts.name || `vctx-${collectionNames[0]}-${randomSuffix()}`;
-    const d1DatabaseName = `${workerName}-db`;
-    const r2BucketName = `${workerName}-files`;
 
     // Check if this is an update to an existing deployment
     const existingDeployment = getDeployment(workerName);
     const isUpdate = !!existingDeployment;
+    if (workerOnly && !existingDeployment) {
+      console.error(`Deployment "${workerName}" not found. --worker-only only works for existing deployments.`);
+      process.exit(1);
+    }
+
+    if (workerOnly && existingDeployment) {
+      if (collectionNames.length > 0) {
+        console.warn("  Ignoring provided collections because --worker-only reuses deployment collections.");
+      }
+      collectionNames = existingDeployment.collections;
+    }
+
+    // Validate collections (data publish mode only)
+    const home = getVeeContextHome();
+    if (!workerOnly) {
+      for (const name of collectionNames) {
+        const col = getCollection(name);
+        if (!col) {
+          console.error(`Collection "${name}" not found`);
+          process.exit(1);
+        }
+        const dbPath = getCollectionDbPath(name);
+        if (!existsSync(dbPath)) {
+          console.error(`Collection "${name}" database not found at ${dbPath}`);
+          process.exit(1);
+        }
+      }
+    }
+
+    let d1DatabaseName: string;
+    let d1DatabaseId: string;
+    let r2BucketName: string;
+    if (workerOnly) {
+      const deployment = existingDeployment!;
+      d1DatabaseName = deployment.d1DatabaseName || `${workerName}-db`;
+      d1DatabaseId = deployment.d1DatabaseId;
+      r2BucketName = deployment.r2BucketName;
+    } else {
+      d1DatabaseName = `${workerName}-db`;
+      d1DatabaseId = "";
+      r2BucketName = `${workerName}-files`;
+    }
 
     // Hash password
     let passwordHash = "";
@@ -132,21 +171,28 @@ export const publishCommand = new Command("publish")
       passwordHash = `${salt}:${hashHex}`;
     }
 
-    console.log(`${isUpdate ? "Updating" : "Publishing"} ${collectionNames.length} collection(s) as "${workerName}"...`);
+    if (workerOnly) {
+      console.log(`Deploying latest code for "${workerName}" (worker + UI assets, skipping D1/collection data)...`);
+      console.log(`  Reusing D1: ${d1DatabaseName} (${d1DatabaseId})`);
+      console.log(`  Reusing R2: ${r2BucketName}`);
+    } else {
+      console.log(`${isUpdate ? "Updating" : "Publishing"} ${collectionNames.length} collection(s) as "${workerName}"...`);
 
-    // Step 1: Create or reuse D1 database
-    console.log("  Setting up D1 database...");
-    const d1 = await createD1(d1DatabaseName);
-    const d1DatabaseId = d1.uuid;
-    console.log(`  D1 database: ${d1DatabaseName} (${d1DatabaseId})`);
+      // Step 1: Create or reuse D1 database
+      console.log("  Setting up D1 database...");
+      const d1 = await createD1(d1DatabaseName);
+      d1DatabaseId = d1.uuid;
+      console.log(`  D1 database: ${d1DatabaseName} (${d1DatabaseId})`);
+    }
 
-    // D1 has a per-statement size limit (~100KB). We split the SQL into:
-    //   1. Schema DDL + entity/tag/link/attachment data (small per-row)
-    //   2. FTS content (can be large — truncate and batch separately)
+    if (!workerOnly) {
+      // D1 has a per-statement size limit (~100KB). We split the SQL into:
+      //   1. Schema DDL + entity/tag/link/attachment data (small per-row)
+      //   2. FTS content (can be large — truncate and batch separately)
 
-    // --- Batch 1: Schema + structured data ---
-    console.log("  Building database export...");
-    const schemaSql: string[] = [];
+      // --- Batch 1: Schema + structured data ---
+      console.log("  Building database export...");
+      const schemaSql: string[] = [];
 
     schemaSql.push("DROP TABLE IF EXISTS entities_fts;");
     schemaSql.push("DROP TABLE IF EXISTS r2_manifest;");
@@ -286,91 +332,101 @@ export const publishCommand = new Command("publish")
       }
     }
 
+    }
+
     // Step 4: Create or reuse R2 bucket
     console.log("  Setting up R2 bucket...");
     await createR2Bucket(r2BucketName);
 
-    // Step 5: If update, get existing R2 manifest for stale file cleanup
-    let existingR2Keys = new Set<string>();
-    if (isUpdate) {
-      try {
-        const manifestJson = await executeD1Command(
-          existingDeployment.d1DatabaseName || d1DatabaseName,
-          "SELECT key FROM r2_manifest",
-        );
-        const parsed = JSON.parse(manifestJson);
-        // D1 JSON output is an array of result sets; first result has `results` array
-        const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
-        if (Array.isArray(results)) {
-          for (const row of results) {
-            existingR2Keys.add(row.key);
-          }
-        }
-      } catch {
-        // Manifest may not exist on old deployments — proceed without cleanup
-      }
-    }
-
-    // Step 6: Upload files to R2
-    // Build list of all files to upload
-    const uploads: Array<{ r2Key: string; fullPath: string }> = [];
-
-    for (const colName of collectionNames) {
-      const collectionDir = join(home, "collections", colName);
-      for (const file of collectFiles(join(collectionDir, "markdown"))) {
-        uploads.push({ r2Key: `${colName}/markdown/${file.relativePath}`, fullPath: file.fullPath });
-      }
-      for (const file of collectFiles(join(collectionDir, "attachments"))) {
-        uploads.push({ r2Key: `${colName}/attachments/${file.relativePath}`, fullPath: file.fullPath });
-      }
-    }
-
+    // Step 5–8: Upload R2 files
     const uiDistDir = join(import.meta.dir, "../../../ui/dist");
-    if (existsSync(uiDistDir)) {
-      for (const file of collectFiles(uiDistDir)) {
-        uploads.push({ r2Key: `_ui/${file.relativePath}`, fullPath: file.fullPath });
+    if (workerOnly) {
+      // --worker-only: upload only UI assets (skip collection data)
+      const uiUploads: Array<{ r2Key: string; fullPath: string }> = [];
+      if (existsSync(uiDistDir)) {
+        for (const file of collectFiles(uiDistDir)) {
+          uiUploads.push({ r2Key: `_ui/${file.relativePath}`, fullPath: file.fullPath });
+        }
+      } else {
+        console.warn("  Warning: UI dist not found. Run 'bun run build:ui' first.");
+      }
+      if (uiUploads.length > 0) {
+        console.log(`  Uploading ${uiUploads.length} UI asset(s) to R2...`);
+        await runConcurrent(uiUploads, 10, async ({ r2Key, fullPath }) => {
+          await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
+        });
+        console.log(`  Uploaded ${uiUploads.length} UI asset(s) to R2`);
       }
     } else {
-      console.warn("  Warning: UI dist not found. Run 'bun run build:ui' first.");
-    }
-
-    console.log(`  Uploading ${uploads.length} files to R2 (10 concurrent)...`);
-    const uploadedKeys = new Set<string>();
-    let uploadCount = 0;
-
-    await runConcurrent(uploads, 10, async ({ r2Key, fullPath }) => {
-      await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
-      uploadedKeys.add(r2Key);
-      uploadCount++;
-      if (uploadCount % 50 === 0) {
-        console.log(`    ${uploadCount}/${uploads.length} files uploaded...`);
+      // Full publish: upload collection data + UI assets
+      // Step 5: If update, get existing R2 manifest for stale file cleanup
+      let existingR2Keys = new Set<string>();
+      if (isUpdate) {
+        try {
+          const manifestJson = await executeD1Command(
+            existingDeployment.d1DatabaseName || d1DatabaseName,
+            "SELECT key FROM r2_manifest",
+          );
+          const parsed = JSON.parse(manifestJson);
+          const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
+          if (Array.isArray(results)) {
+            for (const row of results) existingR2Keys.add(row.key);
+          }
+        } catch {
+          // Manifest may not exist on old deployments — proceed without cleanup
+        }
       }
-    });
 
-    console.log(`  Uploaded ${uploadCount} files to R2`);
-
-    // Step 7: Delete stale R2 objects
-    if (isUpdate && existingR2Keys.size > 0) {
-      const staleKeys = [...existingR2Keys].filter((key) => !uploadedKeys.has(key));
-      if (staleKeys.length > 0) {
-        console.log(`  Removing ${staleKeys.length} stale file(s)...`);
-        await runConcurrent(staleKeys, 10, async (key) => {
-          await deleteR2Object(r2BucketName, key);
-        });
+      // Step 6: Build upload list
+      const uploads: Array<{ r2Key: string; fullPath: string }> = [];
+      for (const colName of collectionNames) {
+        const collectionDir = join(home, "collections", colName);
+        for (const file of collectFiles(join(collectionDir, "markdown"))) {
+          uploads.push({ r2Key: `${colName}/markdown/${file.relativePath}`, fullPath: file.fullPath });
+        }
+        for (const file of collectFiles(join(collectionDir, "attachments"))) {
+          uploads.push({ r2Key: `${colName}/attachments/${file.relativePath}`, fullPath: file.fullPath });
+        }
       }
-    }
+      if (existsSync(uiDistDir)) {
+        for (const file of collectFiles(uiDistDir)) {
+          uploads.push({ r2Key: `_ui/${file.relativePath}`, fullPath: file.fullPath });
+        }
+      } else {
+        console.warn("  Warning: UI dist not found. Run 'bun run build:ui' first.");
+      }
 
-    // Step 8: Update R2 manifest in D1
-    const manifestSql: string[] = [];
-    manifestSql.push("DELETE FROM r2_manifest;");
-    for (const key of uploadedKeys) {
-      manifestSql.push(`INSERT INTO r2_manifest (key) VALUES ('${escapeSQL(key)}');`);
-    }
-    const manifestFile = writeTempFile(manifestSql.join("\n"), ".sql");
-    try {
-      await executeD1File(d1DatabaseName, manifestFile);
-    } finally {
-      cleanupTempFile(manifestFile);
+      console.log(`  Uploading ${uploads.length} files to R2 (10 concurrent)...`);
+      const uploadedKeys = new Set<string>();
+      let uploadCount = 0;
+      await runConcurrent(uploads, 10, async ({ r2Key, fullPath }) => {
+        await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
+        uploadedKeys.add(r2Key);
+        uploadCount++;
+        if (uploadCount % 50 === 0) console.log(`    ${uploadCount}/${uploads.length} files uploaded...`);
+      });
+      console.log(`  Uploaded ${uploadCount} files to R2`);
+
+      // Step 7: Delete stale R2 objects
+      if (isUpdate && existingR2Keys.size > 0) {
+        const staleKeys = [...existingR2Keys].filter((key) => !uploadedKeys.has(key));
+        if (staleKeys.length > 0) {
+          console.log(`  Removing ${staleKeys.length} stale file(s)...`);
+          await runConcurrent(staleKeys, 10, async (key) => deleteR2Object(r2BucketName, key));
+        }
+      }
+
+      // Step 8: Update R2 manifest in D1
+      const manifestSql = ["DELETE FROM r2_manifest;"];
+      for (const key of uploadedKeys) {
+        manifestSql.push(`INSERT INTO r2_manifest (key) VALUES ('${escapeSQL(key)}');`);
+      }
+      const manifestFile = writeTempFile(manifestSql.join("\n"), ".sql");
+      try {
+        await executeD1File(d1DatabaseName, manifestFile);
+      } finally {
+        cleanupTempFile(manifestFile);
+      }
     }
 
     // Step 9: Deploy worker
@@ -403,6 +459,8 @@ export const publishCommand = new Command("publish")
     }
     const mcpUrl = `${workerUrl}/mcp`;
 
+    const passwordProtected = opts.password ? true : (existingDeployment?.passwordProtected ?? false);
+
     // Step 10: Save deployment
     addDeployment(workerName, {
       url: workerUrl,
@@ -411,13 +469,16 @@ export const publishCommand = new Command("publish")
       d1DatabaseId,
       d1DatabaseName,
       r2BucketName,
-      passwordProtected: !!opts.password,
+      passwordProtected,
       publishedAt: new Date().toISOString(),
     });
 
     // Step 11: Print results
-    const verb = isUpdate ? "Updated" : "Published";
-    console.log(`\n${verb} ${collectionNames.length} collection(s) to Cloudflare!\n`);
+    const verb = workerOnly ? "Deployed" : (isUpdate ? "Updated" : "Published");
+    const summary = workerOnly
+      ? "latest worker code to Cloudflare (data unchanged)"
+      : `${collectionNames.length} collection(s) to Cloudflare`;
+    console.log(`\n${verb} ${summary}!\n`);
     console.log(`Worker:  ${workerName}`);
     console.log(`Website: ${workerUrl}`);
     console.log(`MCP URL: ${mcpUrl}`);

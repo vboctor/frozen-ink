@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import Layout from "./components/Layout";
+import Layout, { isPublishedDeployment } from "./components/Layout";
 import CollectionPicker from "./components/CollectionPicker";
 import FileTree from "./components/FileTree";
 import MarkdownView from "./components/MarkdownView";
@@ -100,7 +100,21 @@ interface NavEntry {
   file: string;
 }
 
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth <= breakpoint,
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export default function App() {
+  const isMobile = useIsMobile();
   const [theme, setTheme] = useState<ThemeId>(loadTheme);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
@@ -110,7 +124,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<LinkItem[]>([]);
-  const [backlinksOpen, setBacklinksOpen] = useState(false);
+  const [backlinksOpen, setBacklinksOpen] = useState(!isMobile);
   const [viewMode, setViewMode] = useState<ViewMode>("markdown");
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [htmlAvailable, setHtmlAvailable] = useState(false);
@@ -123,8 +137,13 @@ export default function App() {
   const [navHistory, setNavHistory] = useState<NavEntry[]>([]);
   const [navIndex, setNavIndex] = useState(-1);
 
-  // Sidebar
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+
+  // Sync panel defaults when viewport crosses the mobile breakpoint (e.g. window resize)
+  useEffect(() => {
+    setSidebarOpen(!isMobile);
+    setBacklinksOpen(!isMobile);
+  }, [isMobile]);
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
   const resizingRef = useRef(false);
   const resizeStartRef = useRef({ x: 0, width: 0 });
@@ -137,6 +156,16 @@ export default function App() {
   // Derive the active file from the active tab
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const selectedFile = activeTab?.file ?? null;
+
+  // Seed navigation history with the initial page so first navigation enables Back.
+  useEffect(() => {
+    if (!selectedCollection || !selectedFile) return;
+    setNavHistory((prev) => {
+      if (prev.length > 0) return prev;
+      return [{ collection: selectedCollection, file: selectedFile }];
+    });
+    setNavIndex((prev) => (prev === -1 ? 0 : prev));
+  }, [selectedCollection, selectedFile]);
 
   // Flat list of all file paths in the current file tree for wikilink resolution
   const allFiles = useMemo(() => {
@@ -542,8 +571,9 @@ export default function App() {
     (collection: string, markdownPath: string, openNewTab?: boolean) => {
       navigateTo(collection, markdownPath, openNewTab);
       setSearchOpen(false);
+      if (isMobile) setSidebarOpen(false);
     },
-    [navigateTo],
+    [navigateTo, isMobile],
   );
 
   const handleWikilinkNavigate = useCallback(
@@ -554,33 +584,31 @@ export default function App() {
       // 1. Direct path match (exact file exists)
       if (allFiles.includes(directPath)) {
         navigateTo(selectedCollection, directPath, openNewTab);
-        return;
+      } else {
+        // 2. Obsidian-style: match by file stem anywhere in the tree
+        const stem = directPath.includes("/") ? directPath.split("/").pop()! : directPath;
+        const match = allFiles.find((f: string) => f === stem || f.endsWith(`/${stem}`));
+        // 3. Fall back to direct path (will show not-found if missing)
+        navigateTo(selectedCollection, match ?? directPath, openNewTab);
       }
 
-      // 2. Obsidian-style: match by file stem anywhere in the tree
-      // e.g. [[VeeClaw - CLI Channel]] matches "notes/VeeClaw - CLI Channel.md"
-      const stem = directPath.includes("/") ? directPath.split("/").pop()! : directPath;
-      const match = allFiles.find((f: string) => f === stem || f.endsWith(`/${stem}`));
-      if (match) {
-        navigateTo(selectedCollection, match, openNewTab);
-        return;
-      }
-
-      // 3. Fall back to direct path (will show not-found if missing)
-      navigateTo(selectedCollection, directPath, openNewTab);
+      // Close the links overlay after navigating on mobile
+      if (isMobile) setBacklinksOpen(false);
     },
-    [selectedCollection, navigateTo, allFiles],
+    [selectedCollection, navigateTo, allFiles, isMobile],
   );
 
   const handleFileSelect = useCallback(
     (file: string, openNewTab: boolean) => {
       if (selectedCollection) navigateTo(selectedCollection, file, openNewTab);
+      if (isMobile) setSidebarOpen(false);
     },
-    [selectedCollection, navigateTo],
+    [selectedCollection, navigateTo, isMobile],
   );
 
   const canGoBack = navIndex > 0;
   const canGoForward = navIndex < navHistory.length - 1;
+  const showLogout = isPublishedDeployment();
 
   const sidebar = (
     <>
@@ -601,26 +629,28 @@ export default function App() {
   const main = (
     <>
       <div className="toolbar">
-        <div className="toolbar-nav">
-          <button
-            className="nav-btn"
-            onClick={navigateBack}
-            disabled={!canGoBack}
-            title="Go back (Alt+←)"
-            aria-label="Go back"
-          >
-            ‹
-          </button>
-          <button
-            className="nav-btn"
-            onClick={navigateForward}
-            disabled={!canGoForward}
-            title="Go forward (Alt+→)"
-            aria-label="Go forward"
-          >
-            ›
-          </button>
-        </div>
+        {!isMobile && (
+          <div className="toolbar-nav">
+            <button
+              className="nav-btn"
+              onClick={navigateBack}
+              disabled={!canGoBack}
+              title="Go back (Alt+←)"
+              aria-label="Go back"
+            >
+              ‹
+            </button>
+            <button
+              className="nav-btn"
+              onClick={navigateForward}
+              disabled={!canGoForward}
+              title="Go forward (Alt+→)"
+              aria-label="Go forward"
+            >
+              ›
+            </button>
+          </div>
+        )}
         <TabBar
           tabs={tabs}
           activeTabId={activeTabId}
@@ -633,32 +663,45 @@ export default function App() {
           }}
           onClose={handleCloseTab}
         />
-        <div className="toolbar-actions">
-          <ViewModeToggle
-            mode={viewMode}
-            htmlAvailable={htmlAvailable}
-            onChange={setViewMode}
-          />
-          <button
-            className="nav-btn"
-            onClick={() => setSearchOpen(true)}
-            title="Quick switcher (⌘P)"
-            aria-label="Open search"
-          >
-            ⌘P
-          </button>
-          <button
-            className={`nav-btn icon-btn${backlinksOpen ? " active" : ""}`}
-            onClick={() => setBacklinksOpen((o) => !o)}
-            title="Toggle links panel"
-            aria-label="Toggle links panel"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-            </svg>
-          </button>
-        </div>
+        {!isMobile && (
+          <div className="toolbar-actions">
+            <ViewModeToggle
+              mode={viewMode}
+              htmlAvailable={htmlAvailable}
+              onChange={setViewMode}
+            />
+            <button
+              className="nav-btn"
+              onClick={() => setSearchOpen(true)}
+              title="Quick switcher (⌘P)"
+              aria-label="Open search"
+            >
+              ⌘P
+            </button>
+            <button
+              className={`nav-btn icon-btn${backlinksOpen ? " active" : ""}`}
+              onClick={() => setBacklinksOpen((o) => !o)}
+              title="Toggle links panel"
+              aria-label="Toggle links panel"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+            </button>
+            {showLogout && (
+              <form method="POST" action="/logout" className="logout-form-inline">
+                <button type="submit" className="nav-btn icon-btn logout-icon-btn" title="Sign out" aria-label="Sign out">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                  </svg>
+                </button>
+              </form>
+            )}
+          </div>
+        )}
       </div>
       <div className="main-body">
         <div className="main-inner">
@@ -676,14 +719,16 @@ export default function App() {
           )}
           {!selectedFile && !loading && (
             <div className="empty-state">
-              <p>Select a file from the sidebar to view its contents</p>
-              <p className="hint">
-                Press <kbd>⌘P</kbd> or <kbd>⌘K</kbd> to search
-              </p>
+              <p>{isMobile ? "Tap the sidebar icon below to browse files" : "Select a file from the sidebar to view its contents"}</p>
+              {!isMobile && (
+                <p className="hint">
+                  Press <kbd>⌘P</kbd> or <kbd>⌘K</kbd> to search
+                </p>
+              )}
             </div>
           )}
         </div>
-        {!loading && selectedFile && (
+        {!isMobile && !loading && selectedFile && (
           <LinksPanel
             backlinks={backlinks}
             outgoingLinks={outgoingLinks}
@@ -692,6 +737,86 @@ export default function App() {
           />
         )}
       </div>
+      {/* Mobile: Links panel as overlay */}
+      {isMobile && backlinksOpen && selectedFile && !loading && (
+        <div className="mobile-panel-overlay" onClick={() => setBacklinksOpen(false)}>
+          <div className="mobile-panel-right" onClick={(e) => e.stopPropagation()}>
+            <LinksPanel
+              backlinks={backlinks}
+              outgoingLinks={outgoingLinks}
+              open={true}
+              onNavigate={handleWikilinkNavigate}
+            />
+          </div>
+        </div>
+      )}
+      {/* Mobile bottom action bar */}
+      {isMobile && (
+        <div className="mobile-bottom-bar">
+          <button
+            className={`mobile-bar-btn${sidebarOpen ? " active" : ""}`}
+            onClick={() => setSidebarOpen((o) => !o)}
+            aria-label="Toggle sidebar"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <line x1="9" y1="3" x2="9" y2="21"/>
+            </svg>
+          </button>
+          <button
+            className="mobile-bar-btn"
+            onClick={navigateBack}
+            disabled={!canGoBack}
+            aria-label="Go back"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+          <button
+            className="mobile-bar-btn"
+            onClick={navigateForward}
+            disabled={!canGoForward}
+            aria-label="Go forward"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+          <button
+            className="mobile-bar-btn"
+            onClick={() => setSearchOpen(true)}
+            aria-label="Search"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </button>
+          <button
+            className={`mobile-bar-btn${backlinksOpen && selectedFile ? " active" : ""}`}
+            onClick={() => setBacklinksOpen((o) => !o)}
+            disabled={!selectedFile}
+            aria-label="Toggle links panel"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+          </button>
+          {showLogout && (
+            <form method="POST" action="/logout" style={{ display: "contents" }}>
+              <button type="submit" className="mobile-bar-btn" aria-label="Sign out">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/>
+                  <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </>
   );
 
@@ -704,6 +829,7 @@ export default function App() {
         sidebarWidth={sidebarWidth}
         onResizeStart={onResizeStart}
         onToggleSidebar={() => setSidebarOpen((o) => !o)}
+        isMobile={isMobile}
       />
       {searchOpen && (
         <SearchBar
