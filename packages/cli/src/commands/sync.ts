@@ -17,6 +17,7 @@ import {
   entityLinks,
   entityRelations,
 } from "@veecontext/core";
+import { sql } from "drizzle-orm";
 import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@veecontext/crawlers";
 
 export const syncCommand = new Command("sync")
@@ -104,8 +105,15 @@ export const syncCommand = new Command("sync")
       });
 
       try {
-        await engine.run();
-        console.log(`  Sync completed for "${col.name}"`);
+        const stats = await engine.run();
+        const colDb = getCollectionDb(col.dbPath);
+        const [{ total }] = colDb
+          .select({ total: sql<number>`count(*)` })
+          .from(entities)
+          .all();
+        console.log(
+          `  Sync completed: ${stats.created} added, ${stats.updated} updated, ${stats.deleted} deleted (${total} total entities)`,
+        );
       } catch (err) {
         console.error(`  Sync failed for "${col.name}": ${err}`);
       }

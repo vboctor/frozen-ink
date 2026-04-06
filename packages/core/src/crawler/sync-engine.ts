@@ -76,7 +76,7 @@ export class SyncEngine {
     this.searchIndexer = new SearchIndexer(options.dbPath);
   }
 
-  async run(): Promise<void> {
+  async run(): Promise<{ created: number; updated: number; deleted: number }> {
     const crawlerType = this.crawler.metadata.type;
     const startedAt = new Date().toISOString().replace("T", " ").replace("Z", "");
 
@@ -164,6 +164,8 @@ export class SyncEngine {
         })
         .where(eq(syncRuns.id, runId))
         .run();
+
+      return { created, updated, deleted };
     } catch (err) {
       errors.push(String(err));
       this.db
