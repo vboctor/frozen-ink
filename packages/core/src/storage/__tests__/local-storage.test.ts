@@ -93,7 +93,7 @@ describe("LocalStorageBackend", () => {
     const s = await storage.stat("stat-test.txt");
     expect(s).not.toBeNull();
     expect(s!.size).toBe(5);
-    expect(s!.mtimeMs).toBeGreaterThanOrEqual(before);
+    expect(s!.mtimeMs).toBeGreaterThanOrEqual(before - 1); // allow 1ms tolerance for filesystem precision
     expect(s!.mtimeMs).toBeLessThanOrEqual(after + 10);
   });
 

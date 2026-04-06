@@ -23,6 +23,8 @@ let client: Client;
 function setupTestEnv() {
   mkdirSync(TEST_DIR, { recursive: true });
   options = { veecontextHome: TEST_DIR };
+  // Required so getVeeContextHome() / listCollections() / getCollection() etc. resolve to TEST_DIR
+  process.env.VEECONTEXT_HOME = TEST_DIR;
 
   // Create context.yml (required by contextExists() checks in MCP tools/resources)
   saveContext({ collections: {}, deployments: {} });
@@ -136,6 +138,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
+  delete process.env.VEECONTEXT_HOME;
 });
 
 describe("collection_list tool", () => {
