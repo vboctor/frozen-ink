@@ -8,6 +8,102 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
+interface MappedUser {
+  login: string;
+  avatarUrl: string;
+  url: string;
+}
+
+interface MappedComment {
+  id: number;
+  user: MappedUser | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+  reactions: MappedReactions | null;
+}
+
+interface MappedReview {
+  id: number;
+  user: MappedUser | null;
+  state: string;
+  body: string | null;
+  submittedAt: string;
+  url: string;
+}
+
+interface MappedCheckRun {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  url: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+interface MappedReactions {
+  total: number;
+  "+1": number;
+  "-1": number;
+  laugh: number;
+  hooray: number;
+  confused: number;
+  heart: number;
+  rocket: number;
+  eyes: number;
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatUserRef(user: MappedUser | null): string {
+  if (!user) return "Unknown";
+  return `[${user.login}](${user.url})`;
+}
+
+function formatUserAvatar(user: MappedUser | null, size = 20): string {
+  if (!user) return "Unknown";
+  return `![${user.login}](${user.avatarUrl}&size=${size}) [${user.login}](${user.url})`;
+}
+
+function formatReactions(reactions: MappedReactions | null): string {
+  if (!reactions || reactions.total === 0) return "";
+  const emojis: string[] = [];
+  if (reactions["+1"] > 0) emojis.push(`\u{1F44D} ${reactions["+1"]}`);
+  if (reactions["-1"] > 0) emojis.push(`\u{1F44E} ${reactions["-1"]}`);
+  if (reactions.laugh > 0) emojis.push(`\u{1F604} ${reactions.laugh}`);
+  if (reactions.hooray > 0) emojis.push(`\u{1F389} ${reactions.hooray}`);
+  if (reactions.confused > 0) emojis.push(`\u{1F615} ${reactions.confused}`);
+  if (reactions.heart > 0) emojis.push(`\u{2764}\u{FE0F} ${reactions.heart}`);
+  if (reactions.rocket > 0) emojis.push(`\u{1F680} ${reactions.rocket}`);
+  if (reactions.eyes > 0) emojis.push(`\u{1F440} ${reactions.eyes}`);
+  return emojis.join("  ");
+}
+
+function checkConclusionIcon(conclusion: string | null): string {
+  switch (conclusion) {
+    case "success": return "\u2705";
+    case "failure": return "\u274C";
+    case "cancelled": return "\u{1F6AB}";
+    case "timed_out": return "\u23F0";
+    case "action_required": return "\u26A0\uFE0F";
+    case "skipped": return "\u23ED\uFE0F";
+    case "neutral": return "\u25CB";
+    default: return "\u{1F504}"; // in progress / queued
+  }
+}
+
 export class GitHubTheme implements Theme {
   crawlerType = "github";
 
@@ -33,6 +129,7 @@ export class GitHubTheme implements Theme {
   private renderIssue(context: ThemeRenderContext): string {
     const { entity } = context;
     const d = entity.data;
+    const user = d.user as MappedUser | null;
     const sections: string[] = [];
 
     // Frontmatter
@@ -45,14 +142,16 @@ export class GitHubTheme implements Theme {
       created: d.createdAt,
       updated: d.updatedAt,
     };
+    if (d.stateReason) fm.state_reason = d.stateReason;
     if (d.closedAt) fm.closed = d.closedAt;
-    if (d.user) fm.author = d.user;
+    if (user) fm.author = user.login;
     if (d.milestone) fm.milestone = d.milestone;
     if (entity.tags && entity.tags.length > 0) {
       fm.tags = entity.tags;
     }
-    if ((d.assignees as string[])?.length > 0) {
-      fm.assignees = d.assignees;
+    const assignees = d.assignees as MappedUser[] | undefined;
+    if (assignees && assignees.length > 0) {
+      fm.assignees = assignees.map((a) => a.login);
     }
     sections.push(frontmatter(fm));
 
@@ -61,15 +160,18 @@ export class GitHubTheme implements Theme {
 
     // Metadata callout
     const metaParts: string[] = [];
-    metaParts.push(`**State:** ${d.state}`);
-    if (d.user) metaParts.push(`**Author:** ${d.user}`);
-    if ((d.assignees as string[])?.length > 0) {
-      metaParts.push(`**Assignees:** ${(d.assignees as string[]).join(", ")}`);
+    metaParts.push(`**State:** ${d.state}${d.stateReason ? ` (${d.stateReason})` : ""}`);
+    if (user) metaParts.push(`**Author:** ${formatUserAvatar(user)}`);
+    if (assignees && assignees.length > 0) {
+      metaParts.push(`**Assignees:** ${assignees.map((a) => formatUserRef(a)).join(", ")}`);
     }
     if (d.milestone) metaParts.push(`**Milestone:** ${d.milestone}`);
     if (entity.tags && entity.tags.length > 0) {
       metaParts.push(`**Labels:** ${entity.tags.join(", ")}`);
     }
+    const reactions = d.reactions as MappedReactions | null;
+    const reactionsStr = formatReactions(reactions);
+    if (reactionsStr) metaParts.push(`**Reactions:** ${reactionsStr}`);
     sections.push(callout("info", "Metadata", metaParts.join("\n")));
 
     // Body
@@ -89,12 +191,19 @@ export class GitHubTheme implements Theme {
       );
     }
 
+    // Comments
+    const comments = d.comments as MappedComment[] | undefined;
+    if (comments && comments.length > 0) {
+      sections.push(this.renderComments(comments));
+    }
+
     return sections.join("\n\n");
   }
 
   private renderPullRequest(context: ThemeRenderContext): string {
     const { entity } = context;
     const d = entity.data;
+    const user = d.user as MappedUser | null;
     const sections: string[] = [];
 
     // Determine review status
@@ -120,13 +229,14 @@ export class GitHubTheme implements Theme {
     };
     if (d.closedAt) fm.closed = d.closedAt;
     if (d.mergedAt) fm.merged_at = d.mergedAt;
-    if (d.user) fm.author = d.user;
+    if (user) fm.author = user.login;
     if (d.milestone) fm.milestone = d.milestone;
     if (entity.tags && entity.tags.length > 0) {
       fm.tags = entity.tags;
     }
-    if ((d.assignees as string[])?.length > 0) {
-      fm.assignees = d.assignees;
+    const assignees = d.assignees as MappedUser[] | undefined;
+    if (assignees && assignees.length > 0) {
+      fm.assignees = assignees.map((a) => a.login);
     }
     sections.push(frontmatter(fm));
 
@@ -137,14 +247,17 @@ export class GitHubTheme implements Theme {
     const metaParts: string[] = [];
     metaParts.push(`**State:** ${d.state}`);
     metaParts.push(`**Review Status:** ${reviewStatus}`);
-    if (d.user) metaParts.push(`**Author:** ${d.user}`);
-    if ((d.assignees as string[])?.length > 0) {
-      metaParts.push(`**Assignees:** ${(d.assignees as string[]).join(", ")}`);
+    if (user) metaParts.push(`**Author:** ${formatUserAvatar(user)}`);
+    if (assignees && assignees.length > 0) {
+      metaParts.push(`**Assignees:** ${assignees.map((a) => formatUserRef(a)).join(", ")}`);
     }
     if (d.milestone) metaParts.push(`**Milestone:** ${d.milestone}`);
     if (entity.tags && entity.tags.length > 0) {
       metaParts.push(`**Labels:** ${entity.tags.join(", ")}`);
     }
+    const reactions = d.reactions as MappedReactions | null;
+    const reactionsStr = formatReactions(reactions);
+    if (reactionsStr) metaParts.push(`**Reactions:** ${reactionsStr}`);
     sections.push(callout("info", "Metadata", metaParts.join("\n")));
 
     // Branch info callout
@@ -154,6 +267,12 @@ export class GitHubTheme implements Theme {
     if (d.merged) branchParts.push(`**Merged at:** ${d.mergedAt}`);
     if (d.reviewComments) branchParts.push(`**Review comments:** ${d.reviewComments}`);
     sections.push(callout("git", "Branch Info", branchParts.join("\n")));
+
+    // Check runs
+    const checkRuns = d.checkRuns as MappedCheckRun[] | undefined;
+    if (checkRuns && checkRuns.length > 0) {
+      sections.push(this.renderCheckRuns(checkRuns));
+    }
 
     // Body
     if (d.body) {
@@ -172,7 +291,67 @@ export class GitHubTheme implements Theme {
       );
     }
 
+    // Reviews
+    const reviews = d.reviews as MappedReview[] | undefined;
+    if (reviews && reviews.length > 0) {
+      sections.push(this.renderReviews(reviews));
+    }
+
+    // Comments
+    const comments = d.comments as MappedComment[] | undefined;
+    if (comments && comments.length > 0) {
+      sections.push(this.renderComments(comments));
+    }
+
     return sections.join("\n\n");
+  }
+
+  private renderComments(comments: MappedComment[]): string {
+    const commentBlocks = comments.map((c) => {
+      const header = `**${formatUserAvatar(c.user)} | ${formatDate(c.createdAt)}**`;
+      const parts = [header];
+      if (c.body) parts.push(c.body);
+      const reactionsStr = formatReactions(c.reactions);
+      if (reactionsStr) parts.push(reactionsStr);
+      return parts.join("\n\n");
+    });
+    return `### Comments\n\n${commentBlocks.join("\n\n---\n\n")}`;
+  }
+
+  private renderReviews(reviews: MappedReview[]): string {
+    const reviewBlocks = reviews.map((r) => {
+      const stateLabel = this.reviewStateLabel(r.state);
+      const header = `**${formatUserAvatar(r.user)} | ${stateLabel} | ${formatDate(r.submittedAt)}**`;
+      const parts = [header];
+      if (r.body) parts.push(r.body);
+      return parts.join("\n\n");
+    });
+    return `### Reviews\n\n${reviewBlocks.join("\n\n---\n\n")}`;
+  }
+
+  private renderCheckRuns(checkRuns: MappedCheckRun[]): string {
+    const rows = checkRuns.map((cr) => {
+      const icon = checkConclusionIcon(cr.conclusion);
+      const status = cr.conclusion ?? cr.status;
+      return `| ${icon} | [${cr.name}](${cr.url}) | ${status} |`;
+    });
+    const table = [
+      "| | Check | Status |",
+      "|---|---|---|",
+      ...rows,
+    ].join("\n");
+    return callout("check", "Check Runs", table);
+  }
+
+  private reviewStateLabel(state: string): string {
+    switch (state) {
+      case "APPROVED": return "\u2705 Approved";
+      case "CHANGES_REQUESTED": return "\u{1F534} Changes Requested";
+      case "COMMENTED": return "\u{1F4AC} Commented";
+      case "DISMISSED": return "\u{1F6AB} Dismissed";
+      case "PENDING": return "\u23F3 Pending";
+      default: return state;
+    }
   }
 
   private extractIssueRefs(body: string | null): string[] {

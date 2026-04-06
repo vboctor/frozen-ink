@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { GitHubCrawler } from "../crawler";
-import type { GitHubIssue, GitHubPullRequest } from "../types";
+import type {
+  GitHubIssue,
+  GitHubPullRequest,
+  GitHubComment,
+  GitHubReview,
+} from "../types";
 
-function mockFetch(responses: Record<string, unknown[]>) {
+function mockFetch(responses: Record<string, unknown>) {
   return async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === "string" ? input : input.toString();
 
@@ -24,14 +29,16 @@ function sampleIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
     title: "Bug report",
     body: "Something is broken. See #5.",
     state: "open",
+    state_reason: null,
     html_url: "https://github.com/owner/repo/issues/10",
-    user: { login: "testuser", avatar_url: "", html_url: "https://github.com/testuser" },
+    user: { login: "testuser", avatar_url: "https://avatars.githubusercontent.com/u/1?v=4", html_url: "https://github.com/testuser" },
     labels: [{ name: "bug", color: "d73a4a", description: null }],
-    assignees: [{ login: "dev1", avatar_url: "", html_url: "" }],
+    assignees: [{ login: "dev1", avatar_url: "https://avatars.githubusercontent.com/u/2?v=4", html_url: "https://github.com/dev1" }],
     milestone: { title: "v1.0", number: 1, state: "open" },
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-02T00:00:00Z",
     closed_at: null,
+    comments: 0,
     ...overrides,
   };
 }
@@ -43,7 +50,7 @@ function samplePR(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest
     body: "Implements feature X.\n\nCloses #10.",
     state: "open",
     html_url: "https://github.com/owner/repo/pull/20",
-    user: { login: "testuser", avatar_url: "", html_url: "https://github.com/testuser" },
+    user: { login: "testuser", avatar_url: "https://avatars.githubusercontent.com/u/1?v=4", html_url: "https://github.com/testuser" },
     labels: [{ name: "enhancement", color: "a2eeef", description: null }],
     assignees: [],
     milestone: null,
@@ -56,6 +63,42 @@ function samplePR(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest
     created_at: "2024-01-03T00:00:00Z",
     updated_at: "2024-01-04T00:00:00Z",
     closed_at: null,
+    comments: 0,
+    ...overrides,
+  };
+}
+
+function sampleComment(overrides: Partial<GitHubComment> = {}): GitHubComment {
+  return {
+    id: 100,
+    body: "This looks great!",
+    user: { login: "reviewer", avatar_url: "https://avatars.githubusercontent.com/u/3?v=4", html_url: "https://github.com/reviewer" },
+    created_at: "2024-01-02T12:00:00Z",
+    updated_at: "2024-01-02T12:00:00Z",
+    html_url: "https://github.com/owner/repo/issues/10#issuecomment-100",
+    reactions: {
+      total_count: 2,
+      "+1": 2,
+      "-1": 0,
+      laugh: 0,
+      hooray: 0,
+      confused: 0,
+      heart: 0,
+      rocket: 0,
+      eyes: 0,
+    },
+    ...overrides,
+  };
+}
+
+function sampleReview(overrides: Partial<GitHubReview> = {}): GitHubReview {
+  return {
+    id: 200,
+    user: { login: "reviewer", avatar_url: "https://avatars.githubusercontent.com/u/3?v=4", html_url: "https://github.com/reviewer" },
+    state: "APPROVED",
+    body: "LGTM",
+    submitted_at: "2024-01-04T10:00:00Z",
+    html_url: "https://github.com/owner/repo/pull/20#pullrequestreview-200",
     ...overrides,
   };
 }
@@ -81,7 +124,7 @@ describe("GitHubCrawler", () => {
   });
 
   describe("sync", () => {
-    it("fetches issues and maps to CrawlerEntityData", async () => {
+    it("fetches issues and maps to CrawlerEntityData with user objects", async () => {
       const issue = sampleIssue();
       crawler.setFetch(
         mockFetch({
@@ -91,7 +134,6 @@ describe("GitHubCrawler", () => {
       );
 
       const result = await crawler.sync(null);
-      // First page of issues returned, then hasMore to transition to pulls phase
       expect(result.entities).toHaveLength(1);
       expect(result.entities[0].externalId).toBe("issue-10");
       expect(result.entities[0].entityType).toBe("issue");
@@ -99,7 +141,19 @@ describe("GitHubCrawler", () => {
       expect(result.entities[0].url).toBe("https://github.com/owner/repo/issues/10");
       expect(result.entities[0].tags).toContain("bug");
       expect(result.entities[0].data.state).toBe("open");
-      expect(result.entities[0].data.assignees).toEqual(["dev1"]);
+
+      // User is now an object with avatar
+      const user = result.entities[0].data.user as { login: string; avatarUrl: string; url: string };
+      expect(user.login).toBe("testuser");
+      expect(user.avatarUrl).toBe("https://avatars.githubusercontent.com/u/1?v=4");
+      expect(user.url).toBe("https://github.com/testuser");
+
+      // Assignees are now user objects
+      const assignees = result.entities[0].data.assignees as Array<{ login: string; avatarUrl: string }>;
+      expect(assignees).toHaveLength(1);
+      expect(assignees[0].login).toBe("dev1");
+      expect(assignees[0].avatarUrl).toBe("https://avatars.githubusercontent.com/u/2?v=4");
+
       expect(result.entities[0].data.milestone).toBe("v1.0");
     });
 
@@ -109,6 +163,8 @@ describe("GitHubCrawler", () => {
         mockFetch({
           "/issues?": [],
           "/pulls?": [pr],
+          "/reviews?": [],
+          "/check-runs?": { total_count: 0, check_runs: [] },
         }),
       );
 
@@ -145,7 +201,6 @@ describe("GitHubCrawler", () => {
       );
 
       const result = await crawler.sync(null);
-      // Only the real issue should be included
       const issueEntities = result.entities.filter((e) => e.entityType === "issue");
       expect(issueEntities).toHaveLength(1);
       expect(issueEntities[0].externalId).toBe("issue-10");
@@ -203,6 +258,8 @@ describe("GitHubCrawler", () => {
         mockFetch({
           "/issues?": [],
           "/pulls?": [draftPR, mergedPR],
+          "/reviews?": [],
+          "/check-runs?": { total_count: 0, check_runs: [] },
         }),
       );
 
@@ -215,6 +272,222 @@ describe("GitHubCrawler", () => {
       expect(draft?.tags).not.toContain("ready");
       expect(merged?.tags).toContain("merged");
       expect(merged?.tags).toContain("ready");
+    });
+
+    it("stores state_reason for closed issues", async () => {
+      const issue = sampleIssue({
+        state: "closed",
+        state_reason: "not_planned",
+        closed_at: "2024-01-03T00:00:00Z",
+      });
+
+      crawler.setFetch(
+        mockFetch({
+          "/issues?": [issue],
+          "/pulls?": [],
+        }),
+      );
+
+      const result = await crawler.sync(null);
+      expect(result.entities[0].data.stateReason).toBe("not_planned");
+    });
+  });
+
+  describe("comments", () => {
+    it("fetches comments for issues with comment count > 0", async () => {
+      const issue = sampleIssue({ comments: 1 });
+      const comment = sampleComment();
+
+      crawler.setFetch(
+        mockFetch({
+          "/issues?": [issue],
+          "/issues/10/comments?": [comment],
+          "/pulls?": [],
+        }),
+      );
+
+      const result = await crawler.sync(null);
+      const comments = result.entities[0].data.comments as Array<{ id: number; body: string; user: { login: string } }>;
+      expect(comments).toHaveLength(1);
+      expect(comments[0].id).toBe(100);
+      expect(comments[0].body).toBe("This looks great!");
+      expect(comments[0].user.login).toBe("reviewer");
+    });
+
+    it("skips comment fetching when issue has 0 comments", async () => {
+      const issue = sampleIssue({ comments: 0 });
+      const urls: string[] = [];
+
+      crawler.setFetch(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        urls.push(url);
+        if (url.includes("/issues?")) {
+          return new Response(JSON.stringify([issue]), { status: 200 });
+        }
+        if (url.includes("/pulls?")) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        return new Response("Not found", { status: 404 });
+      });
+
+      const result = await crawler.sync(null);
+      expect(result.entities[0].data.comments).toEqual([]);
+      // Should not have made a comments API call
+      expect(urls.some((u) => u.includes("/comments"))).toBe(false);
+    });
+
+    it("includes comment reactions", async () => {
+      const issue = sampleIssue({ comments: 1 });
+      const comment = sampleComment({
+        reactions: {
+          total_count: 3,
+          "+1": 2,
+          "-1": 0,
+          laugh: 1,
+          hooray: 0,
+          confused: 0,
+          heart: 0,
+          rocket: 0,
+          eyes: 0,
+        },
+      });
+
+      crawler.setFetch(
+        mockFetch({
+          "/issues?": [issue],
+          "/issues/10/comments?": [comment],
+          "/pulls?": [],
+        }),
+      );
+
+      const result = await crawler.sync(null);
+      const comments = result.entities[0].data.comments as Array<{ reactions: { total: number; "+1": number } | null }>;
+      expect(comments[0].reactions).toBeTruthy();
+      expect(comments[0].reactions!.total).toBe(3);
+      expect(comments[0].reactions!["+1"]).toBe(2);
+    });
+
+    it("does not fetch comments when syncComments is disabled", async () => {
+      const noCommentsCrawler = new GitHubCrawler();
+      await noCommentsCrawler.initialize(
+        { owner: "owner", repo: "repo", syncComments: false },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+
+      const issue = sampleIssue({ comments: 5 });
+      const urls: string[] = [];
+
+      noCommentsCrawler.setFetch(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        urls.push(url);
+        if (url.includes("/issues?")) {
+          return new Response(JSON.stringify([issue]), { status: 200 });
+        }
+        if (url.includes("/pulls?")) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        return new Response("Not found", { status: 404 });
+      });
+
+      const result = await noCommentsCrawler.sync(null);
+      expect(result.entities[0].data.comments).toEqual([]);
+      expect(urls.some((u) => u.includes("/comments"))).toBe(false);
+    });
+  });
+
+  describe("PR reviews and check runs", () => {
+    it("fetches reviews for pull requests", async () => {
+      const pr = samplePR();
+      const review = sampleReview();
+
+      crawler.setFetch(
+        mockFetch({
+          "/issues?": [],
+          "/pulls?": [pr],
+          "/pulls/20/reviews?": [review],
+          "/check-runs?": { total_count: 0, check_runs: [] },
+        }),
+      );
+
+      const result1 = await crawler.sync(null);
+      const result2 = await crawler.sync(result1.nextCursor);
+
+      const reviews = result2.entities[0].data.reviews as Array<{ id: number; state: string; user: { login: string } }>;
+      expect(reviews).toHaveLength(1);
+      expect(reviews[0].id).toBe(200);
+      expect(reviews[0].state).toBe("APPROVED");
+      expect(reviews[0].user.login).toBe("reviewer");
+    });
+
+    it("fetches check runs for pull requests", async () => {
+      const pr = samplePR();
+
+      crawler.setFetch(
+        mockFetch({
+          "/issues?": [],
+          "/pulls?": [pr],
+          "/reviews?": [],
+          "/check-runs?": {
+            total_count: 2,
+            check_runs: [
+              {
+                id: 1,
+                name: "CI Build",
+                status: "completed",
+                conclusion: "success",
+                html_url: "https://github.com/owner/repo/runs/1",
+                started_at: "2024-01-04T00:00:00Z",
+                completed_at: "2024-01-04T00:05:00Z",
+              },
+              {
+                id: 2,
+                name: "Tests",
+                status: "completed",
+                conclusion: "failure",
+                html_url: "https://github.com/owner/repo/runs/2",
+                started_at: "2024-01-04T00:00:00Z",
+                completed_at: "2024-01-04T00:10:00Z",
+              },
+            ],
+          },
+        }),
+      );
+
+      const result1 = await crawler.sync(null);
+      const result2 = await crawler.sync(result1.nextCursor);
+
+      const checks = result2.entities[0].data.checkRuns as Array<{ name: string; conclusion: string }>;
+      expect(checks).toHaveLength(2);
+      expect(checks[0].name).toBe("CI Build");
+      expect(checks[0].conclusion).toBe("success");
+      expect(checks[1].name).toBe("Tests");
+      expect(checks[1].conclusion).toBe("failure");
+    });
+
+    it("does not fetch check runs when syncCheckStatuses is disabled", async () => {
+      const noChecksCrawler = new GitHubCrawler();
+      await noChecksCrawler.initialize(
+        { owner: "owner", repo: "repo", syncCheckStatuses: false },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+
+      const pr = samplePR();
+      const urls: string[] = [];
+
+      noChecksCrawler.setFetch(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        urls.push(url);
+        if (url.includes("/issues?")) return new Response(JSON.stringify([]), { status: 200 });
+        if (url.includes("/pulls?") && !url.includes("/pulls/")) return new Response(JSON.stringify([pr]), { status: 200 });
+        if (url.includes("/reviews")) return new Response(JSON.stringify([]), { status: 200 });
+        return new Response("Not found", { status: 404 });
+      });
+
+      const result1 = await noChecksCrawler.sync(null);
+      const result2 = await noChecksCrawler.sync(result1.nextCursor);
+
+      expect(result2.entities[0].data.checkRuns).toEqual([]);
+      expect(urls.some((u) => u.includes("/check-runs"))).toBe(false);
     });
   });
 

@@ -16,15 +16,21 @@ function makeIssueContext(overrides: Partial<ThemeRenderContext["entity"]> = {})
         number: 427,
         body: "Login fails when password contains special chars.\n\nRelated to #100 and #200.",
         state: "open",
-        user: "octocat",
-        userUrl: "https://github.com/octocat",
-        assignees: ["alice", "bob"],
+        stateReason: null,
+        user: { login: "octocat", avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4", url: "https://github.com/octocat" },
+        assignees: [
+          { login: "alice", avatarUrl: "https://avatars.githubusercontent.com/u/2?v=4", url: "https://github.com/alice" },
+          { login: "bob", avatarUrl: "https://avatars.githubusercontent.com/u/3?v=4", url: "https://github.com/bob" },
+        ],
         labels: [
           { name: "bug", color: "d73a4a" },
           { name: "critical", color: "b60205" },
         ],
         milestone: "v2.0",
         milestoneNumber: 3,
+        reactions: null,
+        comments: [],
+        commentCount: 0,
         createdAt: "2024-01-15T10:00:00Z",
         updatedAt: "2024-01-16T14:30:00Z",
         closedAt: null,
@@ -48,9 +54,10 @@ function makePRContext(overrides: Partial<ThemeRenderContext["entity"]> = {}): T
         number: 89,
         body: "Implements OAuth2 flow.\n\nCloses #50 and #51.",
         state: "open",
-        user: "octocat",
-        userUrl: "https://github.com/octocat",
-        assignees: ["alice"],
+        user: { login: "octocat", avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4", url: "https://github.com/octocat" },
+        assignees: [
+          { login: "alice", avatarUrl: "https://avatars.githubusercontent.com/u/2?v=4", url: "https://github.com/alice" },
+        ],
         labels: [{ name: "enhancement", color: "a2eeef" }],
         milestone: "v2.0",
         head: "feat/oauth",
@@ -61,6 +68,11 @@ function makePRContext(overrides: Partial<ThemeRenderContext["entity"]> = {}): T
         mergedAt: null,
         draft: false,
         reviewComments: 3,
+        reactions: null,
+        comments: [],
+        commentCount: 0,
+        reviews: [],
+        checkRuns: [],
         createdAt: "2024-01-10T08:00:00Z",
         updatedAt: "2024-01-12T16:00:00Z",
         closedAt: null,
@@ -109,11 +121,12 @@ describe("GitHubTheme", () => {
       expect(md).toContain("# Fix login bug");
     });
 
-    it("renders metadata callout with author, assignees, milestone, labels", () => {
+    it("renders metadata callout with author avatar, assignees, milestone, labels", () => {
       const md = theme.render(makeIssueContext());
       expect(md).toContain("> [!info] Metadata");
-      expect(md).toContain("**Author:** octocat");
-      expect(md).toContain("**Assignees:** alice, bob");
+      expect(md).toContain("**Author:** ![octocat]");
+      expect(md).toContain("[octocat](https://github.com/octocat)");
+      expect(md).toContain("**Assignees:** [alice](https://github.com/alice), [bob](https://github.com/bob)");
       expect(md).toContain("**Milestone:** v2.0");
       expect(md).toContain("**Labels:** bug, critical");
     });
@@ -152,6 +165,71 @@ describe("GitHubTheme", () => {
       const md = theme.render(ctx);
       expect(md).toContain("milestone: v2.0");
       expect(md).toContain('closed: "2024-01-20T10:00:00Z"');
+    });
+
+    it("renders state_reason for closed issues", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          state: "closed",
+          stateReason: "not_planned",
+          closedAt: "2024-01-20T10:00:00Z",
+        },
+      });
+      const md = theme.render(ctx);
+      expect(md).toContain("state_reason: not_planned");
+      expect(md).toContain("**State:** closed (not_planned)");
+    });
+
+    it("renders comments section when comments are present", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          comments: [
+            {
+              id: 100,
+              user: { login: "reviewer", avatarUrl: "https://avatars.githubusercontent.com/u/3?v=4", url: "https://github.com/reviewer" },
+              body: "I can reproduce this bug.",
+              createdAt: "2024-01-16T10:00:00Z",
+              updatedAt: "2024-01-16T10:00:00Z",
+              url: "https://github.com/acme/app/issues/427#issuecomment-100",
+              reactions: null,
+            },
+            {
+              id: 101,
+              user: { login: "octocat", avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4", url: "https://github.com/octocat" },
+              body: "Working on a fix now.",
+              createdAt: "2024-01-16T12:00:00Z",
+              updatedAt: "2024-01-16T12:00:00Z",
+              url: "https://github.com/acme/app/issues/427#issuecomment-101",
+              reactions: { total: 1, "+1": 1, "-1": 0, laugh: 0, hooray: 0, confused: 0, heart: 0, rocket: 0, eyes: 0 },
+            },
+          ],
+          commentCount: 2,
+        },
+      });
+      const md = theme.render(ctx);
+      expect(md).toContain("### Comments");
+      expect(md).toContain("I can reproduce this bug.");
+      expect(md).toContain("Working on a fix now.");
+      expect(md).toContain("[reviewer](https://github.com/reviewer)");
+      expect(md).toContain("---"); // separator between comments
+    });
+
+    it("omits comments section when no comments", () => {
+      const md = theme.render(makeIssueContext());
+      expect(md).not.toContain("### Comments");
+    });
+
+    it("renders reactions on the issue", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          reactions: { total: 3, "+1": 2, "-1": 0, laugh: 1, hooray: 0, confused: 0, heart: 0, rocket: 0, eyes: 0 },
+        },
+      });
+      const md = theme.render(ctx);
+      expect(md).toContain("**Reactions:**");
     });
   });
 
@@ -205,6 +283,99 @@ describe("GitHubTheme", () => {
       });
       const md = theme.render(ctx);
       expect(md).toContain("review_status: draft");
+    });
+
+    it("renders check runs callout", () => {
+      const ctx = makePRContext({
+        data: {
+          ...makePRContext().entity.data,
+          checkRuns: [
+            { id: 1, name: "CI Build", status: "completed", conclusion: "success", url: "https://github.com/runs/1", startedAt: "2024-01-10T00:00:00Z", completedAt: "2024-01-10T00:05:00Z" },
+            { id: 2, name: "Tests", status: "completed", conclusion: "failure", url: "https://github.com/runs/2", startedAt: "2024-01-10T00:00:00Z", completedAt: "2024-01-10T00:10:00Z" },
+            { id: 3, name: "Lint", status: "in_progress", conclusion: null, url: "https://github.com/runs/3", startedAt: "2024-01-10T00:00:00Z", completedAt: null },
+          ],
+        },
+      });
+      const md = theme.render(ctx);
+      expect(md).toContain("> [!check] Check Runs");
+      expect(md).toContain("CI Build");
+      expect(md).toContain("Tests");
+      expect(md).toContain("Lint");
+      expect(md).toContain("success");
+      expect(md).toContain("failure");
+      expect(md).toContain("in_progress");
+    });
+
+    it("omits check runs section when empty", () => {
+      const md = theme.render(makePRContext());
+      expect(md).not.toContain("Check Runs");
+    });
+
+    it("renders reviews section", () => {
+      const ctx = makePRContext({
+        data: {
+          ...makePRContext().entity.data,
+          reviews: [
+            {
+              id: 200,
+              user: { login: "reviewer", avatarUrl: "https://avatars.githubusercontent.com/u/3?v=4", url: "https://github.com/reviewer" },
+              state: "APPROVED",
+              body: "LGTM",
+              submittedAt: "2024-01-12T10:00:00Z",
+              url: "https://github.com/acme/app/pull/89#pullrequestreview-200",
+            },
+            {
+              id: 201,
+              user: { login: "senior", avatarUrl: "https://avatars.githubusercontent.com/u/4?v=4", url: "https://github.com/senior" },
+              state: "CHANGES_REQUESTED",
+              body: "Needs error handling",
+              submittedAt: "2024-01-12T11:00:00Z",
+              url: "https://github.com/acme/app/pull/89#pullrequestreview-201",
+            },
+          ],
+        },
+      });
+      const md = theme.render(ctx);
+      expect(md).toContain("### Reviews");
+      expect(md).toContain("LGTM");
+      expect(md).toContain("Needs error handling");
+      expect(md).toContain("Approved");
+      expect(md).toContain("Changes Requested");
+      expect(md).toContain("[reviewer](https://github.com/reviewer)");
+    });
+
+    it("omits reviews section when empty", () => {
+      const md = theme.render(makePRContext());
+      expect(md).not.toContain("### Reviews");
+    });
+
+    it("renders PR comments", () => {
+      const ctx = makePRContext({
+        data: {
+          ...makePRContext().entity.data,
+          comments: [
+            {
+              id: 300,
+              user: { login: "contributor", avatarUrl: "https://avatars.githubusercontent.com/u/5?v=4", url: "https://github.com/contributor" },
+              body: "Should we also update the docs?",
+              createdAt: "2024-01-11T09:00:00Z",
+              updatedAt: "2024-01-11T09:00:00Z",
+              url: "https://github.com/acme/app/pull/89#issuecomment-300",
+              reactions: null,
+            },
+          ],
+          commentCount: 1,
+        },
+      });
+      const md = theme.render(ctx);
+      expect(md).toContain("### Comments");
+      expect(md).toContain("Should we also update the docs?");
+    });
+
+    it("renders author with avatar in metadata", () => {
+      const md = theme.render(makePRContext());
+      expect(md).toContain("**Author:** ![octocat]");
+      expect(md).toContain("[octocat](https://github.com/octocat)");
     });
   });
 });

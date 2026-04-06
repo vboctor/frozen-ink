@@ -10,6 +10,9 @@ import type {
   GitHubCredentials,
   GitHubIssue,
   GitHubPullRequest,
+  GitHubComment,
+  GitHubReview,
+  GitHubCheckRun,
 } from "./types";
 
 const PER_PAGE = 100;
@@ -32,6 +35,8 @@ export class GitHubCrawler implements Crawler {
       repo: { type: "string", required: true },
       syncIssues: { type: "boolean", default: true },
       syncPullRequests: { type: "boolean", default: true },
+      syncComments: { type: "boolean", default: true },
+      syncCheckStatuses: { type: "boolean", default: true },
     },
     credentialFields: ["token", "owner", "repo"],
   };
@@ -41,6 +46,8 @@ export class GitHubCrawler implements Crawler {
   private repo = "";
   private syncIssues = true;
   private syncPullRequests = true;
+  private syncComments = true;
+  private syncCheckStatuses = true;
   private fetchFn: typeof fetch = globalThis.fetch;
 
   async initialize(
@@ -54,6 +61,8 @@ export class GitHubCrawler implements Crawler {
     this.repo = creds.repo || cfg.repo;
     this.syncIssues = cfg.syncIssues !== false;
     this.syncPullRequests = cfg.syncPullRequests !== false;
+    this.syncComments = cfg.syncComments !== false;
+    this.syncCheckStatuses = cfg.syncCheckStatuses !== false;
   }
 
   setFetch(fn: typeof fetch): void {
@@ -77,7 +86,7 @@ export class GitHubCrawler implements Crawler {
       for (const issue of items) {
         // Skip pull requests returned in /issues endpoint
         if (issue.pull_request) continue;
-        entities.push(this.mapIssue(issue));
+        entities.push(await this.mapIssue(issue));
       }
 
       if (items.length === PER_PAGE) {
@@ -117,7 +126,7 @@ export class GitHubCrawler implements Crawler {
       const items = await this.fetchPullRequests(page, c.updatedSince);
 
       for (const pr of items) {
-        entities.push(this.mapPullRequest(pr));
+        entities.push(await this.mapPullRequest(pr));
       }
 
       if (items.length === PER_PAGE) {
@@ -182,6 +191,8 @@ export class GitHubCrawler implements Crawler {
     // No resources to clean up
   }
 
+  // ── API fetch methods ──────────────────────────────────────────────
+
   private async fetchIssues(
     page: number,
     since?: string,
@@ -228,6 +239,74 @@ export class GitHubCrawler implements Crawler {
     return (await res.json()) as GitHubPullRequest[];
   }
 
+  private async fetchComments(issueNumber: number): Promise<GitHubComment[]> {
+    const allComments: GitHubComment[] = [];
+    let page = 1;
+    while (true) {
+      const params = new URLSearchParams({
+        per_page: String(PER_PAGE),
+        page: String(page),
+      });
+      const res = await this.fetchFn(
+        `${API_BASE}/repos/${this.owner}/${this.repo}/issues/${issueNumber}/comments?${params}`,
+        { headers: this.buildHeaders(this.token) },
+      );
+      if (!res.ok) break;
+      const batch = (await res.json()) as GitHubComment[];
+      allComments.push(...batch);
+      if (batch.length < PER_PAGE) break;
+      page++;
+    }
+    return allComments;
+  }
+
+  private async fetchReviews(prNumber: number): Promise<GitHubReview[]> {
+    const allReviews: GitHubReview[] = [];
+    let page = 1;
+    while (true) {
+      const params = new URLSearchParams({
+        per_page: String(PER_PAGE),
+        page: String(page),
+      });
+      const res = await this.fetchFn(
+        `${API_BASE}/repos/${this.owner}/${this.repo}/pulls/${prNumber}/reviews?${params}`,
+        { headers: this.buildHeaders(this.token) },
+      );
+      if (!res.ok) break;
+      const batch = (await res.json()) as GitHubReview[];
+      allReviews.push(...batch);
+      if (batch.length < PER_PAGE) break;
+      page++;
+    }
+    return allReviews;
+  }
+
+  private async fetchCheckRuns(sha: string): Promise<GitHubCheckRun[]> {
+    const allRuns: GitHubCheckRun[] = [];
+    let page = 1;
+    while (true) {
+      const params = new URLSearchParams({
+        per_page: String(PER_PAGE),
+        page: String(page),
+      });
+      const res = await this.fetchFn(
+        `${API_BASE}/repos/${this.owner}/${this.repo}/commits/${sha}/check-runs?${params}`,
+        { headers: this.buildHeaders(this.token) },
+      );
+      if (!res.ok) break;
+      const json = (await res.json()) as {
+        total_count: number;
+        check_runs: GitHubCheckRun[];
+      };
+      allRuns.push(...json.check_runs);
+      if (allRuns.length >= json.total_count) break;
+      page++;
+    }
+    return allRuns;
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────
+
   private buildHeaders(token: string): Record<string, string> {
     return {
       Authorization: `Bearer ${token}`,
@@ -236,7 +315,41 @@ export class GitHubCrawler implements Crawler {
     };
   }
 
-  private mapIssue(issue: GitHubIssue): CrawlerEntityData {
+  private mapUser(user: { login: string; avatar_url: string; html_url: string } | null) {
+    if (!user) return null;
+    return {
+      login: user.login,
+      avatarUrl: user.avatar_url,
+      url: user.html_url,
+    };
+  }
+
+  private mapReactions(reactions?: {
+    total_count: number;
+    "+1": number;
+    "-1": number;
+    laugh: number;
+    hooray: number;
+    confused: number;
+    heart: number;
+    rocket: number;
+    eyes: number;
+  }) {
+    if (!reactions || reactions.total_count === 0) return null;
+    return {
+      total: reactions.total_count,
+      "+1": reactions["+1"],
+      "-1": reactions["-1"],
+      laugh: reactions.laugh,
+      hooray: reactions.hooray,
+      confused: reactions.confused,
+      heart: reactions.heart,
+      rocket: reactions.rocket,
+      eyes: reactions.eyes,
+    };
+  }
+
+  private async mapIssue(issue: GitHubIssue): Promise<CrawlerEntityData> {
     const tags = issue.labels.map((l) => l.name);
 
     const relations: CrawlerEntityData["relations"] = [];
@@ -259,6 +372,21 @@ export class GitHubCrawler implements Crawler {
       }
     }
 
+    // Fetch comments if enabled and the issue has any
+    let comments: unknown[] = [];
+    if (this.syncComments && issue.comments > 0) {
+      const rawComments = await this.fetchComments(issue.number);
+      comments = rawComments.map((c) => ({
+        id: c.id,
+        user: this.mapUser(c.user),
+        body: c.body,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+        url: c.html_url,
+        reactions: this.mapReactions(c.reactions),
+      }));
+    }
+
     return {
       externalId: `issue-${issue.number}`,
       entityType: "issue",
@@ -269,12 +397,15 @@ export class GitHubCrawler implements Crawler {
         number: issue.number,
         body: issue.body,
         state: issue.state,
-        user: issue.user?.login ?? null,
-        userUrl: issue.user?.html_url ?? null,
-        assignees: issue.assignees.map((a) => a.login),
+        stateReason: issue.state_reason ?? null,
+        user: this.mapUser(issue.user),
+        assignees: issue.assignees.map((a) => this.mapUser(a)),
         labels: issue.labels.map((l) => ({ name: l.name, color: l.color })),
         milestone: issue.milestone?.title ?? null,
         milestoneNumber: issue.milestone?.number ?? null,
+        reactions: this.mapReactions(issue.reactions),
+        comments,
+        commentCount: issue.comments,
         createdAt: issue.created_at,
         updatedAt: issue.updated_at,
         closedAt: issue.closed_at,
@@ -283,7 +414,7 @@ export class GitHubCrawler implements Crawler {
     };
   }
 
-  private mapPullRequest(pr: GitHubPullRequest): CrawlerEntityData {
+  private async mapPullRequest(pr: GitHubPullRequest): Promise<CrawlerEntityData> {
     const tags = pr.labels.map((l) => l.name);
     tags.push(pr.draft ? "draft" : "ready");
     if (pr.merged) tags.push("merged");
@@ -308,6 +439,50 @@ export class GitHubCrawler implements Crawler {
       }
     }
 
+    // Fetch comments if enabled and the issue has any
+    let comments: unknown[] = [];
+    if (this.syncComments && pr.comments > 0) {
+      const rawComments = await this.fetchComments(pr.number);
+      comments = rawComments.map((c) => ({
+        id: c.id,
+        user: this.mapUser(c.user),
+        body: c.body,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+        url: c.html_url,
+        reactions: this.mapReactions(c.reactions),
+      }));
+    }
+
+    // Fetch reviews if comments are enabled
+    let reviews: unknown[] = [];
+    if (this.syncComments) {
+      const rawReviews = await this.fetchReviews(pr.number);
+      reviews = rawReviews.map((r) => ({
+        id: r.id,
+        user: this.mapUser(r.user),
+        state: r.state,
+        body: r.body,
+        submittedAt: r.submitted_at,
+        url: r.html_url,
+      }));
+    }
+
+    // Fetch check runs if enabled
+    let checkRuns: unknown[] = [];
+    if (this.syncCheckStatuses) {
+      const rawChecks = await this.fetchCheckRuns(pr.head.sha);
+      checkRuns = rawChecks.map((cr) => ({
+        id: cr.id,
+        name: cr.name,
+        status: cr.status,
+        conclusion: cr.conclusion,
+        url: cr.html_url,
+        startedAt: cr.started_at,
+        completedAt: cr.completed_at,
+      }));
+    }
+
     return {
       externalId: `pr-${pr.number}`,
       entityType: "pull_request",
@@ -318,9 +493,8 @@ export class GitHubCrawler implements Crawler {
         number: pr.number,
         body: pr.body,
         state: pr.state,
-        user: pr.user?.login ?? null,
-        userUrl: pr.user?.html_url ?? null,
-        assignees: pr.assignees.map((a) => a.login),
+        user: this.mapUser(pr.user),
+        assignees: pr.assignees.map((a) => this.mapUser(a)),
         labels: pr.labels.map((l) => ({ name: l.name, color: l.color })),
         milestone: pr.milestone?.title ?? null,
         head: pr.head.ref,
@@ -331,6 +505,11 @@ export class GitHubCrawler implements Crawler {
         mergedAt: pr.merged_at,
         draft: pr.draft,
         reviewComments: pr.review_comments,
+        reactions: this.mapReactions(pr.reactions),
+        comments,
+        commentCount: pr.comments,
+        reviews,
+        checkRuns,
         createdAt: pr.created_at,
         updatedAt: pr.updated_at,
         closedAt: pr.closed_at,
