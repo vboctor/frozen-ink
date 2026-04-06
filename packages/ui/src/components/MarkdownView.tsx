@@ -9,7 +9,7 @@ interface MarkdownViewProps {
   content: string;
   collection: string;
   allFiles: string[];
-  onWikilinkClick: (target: string) => void;
+  onWikilinkClick: (target: string, openNewTab?: boolean) => void;
 }
 
 function preprocessMarkdown(raw: string, collection: string): string {
@@ -103,7 +103,7 @@ export default function MarkdownView({
               className="wikilink"
               onClick={(e) => {
                 e.preventDefault();
-                onWikilinkClick(target);
+                onWikilinkClick(target, e.metaKey || e.ctrlKey);
               }}
             >
               {children}

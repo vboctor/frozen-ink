@@ -15,7 +15,7 @@ interface LinksPanelProps {
   backlinks: Backlink[];
   outgoingLinks: LinkItem[];
   open: boolean;
-  onNavigate: (markdownPath: string) => void;
+  onNavigate: (markdownPath: string, openNewTab?: boolean) => void;
 }
 
 // Chain link with arrow pointing in (backlinks / incoming)
@@ -51,7 +51,7 @@ function LinkSection({
   icon: React.ReactNode;
   label: string;
   items: LinkItem[];
-  onNavigate: (path: string) => void;
+  onNavigate: (path: string, openNewTab?: boolean) => void;
 }) {
   return (
     <div className="links-section">
@@ -70,7 +70,7 @@ function LinkSection({
             <li key={i}>
               <button
                 className="backlink-item"
-                onClick={() => { if (item.markdownPath) onNavigate(item.markdownPath); }}
+                onClick={(e) => { if (item.markdownPath) onNavigate(item.markdownPath, e.metaKey || e.ctrlKey); }}
                 disabled={!item.markdownPath}
               >
                 <span className="backlink-title">{item.title}</span>

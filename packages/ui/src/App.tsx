@@ -62,17 +62,23 @@ function saveLastCollection(name: string) {
   }
 }
 
-function loadLastFile(collection: string): string | null {
+interface SavedTabs {
+  tabs: { file: string }[];
+  activeFile: string | null;
+}
+
+function loadCollectionTabs(collection: string): SavedTabs | null {
   try {
-    return localStorage.getItem(`veecontext-file:${collection}`) ?? null;
+    const raw = localStorage.getItem(`veecontext-tabs:${collection}`);
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function saveLastFile(collection: string, file: string) {
+function saveCollectionTabs(collection: string, tabs: { file: string }[], activeFile: string | null) {
   try {
-    localStorage.setItem(`veecontext-file:${collection}`, file);
+    localStorage.setItem(`veecontext-tabs:${collection}`, JSON.stringify({ tabs, activeFile }));
   } catch {
     // localStorage unavailable
   }
@@ -189,13 +195,12 @@ export default function App() {
         setFileTree(tree);
 
         // If a tab for this collection already exists, don't auto-open
-        // (the tab filter above may have kept one).
         setTabs((currentTabs) => {
           if (currentTabs.some((t) => t.collection === collection)) {
-            return currentTabs; // no change needed
+            return currentTabs;
           }
 
-          // Flatten tree to get file list for matching
+          // Flatten tree to get file list for validation
           function flatten(nodes: TreeNode[]): string[] {
             const out: string[] = [];
             for (const n of nodes) {
@@ -206,15 +211,24 @@ export default function App() {
           }
           const files = flatten(tree);
 
-          // Try saved last file first
-          const lastFile = loadLastFile(collection);
-          if (lastFile && files.includes(lastFile)) {
-            const id = crypto.randomUUID();
-            setActiveTabId(id);
-            return [...currentTabs, { id, title: titleFromPath(lastFile), collection, file: lastFile }];
+          // Restore saved tabs (filter out files that no longer exist)
+          const saved = loadCollectionTabs(collection);
+          if (saved && saved.tabs.length > 0) {
+            const restoredTabs: Tab[] = [];
+            let activeId: string | null = null;
+            for (const st of saved.tabs) {
+              if (!files.includes(st.file)) continue;
+              const id = crypto.randomUUID();
+              restoredTabs.push({ id, title: titleFromPath(st.file), collection, file: st.file });
+              if (st.file === saved.activeFile) activeId = id;
+            }
+            if (restoredTabs.length > 0) {
+              setActiveTabId(activeId ?? restoredTabs[0].id);
+              return [...currentTabs, ...restoredTabs];
+            }
           }
 
-          // Fall back to most recently updated file from backend
+          // No saved tabs — fall back to most recently updated file
           fetch(`/api/collections/${encodeURIComponent(collection)}/default-file`)
             .then((r) => (r.ok ? r.json() : null))
             .then((data: { file: string | null } | null) => {
@@ -225,7 +239,7 @@ export default function App() {
             })
             .catch(() => {});
 
-          return currentTabs; // return unchanged for now; async fetch will update
+          return currentTabs;
         });
       })
       .catch(console.error);
@@ -233,15 +247,19 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selectedCollection]);
 
-  // Save the current file whenever it changes.
-  // Uses activeTab (not selectedCollection) to avoid corrupting localStorage
-  // when collection switches — activeTab still holds the OLD collection until
-  // tabs are cleared, so the save goes to the right key.
+  // Persist all tabs for the current collection whenever tabs or active tab change.
+  // Uses the tab collection (not selectedCollection) to avoid corrupting on switch.
   useEffect(() => {
-    if (activeTab) {
-      saveLastFile(activeTab.collection, activeTab.file);
-    }
-  }, [activeTab]);
+    if (tabs.length === 0) return;
+    const collection = tabs[0]?.collection;
+    if (!collection) return;
+    const collectionTabs = tabs.filter((t) => t.collection === collection);
+    saveCollectionTabs(
+      collection,
+      collectionTabs.map((t) => ({ file: t.file })),
+      activeTab?.collection === collection ? activeTab.file : collectionTabs[0]?.file ?? null,
+    );
+  }, [tabs, activeTab]);
 
   useEffect(() => {
     if (!selectedCollection || !selectedFile) {
@@ -475,21 +493,21 @@ export default function App() {
   );
 
   const handleSearchNavigate = useCallback(
-    (collection: string, markdownPath: string) => {
-      navigateTo(collection, markdownPath);
+    (collection: string, markdownPath: string, openNewTab?: boolean) => {
+      navigateTo(collection, markdownPath, openNewTab);
       setSearchOpen(false);
     },
     [navigateTo],
   );
 
   const handleWikilinkNavigate = useCallback(
-    (target: string) => {
+    (target: string, openNewTab?: boolean) => {
       if (!selectedCollection) return;
       const directPath = target.endsWith(".md") ? target : `${target}.md`;
 
       // 1. Direct path match (exact file exists)
       if (allFiles.includes(directPath)) {
-        navigateTo(selectedCollection, directPath);
+        navigateTo(selectedCollection, directPath, openNewTab);
         return;
       }
 
@@ -498,12 +516,12 @@ export default function App() {
       const stem = directPath.includes("/") ? directPath.split("/").pop()! : directPath;
       const match = allFiles.find((f: string) => f === stem || f.endsWith(`/${stem}`));
       if (match) {
-        navigateTo(selectedCollection, match);
+        navigateTo(selectedCollection, match, openNewTab);
         return;
       }
 
       // 3. Fall back to direct path (will show not-found if missing)
-      navigateTo(selectedCollection, directPath);
+      navigateTo(selectedCollection, directPath, openNewTab);
     },
     [selectedCollection, navigateTo, allFiles],
   );

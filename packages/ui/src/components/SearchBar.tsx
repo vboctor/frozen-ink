@@ -4,7 +4,7 @@ interface SearchBarProps {
   files: string[];
   collection: string;
   onClose: () => void;
-  onNavigate: (collection: string, markdownPath: string) => void;
+  onNavigate: (collection: string, markdownPath: string, openNewTab?: boolean) => void;
 }
 
 /** Title from a file path: strip folders and .md extension. */
@@ -170,7 +170,7 @@ export default function SearchBar({ files, collection, onClose, onNavigate }: Se
                 className={`search-result${i === selectedIndex ? " selected" : ""}`}
                 role="option"
                 aria-selected={i === selectedIndex}
-                onClick={() => onNavigate(collection, r.filePath)}
+                onClick={(e) => onNavigate(collection, r.filePath, e.metaKey || e.ctrlKey)}
               >
                 <span className="search-result-title">
                   <HighlightedTitle title={r.title} indices={r.indices} />
