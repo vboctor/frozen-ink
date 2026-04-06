@@ -1,12 +1,38 @@
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
 import * as collectionSchema from "./collection-schema";
+import * as masterSchema from "./master-schema";
 
 const COLLECTION_KEY_RE = /^[a-zA-Z0-9_-]+$/;
 
 /** Validate a collection key: alphanumeric, underscore, dash only. */
 export function isValidCollectionKey(key: string): boolean {
   return COLLECTION_KEY_RE.test(key);
+}
+
+export function getMasterDb(dbPath: string) {
+  const sqlite = new Database(dbPath);
+  sqlite.exec("PRAGMA journal_mode = WAL;");
+  sqlite.exec("PRAGMA foreign_keys = ON;");
+
+  const db = drizzle(sqlite, { schema: masterSchema });
+
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS collections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      crawler_type TEXT NOT NULL,
+      config TEXT NOT NULL DEFAULT ('{}'),
+      credentials TEXT NOT NULL DEFAULT ('{}'),
+      db_path TEXT NOT NULL,
+      sync_interval INTEGER NOT NULL DEFAULT 3600,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  return db;
 }
 
 export function getCollectionDb(dbPath: string) {
