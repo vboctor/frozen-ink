@@ -118,27 +118,31 @@ export class MantisBTTheme implements Theme {
     if (context.entity.tags?.length) fm.tags = context.entity.tags;
     sections.push(frontmatter(fm));
 
-    // Title: "00042 Issue summary"
-    sections.push(`# ${padId(d.id as number)} ${d.summary}`);
+    const issueId = padId(d.id as number);
+    const issueRef = context.entity.url
+      ? `[${issueId}](${context.entity.url})`
+      : issueId;
+    const summaryLead = [project?.name, category?.name, issueRef]
+      .filter(Boolean)
+      .join(" > ");
+    sections.push(`**${summaryLead} - ${status.label}**`);
 
-    // Details table
+    // Title: "00042 Issue summary"
+    sections.push(`## ${padId(d.id as number)} ${d.summary}`);
+
+    // Details table (rendered at bottom)
     const rows: string[] = [
       "| | |",
       "|---|---|",
-      tableRow("Status", status.label),
       tableRow("Resolution", resolution.label),
       tableRow("Priority", priority.label),
       tableRow("Severity", severity.label),
     ];
-    if (project) rows.push(tableRow("Project", project.name));
-    if (category) rows.push(tableRow("Category", category.name));
     if (reporter) rows.push(tableRow("Reporter", reporter.name));
     if (handler) rows.push(tableRow("Assigned To", handler.name));
     if (reproducibility) rows.push(tableRow("Reproducibility", reproducibility.label));
     rows.push(tableRow("Created", formatDate(d.createdAt as string)));
     rows.push(tableRow("Updated", formatDate(d.updatedAt as string)));
-    if (context.entity.url) rows.push(tableRow("URL", context.entity.url));
-    sections.push(rows.join("\n"));
 
     // Issue-level attachments
     const files = d.files as Array<{ filename: string; storagePath?: string }>;
@@ -147,22 +151,21 @@ export class MantisBTTheme implements Theme {
         .filter((f) => f.storagePath)
         .map((f) => `![[${f.storagePath!.replace(/^attachments\//, "")}]]`);
       if (embeds.length) {
-        sections.push("## Attachments\n\n" + embeds.join("\n\n"));
+        sections.push("### Attachments\n\n" + embeds.join("\n\n"));
       }
     }
 
     // Description
     if (d.description) {
       sections.push(
-        "## Description\n\n" +
-          linkifyIssueRefs(d.description as string, lookup),
+        linkifyIssueRefs(d.description as string, lookup),
       );
     }
 
     // Steps to Reproduce
     if (d.stepsToReproduce) {
       sections.push(
-        "## Steps to Reproduce\n\n" +
+        "### Steps to Reproduce\n\n" +
           linkifyIssueRefs(d.stepsToReproduce as string, lookup),
       );
     }
@@ -170,7 +173,7 @@ export class MantisBTTheme implements Theme {
     // Additional Information
     if (d.additionalInformation) {
       sections.push(
-        "## Additional Information\n\n" +
+        "### Additional Information\n\n" +
           linkifyIssueRefs(d.additionalInformation as string, lookup),
       );
     }
@@ -188,7 +191,7 @@ export class MantisBTTheme implements Theme {
           : padId(rel.issue.id);
         return `- **${rel.type.label ?? rel.type.name}:** ${wikilink(targetPath, label)}`;
       });
-      sections.push("## Relationships\n\n" + relLines.join("\n"));
+      sections.push("### Relationships\n\n" + relLines.join("\n"));
     }
 
     // Notes
@@ -217,8 +220,10 @@ export class MantisBTTheme implements Theme {
 
         return [header, body, ...embeds].filter(Boolean).join("\n\n");
       });
-      sections.push("## Notes\n\n" + noteBlocks.join("\n\n---\n\n"));
+      sections.push("### Notes\n\n" + noteBlocks.join("\n\n---\n\n"));
     }
+
+    sections.push("### Metadata\n\n" + rows.join("\n"));
 
     return sections.join("\n\n");
   }
