@@ -18,13 +18,14 @@ import {
   entityRelations,
 } from "@veecontext/core";
 import { sql } from "drizzle-orm";
-import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@veecontext/crawlers";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisBTTheme } from "@veecontext/crawlers";
 
 export const syncCommand = new Command("sync")
   .description("Sync collections")
   .argument("<collection>", 'Collection name or "*" for all collections')
   .option("--full", "Full re-sync (ignore cursors)")
-  .action(async (collection: string, opts: { full?: boolean }) => {
+  .option("--max <count>", "Maximum entities to sync (overrides collection config)", parseInt)
+  .action(async (collection: string, opts: { full?: boolean; max?: number }) => {
     const home = getVeeContextHome();
     const masterDbPath = join(home, "master.db");
 
@@ -59,6 +60,7 @@ export const syncCommand = new Command("sync")
     themeEngine.register(gitHubTheme);
     themeEngine.register(obsidianTheme);
     themeEngine.register(gitTheme);
+    themeEngine.register(mantisBTTheme);
 
     for (const col of collectionRows) {
       console.log(`Syncing "${col.name}" (${col.crawlerType})...`);
@@ -72,8 +74,12 @@ export const syncCommand = new Command("sync")
       }
 
       const crawler = factory();
+      const config = { ...(col.config as Record<string, unknown>) };
+      if (opts.max !== undefined) {
+        config.maxEntities = opts.max;
+      }
       await crawler.initialize(
-        col.config as Record<string, unknown>,
+        config,
         col.credentials as Record<string, unknown>,
       );
 

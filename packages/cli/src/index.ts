@@ -8,6 +8,7 @@ import { collectionsCommand } from "./commands/collections";
 import { searchCommand } from "./commands/search";
 import { configCommand } from "./commands/config";
 import { indexCommand } from "./commands/index";
+import { generateCommand } from "./commands/generate";
 import { serveCommand } from "./commands/serve";
 import { daemonCommand } from "./commands/daemon";
 
@@ -26,6 +27,7 @@ program.addCommand(collectionsCommand);
 program.addCommand(searchCommand);
 program.addCommand(configCommand);
 program.addCommand(indexCommand);
+program.addCommand(generateCommand);
 program.addCommand(serveCommand);
 program.addCommand(daemonCommand);
 

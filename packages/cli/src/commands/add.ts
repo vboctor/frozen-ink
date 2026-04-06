@@ -20,6 +20,9 @@ export const addCommand = new Command("add")
   .option("--repo <repo>", "Repository name (for github)")
   .option("--path <path>", "Path to local directory (for obsidian, git)")
   .option("--include-diffs", "Include commit diffs (for git)")
+  .option("--url <url>", "Base URL (for mantisbt)")
+  .option("--project-id <id>", "Project ID (for mantisbt)", parseInt)
+  .option("--max <count>", "Maximum entities to sync (for mantisbt)", parseInt)
   .action(async (crawlerType: string, opts: Record<string, string>) => {
     const home = getVeeContextHome();
     const masterDbPath = join(home, "master.db");
@@ -69,6 +72,20 @@ export const addCommand = new Command("add")
       const vaultPath = resolve(opts.path);
       credentials.vaultPath = vaultPath;
       config.vaultPath = vaultPath;
+    } else if (crawlerType === "mantisbt") {
+      if (!opts.url) {
+        console.error("MantisBT crawler requires --url <base-url>");
+        process.exit(1);
+      }
+      config.baseUrl = opts.url;
+      credentials.token = opts.token ?? "";
+      credentials.baseUrl = opts.url;
+      if (opts.projectId) {
+        config.projectId = opts.projectId;
+      }
+      if (opts.max) {
+        config.maxEntities = opts.max;
+      }
     } else if (crawlerType === "git") {
       if (!opts.path) {
         console.error("Git crawler requires --path <repo-path>");
