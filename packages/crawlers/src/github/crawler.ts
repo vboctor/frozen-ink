@@ -13,6 +13,7 @@ import type {
   GitHubComment,
   GitHubReview,
   GitHubCheckRun,
+  GitHubUserProfile,
 } from "./types";
 
 const PER_PAGE = 100;
@@ -22,7 +23,17 @@ interface GitHubSyncCursor extends SyncCursor {
   updatedSince?: string;
   issuesPage?: number;
   pullsPage?: number;
-  phase?: "issues" | "pulls" | "done";
+  phase?: "issues" | "pulls" | "users" | "done";
+  /** External IDs collected during the current sync run (openOnly mode). */
+  seenIds?: string[];
+  /** Open IDs from the previous completed sync (openOnly mode). */
+  knownOpenIds?: string[];
+  /** Running count of entities fetched per type in this sync run. */
+  issuesFetched?: number;
+  pullsFetched?: number;
+  totalFetched?: number;
+  /** User logins collected from issues/PRs to fetch in the users phase. */
+  collectedUsers?: string[];
 }
 
 export class GitHubCrawler implements Crawler {
@@ -37,6 +48,10 @@ export class GitHubCrawler implements Crawler {
       syncPullRequests: { type: "boolean", default: true },
       syncComments: { type: "boolean", default: true },
       syncCheckStatuses: { type: "boolean", default: true },
+      openOnly: { type: "boolean", default: false },
+      maxEntities: { type: "number" },
+      maxIssues: { type: "number" },
+      maxPullRequests: { type: "number" },
     },
     credentialFields: ["token", "owner", "repo"],
   };
@@ -48,6 +63,10 @@ export class GitHubCrawler implements Crawler {
   private syncPullRequests = true;
   private syncComments = true;
   private syncCheckStatuses = true;
+  private openOnly = false;
+  private maxEntities?: number;
+  private maxIssues?: number;
+  private maxPullRequests?: number;
   private fetchFn: typeof fetch = globalThis.fetch;
 
   async initialize(
@@ -63,6 +82,10 @@ export class GitHubCrawler implements Crawler {
     this.syncPullRequests = cfg.syncPullRequests !== false;
     this.syncComments = cfg.syncComments !== false;
     this.syncCheckStatuses = cfg.syncCheckStatuses !== false;
+    this.openOnly = cfg.openOnly === true;
+    this.maxEntities = typeof cfg.maxEntities === "number" ? cfg.maxEntities : undefined;
+    this.maxIssues = typeof cfg.maxIssues === "number" ? cfg.maxIssues : undefined;
+    this.maxPullRequests = typeof cfg.maxPullRequests === "number" ? cfg.maxPullRequests : undefined;
   }
 
   setFetch(fn: typeof fetch): void {
@@ -78,87 +101,167 @@ export class GitHubCrawler implements Crawler {
 
     const phase = c.phase ?? "issues";
     const entities: CrawlerEntityData[] = [];
+    const seenIds = [...(c.seenIds ?? [])];
+    let issuesFetched = c.issuesFetched ?? 0;
+    let pullsFetched = c.pullsFetched ?? 0;
+    let totalFetched = c.totalFetched ?? 0;
+    const collectedUsers = new Set<string>(c.collectedUsers ?? []);
 
-    if (phase === "issues" && this.syncIssues) {
-      const page = c.issuesPage ?? 1;
-      const items = await this.fetchIssues(page, c.updatedSince);
-
-      for (const issue of items) {
-        // Skip pull requests returned in /issues endpoint
-        if (issue.pull_request) continue;
-        entities.push(await this.mapIssue(issue));
-      }
-
-      if (items.length === PER_PAGE) {
-        return {
-          entities,
-          nextCursor: { ...c, phase: "issues", issuesPage: page + 1 },
-          hasMore: true,
-          deletedExternalIds: [],
-        };
-      }
-
-      // Issues done, move to pulls
-      if (this.syncPullRequests) {
-        return {
-          entities,
-          nextCursor: { ...c, phase: "pulls", pullsPage: 1 },
-          hasMore: true,
-          deletedExternalIds: [],
-        };
-      }
-
-      // No PRs to sync — done
-      const latestUpdated = this.findLatestUpdated(entities);
-      return {
-        entities,
-        nextCursor: {
-          phase: "done",
-          updatedSince: latestUpdated ?? c.updatedSince,
-        },
-        hasMore: false,
-        deletedExternalIds: [],
-      };
+    // Check if global limit already reached from previous pages
+    if (this.maxEntities && totalFetched >= this.maxEntities) {
+      return this.finalize(c, [], seenIds, collectedUsers);
     }
 
-    if (phase === "pulls" && this.syncPullRequests) {
-      const page = c.pullsPage ?? 1;
-      const items = await this.fetchPullRequests(page, c.updatedSince);
-
-      for (const pr of items) {
-        entities.push(await this.mapPullRequest(pr));
+    // ── Issues phase ───────────────────────────────────────────────
+    if (phase === "issues" && this.syncIssues) {
+      // Check per-type limit
+      if (this.maxIssues !== undefined && issuesFetched >= this.maxIssues) {
+        return this.advanceFromIssues(c, [], seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers);
       }
 
-      if (items.length === PER_PAGE) {
+      const page = c.issuesPage ?? 1;
+      const since = this.openOnly ? undefined : c.updatedSince;
+      const state = this.openOnly ? "open" : "all";
+      const items = await this.fetchIssues(page, since, state);
+
+      for (const issue of items) {
+        if (issue.pull_request) continue;
+        const entity = await this.mapIssue(issue);
+        entities.push(entity);
+        seenIds.push(entity.externalId);
+        this.collectUsers(issue.user, issue.assignees, null, null, collectedUsers);
+      }
+
+      issuesFetched += entities.length;
+      totalFetched += entities.length;
+
+      // Apply per-type limit
+      if (this.maxIssues !== undefined && issuesFetched > this.maxIssues) {
+        const excess = issuesFetched - this.maxIssues;
+        entities.splice(entities.length - excess);
+        seenIds.splice(seenIds.length - excess);
+        issuesFetched = this.maxIssues;
+        totalFetched -= excess;
+      }
+
+      // Apply global limit
+      if (this.maxEntities && totalFetched > this.maxEntities) {
+        const excess = totalFetched - this.maxEntities;
+        entities.splice(entities.length - excess);
+        seenIds.splice(seenIds.length - excess);
+        totalFetched = this.maxEntities;
+        return this.finalize(c, entities, seenIds, collectedUsers);
+      }
+
+      if (this.maxEntities && totalFetched >= this.maxEntities) {
+        return this.finalize(c, entities, seenIds, collectedUsers);
+      }
+
+      const reachedTypeMax = this.maxIssues !== undefined && issuesFetched >= this.maxIssues;
+
+      if (!reachedTypeMax && items.length === PER_PAGE) {
         return {
           entities,
-          nextCursor: { ...c, phase: "pulls", pullsPage: page + 1 },
+          nextCursor: { ...c, phase: "issues", issuesPage: page + 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
           hasMore: true,
           deletedExternalIds: [],
         };
       }
 
-      // All done
-      const latestUpdated = this.findLatestUpdated(entities);
-      return {
-        entities,
-        nextCursor: {
-          phase: "done",
-          updatedSince: latestUpdated ?? c.updatedSince,
-        },
-        hasMore: false,
-        deletedExternalIds: [],
-      };
+      return this.advanceFromIssues(c, entities, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers);
+    }
+
+    // ── Pulls phase ────────────────────────────────────────────────
+    if (phase === "pulls" && this.syncPullRequests) {
+      if (this.maxPullRequests !== undefined && pullsFetched >= this.maxPullRequests) {
+        return this.advanceFromPulls(c, [], seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers);
+      }
+
+      const page = c.pullsPage ?? 1;
+      const since = this.openOnly ? undefined : c.updatedSince;
+      const state = this.openOnly ? "open" : "all";
+      const items = await this.fetchPullRequests(page, since, state);
+
+      for (const pr of items) {
+        const entity = await this.mapPullRequest(pr);
+        entities.push(entity);
+        seenIds.push(entity.externalId);
+        this.collectUsers(pr.user, pr.assignees, entity.data.reviews as unknown[] | undefined, entity.data.comments as unknown[] | undefined, collectedUsers);
+      }
+
+      pullsFetched += entities.length;
+      totalFetched += entities.length;
+
+      if (this.maxPullRequests !== undefined && pullsFetched > this.maxPullRequests) {
+        const excess = pullsFetched - this.maxPullRequests;
+        entities.splice(entities.length - excess);
+        seenIds.splice(seenIds.length - excess);
+        pullsFetched = this.maxPullRequests;
+        totalFetched -= excess;
+      }
+
+      if (this.maxEntities && totalFetched > this.maxEntities) {
+        const excess = totalFetched - this.maxEntities;
+        entities.splice(entities.length - excess);
+        seenIds.splice(seenIds.length - excess);
+        totalFetched = this.maxEntities;
+        return this.finalize(c, entities, seenIds, collectedUsers);
+      }
+
+      if (this.maxEntities && totalFetched >= this.maxEntities) {
+        return this.finalize(c, entities, seenIds, collectedUsers);
+      }
+
+      const reachedTypeMax = this.maxPullRequests !== undefined && pullsFetched >= this.maxPullRequests;
+
+      if (!reachedTypeMax && items.length === PER_PAGE) {
+        return {
+          entities,
+          nextCursor: { ...c, phase: "pulls", pullsPage: page + 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+          hasMore: true,
+          deletedExternalIds: [],
+        };
+      }
+
+      return this.advanceFromPulls(c, entities, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers);
+    }
+
+    // ── Users phase ────────────────────────────────────────────────
+    if (phase === "users") {
+      const userLogins = c.collectedUsers ?? [];
+      for (const login of userLogins) {
+        if (this.maxEntities && totalFetched >= this.maxEntities) break;
+        const profile = await this.fetchUserProfile(login);
+        if (profile) {
+          entities.push(this.mapUserProfile(profile));
+          totalFetched++;
+        }
+      }
+
+      return this.finalize(c, entities, seenIds, collectedUsers);
     }
 
     // If issues are disabled, start with pulls
     if (phase === "issues" && !this.syncIssues && this.syncPullRequests) {
       return {
         entities: [],
-        nextCursor: { ...c, phase: "pulls", pullsPage: 1 },
+        nextCursor: { ...c, phase: "pulls", pullsPage: 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
         hasMore: true,
         deletedExternalIds: [],
       };
+    }
+
+    // If issues disabled and pulls disabled, go to users
+    if (phase === "issues" && !this.syncIssues && !this.syncPullRequests) {
+      if (collectedUsers.size > 0) {
+        return {
+          entities: [],
+          nextCursor: { ...c, phase: "users", seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+          hasMore: true,
+          deletedExternalIds: [],
+        };
+      }
+      return this.finalize(c, [], seenIds, collectedUsers);
     }
 
     // Nothing to sync
@@ -167,6 +270,88 @@ export class GitHubCrawler implements Crawler {
       nextCursor: c,
       hasMore: false,
       deletedExternalIds: [],
+    };
+  }
+
+  /** Transition from issues phase to pulls or users or finalize. */
+  private advanceFromIssues(
+    c: GitHubSyncCursor,
+    entities: CrawlerEntityData[],
+    seenIds: string[],
+    issuesFetched: number,
+    pullsFetched: number,
+    totalFetched: number,
+    collectedUsers: Set<string>,
+  ): SyncResult {
+    if (this.syncPullRequests) {
+      return {
+        entities,
+        nextCursor: { ...c, phase: "pulls", pullsPage: 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+        hasMore: true,
+        deletedExternalIds: [],
+      };
+    }
+    if (collectedUsers.size > 0) {
+      return {
+        entities,
+        nextCursor: { ...c, phase: "users", seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+        hasMore: true,
+        deletedExternalIds: [],
+      };
+    }
+    return this.finalize(c, entities, seenIds, collectedUsers);
+  }
+
+  /** Transition from pulls phase to users or finalize. */
+  private advanceFromPulls(
+    c: GitHubSyncCursor,
+    entities: CrawlerEntityData[],
+    seenIds: string[],
+    issuesFetched: number,
+    pullsFetched: number,
+    totalFetched: number,
+    collectedUsers: Set<string>,
+  ): SyncResult {
+    if (collectedUsers.size > 0) {
+      return {
+        entities,
+        nextCursor: { ...c, phase: "users", seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+        hasMore: true,
+        deletedExternalIds: [],
+      };
+    }
+    return this.finalize(c, entities, seenIds, collectedUsers);
+  }
+
+  /**
+   * Build the final SyncResult after all phases have completed.
+   * In openOnly mode, computes deletedExternalIds by comparing the current
+   * seen set against the previously known open set.
+   */
+  private finalize(
+    cursor: GitHubSyncCursor,
+    entities: CrawlerEntityData[],
+    seenIds: string[],
+    _collectedUsers: Set<string>,
+  ): SyncResult {
+    const latestUpdated = this.findLatestUpdated(entities);
+    let deletedExternalIds: string[] = [];
+
+    if (this.openOnly) {
+      const seenSet = new Set(seenIds);
+      const previousKnown = cursor.knownOpenIds ?? [];
+      deletedExternalIds = previousKnown.filter((id) => !seenSet.has(id));
+    }
+
+    return {
+      entities,
+      nextCursor: {
+        phase: "done",
+        updatedSince: this.openOnly ? undefined : (latestUpdated ?? cursor.updatedSince),
+        knownOpenIds: this.openOnly ? seenIds : undefined,
+      },
+      hasMore: false,
+      deletedExternalIds,
     };
   }
 
@@ -196,9 +381,10 @@ export class GitHubCrawler implements Crawler {
   private async fetchIssues(
     page: number,
     since?: string,
+    state: string = "all",
   ): Promise<GitHubIssue[]> {
     const params = new URLSearchParams({
-      state: "all",
+      state,
       sort: "updated",
       direction: "asc",
       per_page: String(PER_PAGE),
@@ -219,9 +405,10 @@ export class GitHubCrawler implements Crawler {
   private async fetchPullRequests(
     page: number,
     since?: string,
+    state: string = "all",
   ): Promise<GitHubPullRequest[]> {
     const params = new URLSearchParams({
-      state: "all",
+      state,
       sort: "updated",
       direction: "asc",
       per_page: String(PER_PAGE),
@@ -305,6 +492,15 @@ export class GitHubCrawler implements Crawler {
     return allRuns;
   }
 
+  private async fetchUserProfile(login: string): Promise<GitHubUserProfile | null> {
+    const res = await this.fetchFn(
+      `${API_BASE}/users/${login}`,
+      { headers: this.buildHeaders(this.token) },
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as GitHubUserProfile;
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────
 
   private buildHeaders(token: string): Record<string, string> {
@@ -313,6 +509,30 @@ export class GitHubCrawler implements Crawler {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
     };
+  }
+
+  /** Collect unique user logins from issue/PR fields into the set. */
+  private collectUsers(
+    author: { login: string } | null,
+    assignees: { login: string }[],
+    reviews: unknown[] | null | undefined,
+    comments: unknown[] | null | undefined,
+    out: Set<string>,
+  ): void {
+    if (author) out.add(author.login);
+    for (const a of assignees) out.add(a.login);
+    if (reviews) {
+      for (const r of reviews) {
+        const login = (r as { user?: { login?: string } })?.user?.login;
+        if (login) out.add(login);
+      }
+    }
+    if (comments) {
+      for (const c of comments) {
+        const login = (c as { user?: { login?: string } })?.user?.login;
+        if (login) out.add(login);
+      }
+    }
   }
 
   private mapUser(user: { login: string; avatar_url: string; html_url: string } | null) {
@@ -353,7 +573,6 @@ export class GitHubCrawler implements Crawler {
     const tags = issue.labels.map((l) => l.name);
 
     const relations: CrawlerEntityData["relations"] = [];
-    // Parse cross-references from body (e.g., #123)
     if (issue.body) {
       const refs = issue.body.match(/#(\d+)/g);
       if (refs) {
@@ -372,7 +591,14 @@ export class GitHubCrawler implements Crawler {
       }
     }
 
-    // Fetch comments if enabled and the issue has any
+    // Add user relations
+    if (issue.user) {
+      relations.push({ targetExternalId: `user-${issue.user.login}`, relationType: "authored_by" });
+    }
+    for (const a of issue.assignees) {
+      relations.push({ targetExternalId: `user-${a.login}`, relationType: "assigned_to" });
+    }
+
     let comments: unknown[] = [];
     if (this.syncComments && issue.comments > 0) {
       const rawComments = await this.fetchComments(issue.number);
@@ -420,7 +646,6 @@ export class GitHubCrawler implements Crawler {
     if (pr.merged) tags.push("merged");
 
     const relations: CrawlerEntityData["relations"] = [];
-    // Parse cross-references from body
     if (pr.body) {
       const refs = pr.body.match(/#(\d+)/g);
       if (refs) {
@@ -439,7 +664,14 @@ export class GitHubCrawler implements Crawler {
       }
     }
 
-    // Fetch comments if enabled and the issue has any
+    // Add user relations
+    if (pr.user) {
+      relations.push({ targetExternalId: `user-${pr.user.login}`, relationType: "authored_by" });
+    }
+    for (const a of pr.assignees) {
+      relations.push({ targetExternalId: `user-${a.login}`, relationType: "assigned_to" });
+    }
+
     let comments: unknown[] = [];
     if (this.syncComments && pr.comments > 0) {
       const rawComments = await this.fetchComments(pr.number);
@@ -454,7 +686,6 @@ export class GitHubCrawler implements Crawler {
       }));
     }
 
-    // Fetch reviews if comments are enabled
     let reviews: unknown[] = [];
     if (this.syncComments) {
       const rawReviews = await this.fetchReviews(pr.number);
@@ -466,9 +697,14 @@ export class GitHubCrawler implements Crawler {
         submittedAt: r.submitted_at,
         url: r.html_url,
       }));
+      // Add reviewer relations
+      for (const r of rawReviews) {
+        if (r.user) {
+          relations.push({ targetExternalId: `user-${r.user.login}`, relationType: "reviewed_by" });
+        }
+      }
     }
 
-    // Fetch check runs if enabled
     let checkRuns: unknown[] = [];
     if (this.syncCheckStatuses) {
       const rawChecks = await this.fetchCheckRuns(pr.head.sha);
@@ -515,6 +751,31 @@ export class GitHubCrawler implements Crawler {
         closedAt: pr.closed_at,
       },
       relations,
+    };
+  }
+
+  private mapUserProfile(profile: GitHubUserProfile): CrawlerEntityData {
+    return {
+      externalId: `user-${profile.login}`,
+      entityType: "user",
+      title: profile.name ?? profile.login,
+      url: profile.html_url,
+      tags: ["user"],
+      data: {
+        login: profile.login,
+        name: profile.name,
+        avatarUrl: profile.avatar_url,
+        url: profile.html_url,
+        company: profile.company,
+        location: profile.location,
+        bio: profile.bio,
+        blog: profile.blog,
+        publicRepos: profile.public_repos,
+        followers: profile.followers,
+        following: profile.following,
+        createdAt: profile.created_at,
+        updatedAt: profile.updated_at,
+      },
     };
   }
 

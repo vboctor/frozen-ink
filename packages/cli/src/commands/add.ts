@@ -18,13 +18,15 @@ export const addCommand = new Command("add")
   .requiredOption("--name <key>", "Collection key (alphanumeric, dash, underscore)")
   .option("--title <title>", "Display title for the collection")
   .option("--token <token>", "Authentication token")
-  .option("--owner <owner>", "Repository owner (for github)")
-  .option("--repo <repo>", "Repository name (for github)")
+  .option("--repo <repo>", "Repository in owner/repo format (for github)")
   .option("--path <path>", "Path to local directory (for obsidian, git)")
   .option("--include-diffs", "Include commit diffs (for git)")
   .option("--url <url>", "Base URL (for mantisbt)")
   .option("--project-id <id>", "Project ID (for mantisbt)", parseInt)
-  .option("--max <count>", "Maximum entities to sync (for mantisbt)", parseInt)
+  .option("--max <count>", "Maximum entities per type to sync (applies to issues and PRs independently)", parseInt)
+  .option("--max-issues <count>", "Maximum issues to sync (for github)", parseInt)
+  .option("--max-prs <count>", "Maximum pull requests to sync (for github)", parseInt)
+  .option("--open-only", "Only sync open issues/PRs, delete closed ones (for github)")
   .action(async (crawlerType: string, opts: Record<string, string>) => {
     if (!contextExists()) {
       console.error("VeeContext not initialized. Run: vctx init");
@@ -56,17 +58,39 @@ export const addCommand = new Command("add")
     const config: Record<string, unknown> = {};
 
     if (crawlerType === "github") {
-      if (!opts.token || !opts.owner || !opts.repo) {
+      if (!opts.token || !opts.repo) {
         console.error(
-          "GitHub crawler requires --token, --owner, and --repo",
+          "GitHub crawler requires --token and --repo (in owner/repo format)",
         );
         process.exit(1);
       }
+      const repoParts = (opts.repo as string).split("/");
+      if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
+        console.error(
+          `Invalid --repo format "${opts.repo}". Expected owner/repo (e.g. my-org/my-repo)`,
+        );
+        process.exit(1);
+      }
+      const [ghOwner, ghRepo] = repoParts;
       credentials.token = opts.token;
-      credentials.owner = opts.owner;
-      credentials.repo = opts.repo;
-      config.owner = opts.owner;
-      config.repo = opts.repo;
+      credentials.owner = ghOwner;
+      credentials.repo = ghRepo;
+      config.owner = ghOwner;
+      config.repo = ghRepo;
+      if (opts.openOnly) {
+        config.openOnly = true;
+      }
+      if (opts.max) {
+        // --max sets both per-type limits (e.g. --max 20 = at most 20 issues + 20 PRs)
+        config.maxIssues = opts.max;
+        config.maxPullRequests = opts.max;
+      }
+      if (opts.maxIssues) {
+        config.maxIssues = opts.maxIssues;
+      }
+      if (opts.maxPrs) {
+        config.maxPullRequests = opts.maxPrs;
+      }
     } else if (crawlerType === "obsidian") {
       if (!opts.path) {
         console.error("Obsidian crawler requires --path <vault-path>");

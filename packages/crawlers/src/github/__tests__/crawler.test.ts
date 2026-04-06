@@ -5,6 +5,7 @@ import type {
   GitHubPullRequest,
   GitHubComment,
   GitHubReview,
+  GitHubUserProfile,
 } from "../types";
 
 function mockFetch(responses: Record<string, unknown>) {
@@ -103,6 +104,27 @@ function sampleReview(overrides: Partial<GitHubReview> = {}): GitHubReview {
   };
 }
 
+function sampleUserProfile(overrides: Partial<GitHubUserProfile> = {}): GitHubUserProfile {
+  return {
+    login: "testuser",
+    id: 1,
+    avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+    html_url: "https://github.com/testuser",
+    name: "Test User",
+    company: "Acme Corp",
+    blog: "https://testuser.dev",
+    location: "San Francisco",
+    bio: "Full-stack developer",
+    public_repos: 42,
+    public_gists: 5,
+    followers: 100,
+    following: 50,
+    created_at: "2020-01-01T00:00:00Z",
+    updated_at: "2024-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 let crawler: GitHubCrawler;
 
 beforeEach(async () => {
@@ -182,7 +204,9 @@ describe("GitHubCrawler", () => {
       expect(result2.entities[0].data.head).toBe("feat/x");
       expect(result2.entities[0].data.base).toBe("main");
       expect(result2.entities[0].data.merged).toBe(false);
-      expect(result2.hasMore).toBe(false);
+      // hasMore=true because users phase follows
+      expect(result2.hasMore).toBe(true);
+      expect(result2.nextCursor).toHaveProperty("phase", "users");
     });
 
     it("skips pull requests returned in the issues endpoint", async () => {
@@ -220,9 +244,11 @@ describe("GitHubCrawler", () => {
 
       const result = await crawler.sync(null);
       const relations = result.entities[0].relations ?? [];
-      expect(relations).toHaveLength(2);
-      expect(relations[0]).toEqual({ targetExternalId: "issue-5", relationType: "references" });
-      expect(relations[1]).toEqual({ targetExternalId: "issue-12", relationType: "references" });
+      // 2 cross-references + 2 user relations (authored_by + assigned_to)
+      const crossRefs = relations.filter((r) => r.relationType === "references");
+      expect(crossRefs).toHaveLength(2);
+      expect(crossRefs[0]).toEqual({ targetExternalId: "issue-5", relationType: "references" });
+      expect(crossRefs[1]).toEqual({ targetExternalId: "issue-12", relationType: "references" });
     });
 
     it("uses updatedSince cursor for incremental sync", async () => {
@@ -543,6 +569,449 @@ describe("GitHubCrawler", () => {
       expect(result.hasMore).toBe(true);
       expect(result.nextCursor).toHaveProperty("issuesPage", 2);
       expect(result.nextCursor).toHaveProperty("phase", "issues");
+    });
+  });
+
+  describe("openOnly mode", () => {
+    let openOnlyCrawler: GitHubCrawler;
+
+    beforeEach(async () => {
+      openOnlyCrawler = new GitHubCrawler();
+      await openOnlyCrawler.initialize(
+        { owner: "owner", repo: "repo", openOnly: true },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+    });
+
+    it("fetches state=open instead of state=all", async () => {
+      const urls: string[] = [];
+      openOnlyCrawler.setFetch(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        urls.push(url);
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      await openOnlyCrawler.sync(null);
+
+      const issuesUrl = urls.find((u) => u.includes("/issues?"));
+      expect(issuesUrl).toContain("state=open");
+      expect(issuesUrl).not.toContain("state=all");
+    });
+
+    it("does not use since parameter in openOnly mode", async () => {
+      const urls: string[] = [];
+      openOnlyCrawler.setFetch(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        urls.push(url);
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      // Even with updatedSince in cursor, openOnly should not use since
+      await openOnlyCrawler.sync({
+        phase: "issues",
+        issuesPage: 1,
+        updatedSince: "2024-06-01T00:00:00Z",
+      });
+
+      const issuesUrl = urls.find((u) => u.includes("/issues?"));
+      expect(issuesUrl).not.toContain("since=");
+    });
+
+    it("stores knownOpenIds in cursor after sync completes", async () => {
+      const issue = sampleIssue({ number: 10 });
+      openOnlyCrawler.setFetch(
+        mockFetch({
+          "/issues?": [issue],
+          "/pulls?": [],
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      // Issues phase
+      let r = await openOnlyCrawler.sync(null);
+      expect(r.hasMore).toBe(true);
+      // Pulls phase (empty), then users
+      r = await openOnlyCrawler.sync(r.nextCursor);
+      expect(r.hasMore).toBe(true);
+      // Users phase
+      r = await openOnlyCrawler.sync(r.nextCursor);
+      expect(r.hasMore).toBe(false);
+
+      const cursor = r.nextCursor as { knownOpenIds?: string[] };
+      expect(cursor.knownOpenIds).toContain("issue-10");
+    });
+
+    it("returns deletedExternalIds for items no longer open", async () => {
+      // First sync: issues 10 and 20 are open
+      openOnlyCrawler.setFetch(
+        mockFetch({
+          "/issues?": [sampleIssue({ number: 10 }), sampleIssue({ number: 20 })],
+          "/pulls?": [],
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      let r = await openOnlyCrawler.sync(null);
+      r = await openOnlyCrawler.sync(r.nextCursor); // pulls phase
+      r = await openOnlyCrawler.sync(r.nextCursor); // users phase
+      const firstCursor = r.nextCursor as { knownOpenIds: string[] };
+      expect(firstCursor.knownOpenIds).toEqual(["issue-10", "issue-20"]);
+      expect(r.deletedExternalIds).toEqual([]); // No previous known IDs to compare against
+
+      // Second sync: only issue 10 is still open (20 was closed)
+      openOnlyCrawler.setFetch(
+        mockFetch({
+          "/issues?": [sampleIssue({ number: 10 })],
+          "/pulls?": [],
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      let r2 = await openOnlyCrawler.sync({
+        ...firstCursor,
+        phase: "issues",
+        issuesPage: 1,
+      });
+      r2 = await openOnlyCrawler.sync(r2.nextCursor); // pulls phase
+      r2 = await openOnlyCrawler.sync(r2.nextCursor); // users phase
+
+      expect(r2.deletedExternalIds).toEqual(["issue-20"]);
+      const secondCursor = r2.nextCursor as { knownOpenIds: string[] };
+      expect(secondCursor.knownOpenIds).toEqual(["issue-10"]);
+    });
+
+    it("tracks PR IDs in knownOpenIds too", async () => {
+      openOnlyCrawler.setFetch(
+        mockFetch({
+          "/issues?": [sampleIssue({ number: 5 })],
+          "/pulls?": [samplePR({ number: 15 })],
+          "/reviews?": [],
+          "/check-runs?": { total_count: 0, check_runs: [] },
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      let r = await openOnlyCrawler.sync(null);
+      r = await openOnlyCrawler.sync(r.nextCursor); // pulls phase
+      r = await openOnlyCrawler.sync(r.nextCursor); // users phase
+
+      const cursor = r.nextCursor as { knownOpenIds: string[] };
+      expect(cursor.knownOpenIds).toContain("issue-5");
+      expect(cursor.knownOpenIds).toContain("pr-15");
+    });
+
+    it("does not set updatedSince in openOnly cursor", async () => {
+      openOnlyCrawler.setFetch(
+        mockFetch({
+          "/issues?": [sampleIssue()],
+          "/pulls?": [],
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      let r = await openOnlyCrawler.sync(null);
+      r = await openOnlyCrawler.sync(r.nextCursor); // pulls
+      r = await openOnlyCrawler.sync(r.nextCursor); // users
+
+      const cursor = r.nextCursor as { updatedSince?: string };
+      expect(cursor.updatedSince).toBeUndefined();
+    });
+  });
+
+  describe("maxEntities", () => {
+    it("stops after reaching the limit within a single page", async () => {
+      const maxCrawler = new GitHubCrawler();
+      await maxCrawler.initialize(
+        { owner: "owner", repo: "repo", maxEntities: 2 },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+
+      const issues = [
+        sampleIssue({ number: 1, title: "Issue 1" }),
+        sampleIssue({ number: 2, title: "Issue 2" }),
+        sampleIssue({ number: 3, title: "Issue 3" }),
+        sampleIssue({ number: 4, title: "Issue 4" }),
+      ];
+
+      maxCrawler.setFetch(
+        mockFetch({
+          "/issues?": issues,
+          "/pulls?": [],
+        }),
+      );
+
+      const result = await maxCrawler.sync(null);
+      expect(result.entities).toHaveLength(2);
+      expect(result.hasMore).toBe(false);
+    });
+
+    it("stops across multiple phases (issues + pulls + users)", async () => {
+      const maxCrawler = new GitHubCrawler();
+      await maxCrawler.initialize(
+        { owner: "owner", repo: "repo", maxEntities: 3 },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+
+      maxCrawler.setFetch(
+        mockFetch({
+          "/issues?": [
+            sampleIssue({ number: 1, title: "Issue 1" }),
+            sampleIssue({ number: 2, title: "Issue 2" }),
+          ],
+          "/pulls?": [],
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      // Issues: 2 entities
+      const r1 = await maxCrawler.sync(null);
+      expect(r1.entities).toHaveLength(2);
+      expect(r1.hasMore).toBe(true);
+
+      // Pulls: empty, transitions to users
+      const r2 = await maxCrawler.sync(r1.nextCursor);
+      expect(r2.hasMore).toBe(true);
+
+      // Users: limit 3, already 2 fetched, so at most 1 user
+      const r3 = await maxCrawler.sync(r2.nextCursor);
+      expect(r3.entities.length).toBeLessThanOrEqual(1);
+      expect(r3.hasMore).toBe(false);
+    });
+
+    it("stops mid-phase when limit is reached across issues and pulls", async () => {
+      const maxCrawler = new GitHubCrawler();
+      await maxCrawler.initialize(
+        { owner: "owner", repo: "repo", maxEntities: 3 },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+
+      maxCrawler.setFetch(
+        mockFetch({
+          "/issues?": [
+            sampleIssue({ number: 1, title: "Issue 1" }),
+            sampleIssue({ number: 2, title: "Issue 2" }),
+          ],
+          "/pulls?": [
+            samplePR({ number: 10, title: "PR 10" }),
+            samplePR({ number: 11, title: "PR 11" }),
+          ],
+          "/reviews?": [],
+          "/check-runs?": { total_count: 0, check_runs: [] },
+        }),
+      );
+
+      // Issues phase: 2 entities (under limit of 3)
+      const r1 = await maxCrawler.sync(null);
+      expect(r1.entities).toHaveLength(2);
+      expect(r1.hasMore).toBe(true);
+
+      // Pulls phase: has 2 PRs but only 1 more allowed (limit=3, fetched=2)
+      const r2 = await maxCrawler.sync(r1.nextCursor);
+      expect(r2.entities).toHaveLength(1);
+      expect(r2.hasMore).toBe(false);
+    });
+
+    it("works with --max flag passed via sync command (maxEntities in config)", async () => {
+      const maxCrawler = new GitHubCrawler();
+      // Simulates what happens when sync --max 1 is used
+      await maxCrawler.initialize(
+        { owner: "owner", repo: "repo", maxEntities: 1 },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+
+      maxCrawler.setFetch(
+        mockFetch({
+          "/issues?": [
+            sampleIssue({ number: 1, title: "Issue 1" }),
+            sampleIssue({ number: 2, title: "Issue 2" }),
+          ],
+          "/pulls?": [],
+        }),
+      );
+
+      const result = await maxCrawler.sync(null);
+      expect(result.entities).toHaveLength(1);
+      expect(result.entities[0].externalId).toBe("issue-1");
+      expect(result.hasMore).toBe(false);
+    });
+  });
+
+  describe("per-type limits (maxIssues / maxPullRequests)", () => {
+    it("limits issues independently with maxIssues", async () => {
+      const limitCrawler = new GitHubCrawler();
+      await limitCrawler.initialize(
+        { owner: "owner", repo: "repo", maxIssues: 1 },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+
+      limitCrawler.setFetch(
+        mockFetch({
+          "/issues?": [
+            sampleIssue({ number: 1, title: "Issue 1" }),
+            sampleIssue({ number: 2, title: "Issue 2" }),
+            sampleIssue({ number: 3, title: "Issue 3" }),
+          ],
+          "/pulls?": [samplePR({ number: 10 })],
+          "/reviews?": [],
+          "/check-runs?": { total_count: 0, check_runs: [] },
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      // Issues phase: 3 available but maxIssues=1
+      const r1 = await limitCrawler.sync(null);
+      const issueEntities = r1.entities.filter((e) => e.entityType === "issue");
+      expect(issueEntities).toHaveLength(1);
+
+      // Pulls phase: should still fetch PR since maxPullRequests is not set
+      const r2 = await limitCrawler.sync(r1.nextCursor);
+      const prEntities = r2.entities.filter((e) => e.entityType === "pull_request");
+      expect(prEntities).toHaveLength(1);
+    });
+
+    it("limits PRs independently with maxPullRequests", async () => {
+      const limitCrawler = new GitHubCrawler();
+      await limitCrawler.initialize(
+        { owner: "owner", repo: "repo", maxPullRequests: 1 },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+
+      limitCrawler.setFetch(
+        mockFetch({
+          "/issues?": [sampleIssue({ number: 1 })],
+          "/pulls?": [
+            samplePR({ number: 10, title: "PR 10" }),
+            samplePR({ number: 11, title: "PR 11" }),
+          ],
+          "/reviews?": [],
+          "/check-runs?": { total_count: 0, check_runs: [] },
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      // Issues phase: 1 issue (no limit)
+      const r1 = await limitCrawler.sync(null);
+      expect(r1.entities.filter((e) => e.entityType === "issue")).toHaveLength(1);
+
+      // Pulls phase: 2 available but maxPullRequests=1
+      const r2 = await limitCrawler.sync(r1.nextCursor);
+      expect(r2.entities.filter((e) => e.entityType === "pull_request")).toHaveLength(1);
+    });
+
+    it("applies both per-type and global limits", async () => {
+      const limitCrawler = new GitHubCrawler();
+      await limitCrawler.initialize(
+        { owner: "owner", repo: "repo", maxIssues: 2, maxPullRequests: 2, maxEntities: 3 },
+        { token: "ghp_test", owner: "owner", repo: "repo" },
+      );
+
+      limitCrawler.setFetch(
+        mockFetch({
+          "/issues?": [
+            sampleIssue({ number: 1 }),
+            sampleIssue({ number: 2 }),
+            sampleIssue({ number: 3 }),
+          ],
+          "/pulls?": [
+            samplePR({ number: 10 }),
+            samplePR({ number: 11 }),
+          ],
+          "/reviews?": [],
+          "/check-runs?": { total_count: 0, check_runs: [] },
+        }),
+      );
+
+      // Issues: maxIssues=2, so gets 2
+      const r1 = await limitCrawler.sync(null);
+      expect(r1.entities).toHaveLength(2);
+
+      // Pulls: maxPullRequests=2 but global limit=3 and already fetched 2, so only 1 PR
+      const r2 = await limitCrawler.sync(r1.nextCursor);
+      expect(r2.entities).toHaveLength(1);
+      expect(r2.hasMore).toBe(false);
+    });
+  });
+
+  describe("user entities", () => {
+    it("collects and syncs user profiles from issues", async () => {
+      crawler.setFetch(
+        mockFetch({
+          "/issues?": [sampleIssue({ number: 1 })],
+          "/pulls?": [],
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1", name: "Dev One" }),
+        }),
+      );
+
+      // Issues
+      let r = await crawler.sync(null);
+      expect(r.hasMore).toBe(true);
+      // Pulls (empty)
+      r = await crawler.sync(r.nextCursor);
+      expect(r.hasMore).toBe(true);
+      expect(r.nextCursor).toHaveProperty("phase", "users");
+
+      // Users phase
+      r = await crawler.sync(r.nextCursor);
+      expect(r.hasMore).toBe(false);
+
+      const users = r.entities.filter((e) => e.entityType === "user");
+      expect(users.length).toBeGreaterThanOrEqual(1);
+
+      const testuser = users.find((u) => u.externalId === "user-testuser");
+      expect(testuser).toBeTruthy();
+      expect(testuser!.title).toBe("Test User");
+      expect(testuser!.data.login).toBe("testuser");
+      expect(testuser!.data.bio).toBe("Full-stack developer");
+      expect(testuser!.data.avatarUrl).toBe("https://avatars.githubusercontent.com/u/1?v=4");
+    });
+
+    it("creates user relations on issues", async () => {
+      crawler.setFetch(
+        mockFetch({
+          "/issues?": [sampleIssue({ number: 1 })],
+          "/pulls?": [],
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      const r = await crawler.sync(null);
+      const issue = r.entities.find((e) => e.entityType === "issue");
+      const relations = issue?.relations ?? [];
+      expect(relations.some((r) => r.targetExternalId === "user-testuser" && r.relationType === "authored_by")).toBe(true);
+      expect(relations.some((r) => r.targetExternalId === "user-dev1" && r.relationType === "assigned_to")).toBe(true);
+    });
+
+    it("deduplicates users across issues and PRs", async () => {
+      // Both the issue and PR have the same author (testuser)
+      crawler.setFetch(
+        mockFetch({
+          "/issues?": [sampleIssue({ number: 1 })],
+          "/pulls?": [samplePR({ number: 10 })],
+          "/reviews?": [],
+          "/check-runs?": { total_count: 0, check_runs: [] },
+          "/users/testuser": sampleUserProfile(),
+          "/users/dev1": sampleUserProfile({ login: "dev1" }),
+        }),
+      );
+
+      let r = await crawler.sync(null); // issues
+      r = await crawler.sync(r.nextCursor); // pulls
+      r = await crawler.sync(r.nextCursor); // users
+
+      const users = r.entities.filter((e) => e.entityType === "user");
+      const logins = users.map((u) => u.data.login);
+      // testuser appears in both issue and PR but should only be fetched once
+      expect(logins.filter((l) => l === "testuser")).toHaveLength(1);
     });
   });
 });

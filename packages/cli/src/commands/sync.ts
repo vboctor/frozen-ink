@@ -26,8 +26,10 @@ export const syncCommand = new Command("sync")
   .description("Sync collections")
   .argument("<collection>", 'Collection name or "*" for all collections')
   .option("--full", "Full re-sync (ignore cursors)")
-  .option("--max <count>", "Maximum entities to sync (overrides collection config)", parseInt)
-  .action(async (collection: string, opts: { full?: boolean; max?: number }) => {
+  .option("--max <count>", "Maximum entities per type to sync (overrides collection config)", parseInt)
+  .option("--max-issues <count>", "Maximum issues to sync (overrides collection config)", parseInt)
+  .option("--max-prs <count>", "Maximum pull requests to sync (overrides collection config)", parseInt)
+  .action(async (collection: string, opts: { full?: boolean; max?: number; maxIssues?: number; maxPrs?: number }) => {
     if (!contextExists()) {
       console.error("VeeContext not initialized. Run: vctx init");
       process.exit(1);
@@ -74,7 +76,15 @@ export const syncCommand = new Command("sync")
       const crawler = factory();
       const config = { ...(col.config as Record<string, unknown>) };
       if (opts.max !== undefined) {
-        config.maxEntities = opts.max;
+        // --max sets both per-type limits (e.g. --max 20 = at most 20 issues + 20 PRs)
+        config.maxIssues = opts.max;
+        config.maxPullRequests = opts.max;
+      }
+      if (opts.maxIssues !== undefined) {
+        config.maxIssues = opts.maxIssues;
+      }
+      if (opts.maxPrs !== undefined) {
+        config.maxPullRequests = opts.maxPrs;
       }
       await crawler.initialize(
         config,

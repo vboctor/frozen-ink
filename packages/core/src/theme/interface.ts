@@ -21,4 +21,11 @@ export interface Theme {
   crawlerType: string;
   render(context: ThemeRenderContext): string;
   getFilePath(context: ThemeRenderContext): string;
+  /**
+   * Optional: render entity data as styled HTML instead of markdown.
+   * The HTML should use CSS custom properties (var(--bg), var(--text), etc.)
+   * so it adapts to the selected UI theme.
+   * Returns null/undefined if not supported for this entity.
+   */
+  renderHtml?(context: ThemeRenderContext): string | null;
 }

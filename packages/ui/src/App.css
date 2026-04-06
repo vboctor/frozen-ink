@@ -1229,3 +1229,389 @@ body {
   color: var(--text-muted);
   font-size: 14px;
 }
+
+/* ===== View Mode Toggle ===== */
+.view-mode-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+  margin-right: 4px;
+}
+
+.view-mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.view-mode-btn:hover {
+  color: var(--text);
+  background: var(--hover-bg);
+}
+
+.view-mode-btn.active {
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* ===== HTML View Container ===== */
+.html-view {
+  padding: 0;
+}
+
+.html-view-content {
+  font-family: var(--font-sans);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* ===== GitHub-Inspired HTML Styles ===== */
+.gh-issue-view {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.gh-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.gh-title {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.gh-title-number {
+  font-weight: 300;
+  color: var(--text-muted);
+}
+
+.gh-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.gh-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 2em;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.gh-state-open {
+  background: #1a7f37;
+  color: #ffffff;
+}
+
+.gh-state-closed {
+  background: #cf222e;
+  color: #ffffff;
+}
+
+.gh-state-merged {
+  background: #8250df;
+  color: #ffffff;
+}
+
+.gh-icon {
+  vertical-align: text-bottom;
+}
+
+.gh-meta-text {
+  color: var(--text-secondary);
+}
+
+.gh-meta-text strong {
+  color: var(--text);
+}
+
+.gh-meta-text code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  background: var(--code-bg);
+  border-radius: var(--radius);
+}
+
+/* Two-column layout */
+.gh-columns {
+  display: flex;
+  gap: 24px;
+}
+
+.gh-main-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.gh-sidebar-col {
+  width: 260px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .gh-columns {
+    flex-direction: column;
+  }
+  .gh-sidebar-col {
+    width: 100%;
+    order: -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .gh-sidebar-section {
+    flex: 1;
+    min-width: 140px;
+  }
+}
+
+/* Comment boxes */
+.gh-comment-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+
+.gh-comment-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--text-secondary);
+}
+
+.gh-comment-header strong {
+  color: var(--text);
+}
+
+.gh-comment-body {
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.gh-comment-body p {
+  margin: 0 0 12px;
+}
+
+.gh-comment-body p:last-child {
+  margin-bottom: 0;
+}
+
+.gh-comment-body pre {
+  background: var(--code-bg);
+  border-radius: var(--radius);
+  padding: 12px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.gh-comment-body code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 2px 6px;
+  background: var(--code-bg);
+  border-radius: 3px;
+}
+
+.gh-comment-body pre code {
+  padding: 0;
+  background: none;
+}
+
+.gh-comment-body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.gh-comment-body a:hover {
+  text-decoration: underline;
+}
+
+.gh-comment-reactions {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+/* Avatar */
+.gh-avatar {
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+/* Reviews */
+.gh-review-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+
+.gh-review-box .gh-comment-header {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.gh-review-box .gh-comment-body {
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.gh-review-approved .gh-comment-header {
+  background: var(--callout-tip);
+  border-color: var(--callout-tip-border);
+}
+
+.gh-review-changes_requested .gh-comment-header {
+  background: var(--callout-danger);
+  border-color: var(--callout-danger-border);
+}
+
+.gh-review-state {
+  font-weight: 500;
+}
+
+/* Check runs */
+.gh-checks-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+
+.gh-checks-header {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.gh-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gh-check-row:last-child {
+  border-bottom: none;
+}
+
+.gh-check-icon {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.gh-check-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.gh-check-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 2em;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.gh-check-success {
+  background: var(--callout-tip);
+  color: var(--callout-tip-border);
+}
+
+.gh-check-failure {
+  background: var(--callout-danger);
+  color: var(--callout-danger-border);
+}
+
+/* Sidebar */
+.gh-sidebar-section {
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gh-sidebar-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.gh-sidebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.gh-sidebar-content {
+  font-size: 13px;
+}
+
+.gh-sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.gh-sidebar-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.gh-sidebar-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.gh-sidebar-link:hover {
+  text-decoration: underline;
+}
+
+/* Labels */
+.gh-label {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 2em;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  margin: 1px 2px;
+}

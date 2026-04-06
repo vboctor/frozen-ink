@@ -378,4 +378,209 @@ describe("GitHubTheme", () => {
       expect(md).toContain("[octocat](https://github.com/octocat)");
     });
   });
+
+  describe("HTML rendering", () => {
+    it("renders issue as HTML with GitHub-style layout", () => {
+      const html = theme.renderHtml!(makeIssueContext());
+      expect(html).toBeTruthy();
+      expect(html).toContain("gh-issue-view");
+      expect(html).toContain("Fix login bug");
+      expect(html).toContain("#427");
+      expect(html).toContain("gh-state-open");
+      expect(html).toContain("octocat");
+    });
+
+    it("renders closed issue with correct state badge", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          state: "closed",
+          stateReason: "not_planned",
+          closedAt: "2024-01-20T10:00:00Z",
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("gh-state-closed");
+      expect(html).toContain("not_planned");
+    });
+
+    it("renders PR with branch info and merge status", () => {
+      const html = theme.renderHtml!(makePRContext());
+      expect(html).toBeTruthy();
+      expect(html).toContain("gh-issue-view");
+      expect(html).toContain("feat/oauth");
+      expect(html).toContain("main");
+      expect(html).toContain("gh-state-open");
+    });
+
+    it("renders merged PR with merged badge", () => {
+      const ctx = makePRContext({
+        data: {
+          ...makePRContext().entity.data,
+          state: "closed",
+          merged: true,
+          mergedAt: "2024-01-15T12:00:00Z",
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("gh-state-merged");
+      expect(html).toContain("Merged");
+    });
+
+    it("renders comments in HTML view", () => {
+      const ctx = makeIssueContext({
+        data: {
+          ...makeIssueContext().entity.data,
+          comments: [
+            {
+              id: 100,
+              user: { login: "reviewer", avatarUrl: "https://avatars.githubusercontent.com/u/3?v=4", url: "https://github.com/reviewer" },
+              body: "Great issue report!",
+              createdAt: "2024-01-16T10:00:00Z",
+              updatedAt: "2024-01-16T10:00:00Z",
+              url: "https://github.com/acme/app/issues/427#issuecomment-100",
+              reactions: null,
+            },
+          ],
+          commentCount: 1,
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("gh-comment-box");
+      expect(html).toContain("Great issue report!");
+      expect(html).toContain("reviewer");
+    });
+
+    it("renders check runs in PR HTML view", () => {
+      const ctx = makePRContext({
+        data: {
+          ...makePRContext().entity.data,
+          checkRuns: [
+            { id: 1, name: "CI Build", status: "completed", conclusion: "success", url: "https://github.com/runs/1", startedAt: "2024-01-10T00:00:00Z", completedAt: "2024-01-10T00:05:00Z" },
+          ],
+        },
+      });
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("gh-checks-box");
+      expect(html).toContain("CI Build");
+      expect(html).toContain("success");
+    });
+
+    it("renders labels with correct colors", () => {
+      const html = theme.renderHtml!(makeIssueContext());
+      expect(html).toContain("gh-label");
+      expect(html).toContain("bug");
+      expect(html).toContain("#d73a4a");
+    });
+
+    it("renders sidebar with assignees", () => {
+      const html = theme.renderHtml!(makeIssueContext());
+      expect(html).toContain("gh-sidebar-col");
+      expect(html).toContain("Assignees");
+      expect(html).toContain("alice");
+      expect(html).toContain("bob");
+    });
+
+    it("renders user avatars as img tags", () => {
+      const html = theme.renderHtml!(makeIssueContext());
+      expect(html).toContain("gh-avatar");
+      expect(html).toContain("<img");
+      expect(html).toContain("avatars.githubusercontent.com");
+    });
+
+    it("renders View on GitHub link", () => {
+      const html = theme.renderHtml!(makeIssueContext());
+      expect(html).toContain("View on GitHub");
+      expect(html).toContain("https://github.com/acme/app/issues/427");
+    });
+
+    it("renders user entity as HTML", () => {
+      const ctx: ThemeRenderContext = {
+        entity: {
+          externalId: "user-octocat",
+          entityType: "user",
+          title: "The Octocat",
+          url: "https://github.com/octocat",
+          tags: ["user"],
+          data: {
+            login: "octocat",
+            name: "The Octocat",
+            avatarUrl: "https://avatars.githubusercontent.com/u/583231?v=4",
+            url: "https://github.com/octocat",
+            company: "GitHub",
+            location: "San Francisco",
+            bio: "Hi there!",
+            blog: "https://github.blog",
+            publicRepos: 8,
+            followers: 10000,
+            following: 9,
+            createdAt: "2011-01-25T18:44:36Z",
+            updatedAt: "2024-01-01T00:00:00Z",
+          },
+        },
+        collectionName: "acme-app",
+        crawlerType: "github",
+      };
+      const html = theme.renderHtml!(ctx);
+      expect(html).toContain("gh-issue-view");
+      expect(html).toContain("The Octocat");
+      expect(html).toContain("@octocat");
+      expect(html).toContain("GitHub");
+      expect(html).toContain("San Francisco");
+      expect(html).toContain("Hi there!");
+      expect(html).toContain("8");
+      expect(html).toContain("10000");
+    });
+  });
+
+  describe("user markdown rendering", () => {
+    it("renders user entity as markdown", () => {
+      const ctx: ThemeRenderContext = {
+        entity: {
+          externalId: "user-octocat",
+          entityType: "user",
+          title: "The Octocat",
+          url: "https://github.com/octocat",
+          tags: ["user"],
+          data: {
+            login: "octocat",
+            name: "The Octocat",
+            avatarUrl: "https://avatars.githubusercontent.com/u/583231?v=4",
+            url: "https://github.com/octocat",
+            company: "GitHub",
+            location: "San Francisco",
+            bio: "Hi there!",
+            blog: "https://github.blog",
+            publicRepos: 8,
+            followers: 10000,
+            following: 9,
+            createdAt: "2011-01-25T18:44:36Z",
+            updatedAt: "2024-01-01T00:00:00Z",
+          },
+        },
+        collectionName: "acme-app",
+        crawlerType: "github",
+      };
+      const md = theme.render(ctx);
+      expect(md).toContain("# The Octocat");
+      expect(md).toContain("**Login:** octocat");
+      expect(md).toContain("**Company:** GitHub");
+      expect(md).toContain("**Location:** San Francisco");
+      expect(md).toContain("**Followers:** 10000");
+    });
+
+    it("generates correct file path for user", () => {
+      const ctx: ThemeRenderContext = {
+        entity: {
+          externalId: "user-octocat",
+          entityType: "user",
+          title: "The Octocat",
+          data: { login: "octocat" },
+        },
+        collectionName: "acme-app",
+        crawlerType: "github",
+      };
+      expect(theme.getFilePath(ctx)).toBe("users/octocat.md");
+    });
+  });
 });

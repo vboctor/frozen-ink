@@ -5,6 +5,14 @@ export interface GitHubConfig {
   syncPullRequests?: boolean;
   syncComments?: boolean;
   syncCheckStatuses?: boolean;
+  /** When true, only syncs open issues/PRs and deletes previously synced closed ones. */
+  openOnly?: boolean;
+  /** Maximum total entities to sync across all types (useful for testing). */
+  maxEntities?: number;
+  /** Maximum number of issues to sync. */
+  maxIssues?: number;
+  /** Maximum number of pull requests to sync. */
+  maxPullRequests?: number;
 }
 
 export interface GitHubCredentials {
@@ -112,4 +120,23 @@ export interface GitHubPullRequest {
   updated_at: string;
   closed_at: string | null;
   comments: number; // comment count
+}
+
+/** Full user profile from GET /users/:login */
+export interface GitHubUserProfile {
+  login: string;
+  id: number;
+  avatar_url: string;
+  html_url: string;
+  name: string | null;
+  company: string | null;
+  blog: string | null;
+  location: string | null;
+  bio: string | null;
+  public_repos: number;
+  public_gists: number;
+  followers: number;
+  following: number;
+  created_at: string;
+  updated_at: string;
 }

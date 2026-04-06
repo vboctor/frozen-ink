@@ -12,6 +12,7 @@ import { generateCommand } from "./commands/generate";
 import { serveCommand } from "./commands/serve";
 import { daemonCommand } from "./commands/daemon";
 import { publishCommand } from "./commands/publish";
+import { updateCommand } from "./commands/update";
 import { unpublishCommand } from "./commands/unpublish";
 
 const program = new Command();
@@ -23,6 +24,7 @@ program
 
 program.addCommand(initCommand);
 program.addCommand(addCommand);
+program.addCommand(updateCommand);
 program.addCommand(syncCommand);
 program.addCommand(statusCommand);
 program.addCommand(collectionsCommand);

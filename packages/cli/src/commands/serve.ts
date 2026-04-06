@@ -12,10 +12,26 @@ import {
   entityTags,
   entityLinks,
   SearchIndexer,
+  ThemeEngine,
   loadConfig,
 } from "@veecontext/core";
+import {
+  gitHubTheme,
+  obsidianTheme,
+  gitTheme,
+  mantisBTTheme,
+} from "@veecontext/crawlers";
 import { startStdioServer } from "@veecontext/mcp";
 import { eq, desc, like } from "drizzle-orm";
+
+function createThemeEngine(): ThemeEngine {
+  const themeEngine = new ThemeEngine();
+  themeEngine.register(gitHubTheme);
+  themeEngine.register(obsidianTheme);
+  themeEngine.register(gitTheme);
+  themeEngine.register(mantisBTTheme);
+  return themeEngine;
+}
 
 const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -124,6 +140,7 @@ export function createApiServer(
   port: number,
 ): ReturnType<typeof Bun.serve> {
   const uiDistDir = resolveUiDistDir();
+  const themeEngine = createThemeEngine();
 
   const server = Bun.serve({
     port,
@@ -206,6 +223,84 @@ export function createApiServer(
           status: 200,
           headers: { "Content-Type": "text/markdown; charset=utf-8" },
         });
+      }
+
+      // GET /api/collections/:name/html/*path — render entity as styled HTML
+      const htmlMatch = path.match(
+        /^\/api\/collections\/([^/]+)\/html\/(.+)$/,
+      );
+      if (htmlMatch && req.method === "GET") {
+        const name = decodeURIComponent(htmlMatch[1]);
+        const filePath = decodeURIComponent(htmlMatch[2]);
+        const col = getCollection(name);
+        if (!col) return errorResponse("Collection not found", 404);
+
+        if (!themeEngine.hasHtmlRenderer(col.crawler)) {
+          return errorResponse("HTML rendering not supported for this crawler", 404);
+        }
+
+        const dbPath = getCollectionDbPath(name);
+        if (!existsSync(dbPath))
+          return errorResponse("Collection database not found", 404);
+
+        const colDb = getCollectionDb(dbPath);
+
+        // Look up entity by markdown_path (try with and without markdown/ prefix)
+        const pathVariants = [`markdown/${filePath}`, filePath];
+        let entity = null;
+        for (const variant of pathVariants) {
+          const [row] = colDb
+            .select()
+            .from(entities)
+            .where(eq(entities.markdownPath, variant))
+            .all();
+          if (row) { entity = row; break; }
+        }
+
+        if (!entity) return errorResponse("Entity not found", 404);
+
+        // Get tags
+        const tags = colDb
+          .select()
+          .from(entityTags)
+          .where(eq(entityTags.entityId, entity.id))
+          .all()
+          .map((t) => t.tag);
+
+        const data = typeof entity.data === "string"
+          ? JSON.parse(entity.data)
+          : entity.data;
+
+        const html = themeEngine.renderHtml({
+          entity: {
+            externalId: entity.externalId,
+            entityType: entity.entityType,
+            title: entity.title,
+            data,
+            url: entity.url ?? undefined,
+            tags,
+          },
+          collectionName: name,
+          crawlerType: col.crawler,
+        });
+
+        if (!html) return errorResponse("HTML rendering not available", 404);
+
+        return new Response(html, {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      // GET /api/collections/:name/html-support — check if HTML rendering is available
+      const htmlSupportMatch = path.match(
+        /^\/api\/collections\/([^/]+)\/html-support$/,
+      );
+      if (htmlSupportMatch && req.method === "GET") {
+        const name = decodeURIComponent(htmlSupportMatch[1]);
+        const col = getCollection(name);
+        if (!col) return errorResponse("Collection not found", 404);
+        return jsonResponse({ supported: themeEngine.hasHtmlRenderer(col.crawler) });
       }
 
       // GET /api/collections/:name/entities

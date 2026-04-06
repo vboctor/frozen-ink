@@ -3,8 +3,10 @@ import Layout from "./components/Layout";
 import CollectionPicker from "./components/CollectionPicker";
 import FileTree from "./components/FileTree";
 import MarkdownView from "./components/MarkdownView";
+import HtmlView from "./components/HtmlView";
 import SearchBar from "./components/SearchBar";
 import ThemeSwitcher, { type ThemeId } from "./components/ThemeSwitcher";
+import ViewModeToggle, { type ViewMode } from "./components/ViewModeToggle";
 import TabBar, { type Tab } from "./components/TabBar";
 import LinksPanel, { type Backlink, type LinkItem } from "./components/LinksPanel";
 import type { Collection, TreeNode } from "./types";
@@ -109,6 +111,9 @@ export default function App() {
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<LinkItem[]>([]);
   const [backlinksOpen, setBacklinksOpen] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>("markdown");
+  const [htmlContent, setHtmlContent] = useState<string | null>(null);
+  const [htmlAvailable, setHtmlAvailable] = useState(false);
 
   // Tabs
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -306,6 +311,43 @@ export default function App() {
       .then(setOutgoingLinks)
       .catch(() => setOutgoingLinks([]));
   }, [selectedCollection, selectedFile]);
+
+  // Check if HTML rendering is available for the selected collection
+  useEffect(() => {
+    if (!selectedCollection) {
+      setHtmlAvailable(false);
+      return;
+    }
+    fetch(`/api/collections/${encodeURIComponent(selectedCollection)}/html-support`)
+      .then((r) => (r.ok ? r.json() : { supported: false }))
+      .then((data: { supported: boolean }) => {
+        setHtmlAvailable(data.supported);
+        if (!data.supported && viewMode === "html") {
+          setViewMode("markdown");
+        }
+      })
+      .catch(() => setHtmlAvailable(false));
+  }, [selectedCollection]);
+
+  // Fetch HTML content when in HTML mode
+  useEffect(() => {
+    if (viewMode !== "html" || !selectedCollection || !selectedFile) {
+      setHtmlContent(null);
+      return;
+    }
+    fetch(
+      `/api/collections/${encodeURIComponent(selectedCollection)}/html/${selectedFile}`,
+    )
+      .then((r) => {
+        if (!r.ok) throw new Error("HTML not available");
+        return r.text();
+      })
+      .then(setHtmlContent)
+      .catch(() => {
+        setHtmlContent(null);
+        setViewMode("markdown");
+      });
+  }, [viewMode, selectedCollection, selectedFile]);
 
   // Core navigation: open a file, optionally in a new tab.
   // Uses functional state updates throughout to avoid stale closure issues.
@@ -588,6 +630,11 @@ export default function App() {
           onClose={handleCloseTab}
         />
         <div className="toolbar-actions">
+          <ViewModeToggle
+            mode={viewMode}
+            htmlAvailable={htmlAvailable}
+            onChange={setViewMode}
+          />
           <button
             className="nav-btn"
             onClick={() => setSearchOpen(true)}
@@ -612,13 +659,16 @@ export default function App() {
       <div className="main-body">
         <div className="main-inner">
           {loading && <div className="loading">Loading...</div>}
-          {!loading && selectedFile && fileContent !== null && (
+          {!loading && selectedFile && fileContent !== null && viewMode === "markdown" && (
             <MarkdownView
               content={fileContent}
               collection={selectedCollection || ""}
               allFiles={allFiles}
               onWikilinkClick={handleWikilinkNavigate}
             />
+          )}
+          {!loading && selectedFile && viewMode === "html" && htmlContent !== null && (
+            <HtmlView html={htmlContent} />
           )}
           {!selectedFile && !loading && (
             <div className="empty-state">

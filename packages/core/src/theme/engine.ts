@@ -26,4 +26,15 @@ export class ThemeEngine {
     }
     return theme.getFilePath(context);
   }
+
+  hasHtmlRenderer(crawlerType: string): boolean {
+    const theme = this.themes.get(crawlerType);
+    return !!theme?.renderHtml;
+  }
+
+  renderHtml(context: ThemeRenderContext): string | null {
+    const theme = this.themes.get(context.crawlerType);
+    if (!theme?.renderHtml) return null;
+    return theme.renderHtml(context);
+  }
 }
