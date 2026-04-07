@@ -3,6 +3,7 @@ import type { Env } from "../types";
 export interface CollectionMeta {
   name: string;
   title: string;
+  crawler_type: string | null;
 }
 
 export interface Entity {
@@ -43,8 +44,50 @@ export interface Attachment {
 }
 
 export async function getCollections(db: D1Database): Promise<CollectionMeta[]> {
-  const { results } = await db.prepare("SELECT name, title FROM collections_meta").all<CollectionMeta>();
+  const { results } = await db.prepare("SELECT name, title, crawler_type FROM collections_meta").all<CollectionMeta>();
   return results ?? [];
+}
+
+export async function getCollection(db: D1Database, name: string): Promise<CollectionMeta | null> {
+  const result = await db
+    .prepare("SELECT name, title, crawler_type FROM collections_meta WHERE name = ?")
+    .bind(name)
+    .first<CollectionMeta>();
+  return result ?? null;
+}
+
+export async function getEntityByMarkdownPath(
+  db: D1Database,
+  collectionName: string,
+  markdownPath: string,
+): Promise<Entity | null> {
+  // Try with and without "markdown/" prefix
+  const variants = [`markdown/${markdownPath}`, markdownPath];
+  for (const variant of variants) {
+    const result = await db
+      .prepare("SELECT * FROM entities WHERE collection_name = ? AND markdown_path = ?")
+      .bind(collectionName, variant)
+      .first<Entity>();
+    if (result) return result;
+  }
+  return null;
+}
+
+export async function getEntityMarkdownPathByExternalId(
+  db: D1Database,
+  collectionName: string,
+  externalId: string,
+): Promise<string | null> {
+  const result = await db
+    .prepare("SELECT markdown_path FROM entities WHERE collection_name = ? AND external_id = ?")
+    .bind(collectionName, externalId)
+    .first<{ markdown_path: string | null }>();
+  if (!result?.markdown_path) return null;
+  const prefix = "markdown/";
+  const rel = result.markdown_path.startsWith(prefix)
+    ? result.markdown_path.slice(prefix.length)
+    : result.markdown_path;
+  return rel.endsWith(".md") ? rel.slice(0, -3) : rel;
 }
 
 export async function getEntities(

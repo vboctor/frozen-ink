@@ -82,6 +82,8 @@
       "name": "@veecontext/worker",
       "version": "0.1.0",
       "dependencies": {
+        "@veecontext/core": "workspace:*",
+        "@veecontext/crawlers": "workspace:*",
         "hono": "^4.0.0",
       },
       "devDependencies": {
