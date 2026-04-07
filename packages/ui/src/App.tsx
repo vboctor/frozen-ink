@@ -127,6 +127,7 @@ export default function App() {
   const [backlinksOpen, setBacklinksOpen] = useState(!isMobile);
   const [viewMode, setViewMode] = useState<ViewMode>("markdown");
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
+  const [htmlLoading, setHtmlLoading] = useState(false);
   const [htmlAvailable, setHtmlAvailable] = useState(false);
 
   // Tabs
@@ -366,9 +367,11 @@ export default function App() {
   useEffect(() => {
     if (!htmlAvailable || !selectedCollection || !selectedFile) {
       setHtmlContent(null);
+      setHtmlLoading(false);
       return;
     }
-    setHtmlContent(null); // clear while loading
+    setHtmlContent(null);
+    setHtmlLoading(true);
     fetch(
       `/api/collections/${encodeURIComponent(selectedCollection)}/html/${selectedFile}`,
     )
@@ -376,9 +379,13 @@ export default function App() {
         if (!r.ok) throw new Error("HTML not available");
         return r.text();
       })
-      .then(setHtmlContent)
+      .then((html) => {
+        setHtmlContent(html);
+        setHtmlLoading(false);
+      })
       .catch(() => {
         setHtmlContent(null);
+        setHtmlLoading(false);
       });
   }, [htmlAvailable, selectedCollection, selectedFile]);
 
@@ -705,11 +712,11 @@ export default function App() {
       </div>
       <div className="main-body">
         <div className="main-inner">
-          {loading && <div className="loading">Loading...</div>}
+          {(loading || (viewMode === "html" && htmlLoading)) && <div className="loading">Loading...</div>}
           {!loading && selectedFile && viewMode === "html" && htmlContent !== null && (
             <HtmlView html={htmlContent} onWikilinkClick={handleWikilinkNavigate} />
           )}
-          {!loading && selectedFile && fileContent !== null && !(viewMode === "html" && htmlContent !== null) && (
+          {!loading && selectedFile && viewMode === "markdown" && fileContent !== null && (
             <MarkdownView
               content={fileContent}
               collection={selectedCollection || ""}
@@ -750,9 +757,9 @@ export default function App() {
           </div>
         </div>
       )}
-      {/* Mobile bottom action bar */}
+      {/* Mobile top action bar */}
       {isMobile && (
-        <div className="mobile-bottom-bar">
+        <div className="mobile-top-bar">
           <button
             className={`mobile-bar-btn${sidebarOpen ? " active" : ""}`}
             onClick={() => setSidebarOpen((o) => !o)}

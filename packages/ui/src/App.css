@@ -1891,17 +1891,18 @@ body {
 }
 
 /* ===== Mobile bottom action bar ===== */
-.mobile-bottom-bar {
+.mobile-top-bar {
   display: flex;
   align-items: center;
   justify-content: space-around;
   height: 48px;
   min-height: 48px;
   background: var(--bg-secondary);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 0 4px;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-top: env(safe-area-inset-top, 0px);
   flex-shrink: 0;
+  order: -1;
 }
 
 .mobile-bar-btn {
@@ -2019,6 +2020,42 @@ body {
     max-width: 140px;
     padding: 0 8px 0 10px;
     font-size: 11px;
+  }
+
+  /* HTML view: compact padding and font sizes on mobile */
+  .gh-issue-view {
+    padding: 12px 14px 24px;
+  }
+
+  .gh-title {
+    font-size: 20px;
+  }
+
+  .gh-header-meta {
+    font-size: 13px;
+    gap: 6px;
+  }
+
+  .gh-comment-body {
+    font-size: 14px;
+  }
+
+  /* Code blocks scroll horizontally instead of overflowing */
+  .gh-code-block,
+  .gh-diff-hunk {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .gh-code-block pre,
+  .gh-diff-hunk {
+    white-space: pre;
+    word-break: normal;
+  }
+
+  /* Diff comments: remove extra indentation */
+  .gh-diff-comment {
+    margin-left: 0;
   }
 
   /* Toolbar adjustments */

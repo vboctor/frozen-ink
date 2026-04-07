@@ -202,7 +202,7 @@ export const publishCommand = new Command("publish")
     schemaSql.push("DROP TABLE IF EXISTS entities;");
     schemaSql.push("DROP TABLE IF EXISTS collections_meta;");
     schemaSql.push("");
-    schemaSql.push("CREATE TABLE collections_meta (name TEXT PRIMARY KEY, title TEXT);");
+    schemaSql.push("CREATE TABLE collections_meta (name TEXT PRIMARY KEY, title TEXT, crawler_type TEXT);");
     schemaSql.push(`CREATE TABLE entities (
   id INTEGER PRIMARY KEY, collection_name TEXT NOT NULL,
   external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
@@ -241,7 +241,7 @@ export const publishCommand = new Command("publish")
       const colDb = getCollectionDb(dbPath);
       const title = col.title || colName;
 
-      schemaSql.push(`INSERT INTO collections_meta (name, title) VALUES ('${escapeSQL(colName)}', '${escapeSQL(title)}');`);
+      schemaSql.push(`INSERT INTO collections_meta (name, title, crawler_type) VALUES ('${escapeSQL(colName)}', '${escapeSQL(title)}', '${escapeSQL(col.crawler)}');`);
 
       const allEntities = colDb.select().from(entities).all();
       const entityIdMap = new Map<number, number>();

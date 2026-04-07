@@ -1,4 +1,4 @@
-import type { Theme, ThemeRenderContext } from "@veecontext/core";
+import type { Theme, ThemeRenderContext } from "@veecontext/core/theme";
 
 export class ObsidianTheme implements Theme {
   crawlerType = "obsidian";

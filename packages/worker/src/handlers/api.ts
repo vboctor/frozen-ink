@@ -2,8 +2,11 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 import {
   getCollections,
+  getCollection,
   getEntities,
   getEntityByExternalId,
+  getEntityByMarkdownPath,
+  getEntityMarkdownPathByExternalId,
   getEntityTags,
   getEntityCount,
   getBacklinks,
@@ -11,6 +14,14 @@ import {
 } from "../db/client";
 import { searchEntities } from "../db/search";
 import { getR2Object, getMimeType } from "../storage/r2";
+import { ThemeEngine } from "@veecontext/core/theme";
+import { GitHubTheme, ObsidianTheme, GitTheme, MantisBTTheme } from "@veecontext/crawlers/themes";
+
+const themeEngine = new ThemeEngine();
+themeEngine.register(new GitHubTheme());
+themeEngine.register(new ObsidianTheme());
+themeEngine.register(new GitTheme());
+themeEngine.register(new MantisBTTheme());
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -25,6 +36,65 @@ api.get("/api/collections", async (c) => {
     })),
   );
   return c.json(result);
+});
+
+// GET /api/collections/:name/html-support
+api.get("/api/collections/:name/html-support", async (c) => {
+  const name = c.req.param("name");
+  const col = await getCollection(c.env.DB, name);
+  if (!col?.crawler_type) return c.json({ supported: false });
+  return c.json({ supported: themeEngine.hasHtmlRenderer(col.crawler_type) });
+});
+
+// GET /api/collections/:name/html/*
+api.get("/api/collections/:name/html/*", async (c) => {
+  const name = c.req.param("name");
+  const col = await getCollection(c.env.DB, name);
+  if (!col?.crawler_type || !themeEngine.hasHtmlRenderer(col.crawler_type)) {
+    return c.text("HTML not supported for this collection", 404);
+  }
+
+  const filePath = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/html/`, "");
+  const decoded = decodeURIComponent(filePath);
+
+  const entity = await getEntityByMarkdownPath(c.env.DB, name, decoded);
+  if (!entity) return c.text("Entity not found", 404);
+
+  const [tags, allEntities] = await Promise.all([
+    getEntityTags(c.env.DB, name, entity.id),
+    c.env.DB.prepare("SELECT external_id, markdown_path FROM entities WHERE collection_name = ?")
+      .bind(name)
+      .all<{ external_id: string; markdown_path: string | null }>()
+      .then((r) => r.results ?? []),
+  ]);
+
+  // Build synchronous externalId → relative path map for cross-reference resolution
+  const entityPathMap = new Map<string, string>();
+  for (const row of allEntities) {
+    if (!row.markdown_path) continue;
+    const prefix = "markdown/";
+    const rel = row.markdown_path.startsWith(prefix) ? row.markdown_path.slice(prefix.length) : row.markdown_path;
+    entityPathMap.set(row.external_id, rel.endsWith(".md") ? rel.slice(0, -3) : rel);
+  }
+
+  const data = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
+
+  const html = themeEngine.renderHtml({
+    entity: {
+      externalId: entity.external_id,
+      entityType: entity.entity_type,
+      title: entity.title,
+      data,
+      url: entity.url ?? undefined,
+      tags,
+    },
+    collectionName: name,
+    crawlerType: col.crawler_type,
+    lookupEntityPath: (externalId) => entityPathMap.get(externalId),
+  });
+  if (!html) return c.text("HTML rendering failed", 500);
+
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 });
 
 // GET /api/collections/:name/tree
