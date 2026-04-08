@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-contextBridge.exposeInMainWorld("veecontext", {
+contextBridge.exposeInMainWorld("frozenink", {
   openDirectoryPicker: () => ipcRenderer.invoke("open-directory-picker"),
   getWorkspaces: () => ipcRenderer.invoke("get-workspaces"),
   createWorkspace: (name: string, path: string) =>

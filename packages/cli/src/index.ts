@@ -18,8 +18,8 @@ import { unpublishCommand } from "./commands/unpublish";
 const program = new Command();
 
 program
-  .name("vctx")
-  .description("VeeContext - Local data replica manager")
+  .name("fink")
+  .description("Frozen Ink - Local data replica manager")
   .version("0.1.0");
 
 program.addCommand(initCommand);

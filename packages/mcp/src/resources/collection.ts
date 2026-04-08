@@ -9,7 +9,7 @@ import {
   getCollectionDbPath,
   entities,
   syncRuns,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import { desc } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
@@ -20,9 +20,9 @@ export function registerCollectionResources(
   // Static resource: list all collections
   server.registerResource(
     "collections",
-    "veecontext://collections",
+    "frozenink://collections",
     {
-      description: "List of all configured VeeContext collections",
+      description: "List of all configured Frozen Ink collections",
       mimeType: "application/json",
     },
     async () => {
@@ -30,9 +30,9 @@ export function registerCollectionResources(
         return {
           contents: [
             {
-              uri: "veecontext://collections",
+              uri: "frozenink://collections",
               mimeType: "application/json",
-              text: JSON.stringify({ error: "VeeContext not initialized" }),
+              text: JSON.stringify({ error: "Frozen Ink not initialized" }),
             },
           ],
         };
@@ -48,7 +48,7 @@ export function registerCollectionResources(
       return {
         contents: [
           {
-            uri: "veecontext://collections",
+            uri: "frozenink://collections",
             mimeType: "application/json",
             text: JSON.stringify(result),
           },
@@ -59,7 +59,7 @@ export function registerCollectionResources(
 
   // Template resource: single collection details
   const collectionTemplate = new ResourceTemplate(
-    "veecontext://collections/{name}",
+    "frozenink://collections/{name}",
     {
       list: async () => {
         if (!contextExists()) return { resources: [] };
@@ -68,7 +68,7 @@ export function registerCollectionResources(
 
         return {
           resources: rows.map((col) => ({
-            uri: `veecontext://collections/${col.name}`,
+            uri: `frozenink://collections/${col.name}`,
             name: col.name,
             description: `${col.crawler} collection: ${col.name}`,
             mimeType: "application/json",
@@ -82,7 +82,7 @@ export function registerCollectionResources(
     "collection",
     collectionTemplate,
     {
-      description: "Details for a specific VeeContext collection",
+      description: "Details for a specific Frozen Ink collection",
       mimeType: "application/json",
     },
     async (uri, variables) => {
@@ -94,7 +94,7 @@ export function registerCollectionResources(
             {
               uri: uri.toString(),
               mimeType: "application/json",
-              text: JSON.stringify({ error: "VeeContext not initialized" }),
+              text: JSON.stringify({ error: "Frozen Ink not initialized" }),
             },
           ],
         };

@@ -8,7 +8,7 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
@@ -34,7 +34,7 @@ export function registerGetMarkdown(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ error: "VeeContext not initialized" }),
+              text: JSON.stringify({ error: "Frozen Ink not initialized" }),
             },
           ],
         };
@@ -99,7 +99,7 @@ export function registerGetMarkdown(
         };
       }
 
-      const collectionDir = join(options.veecontextHome, "collections", args.collection);
+      const collectionDir = join(options.frozeninkHome, "collections", args.collection);
       const markdownPath = join(collectionDir, entity.markdownPath);
 
       if (!existsSync(markdownPath)) {

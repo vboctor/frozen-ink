@@ -1,15 +1,15 @@
 import { Command } from "commander";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { getVeeContextHome, defaultConfig, saveContext } from "@veecontext/core";
+import { getFrozenInkHome, defaultConfig, saveContext } from "@frozenink/core";
 
 export const initCommand = new Command("init")
-  .description("Initialize VeeContext directory and configuration")
+  .description("Initialize Frozen Ink directory and configuration")
   .action(() => {
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
 
     if (existsSync(join(home, "context.yml"))) {
-      console.log(`VeeContext already initialized at ${home}`);
+      console.log(`Frozen Ink already initialized at ${home}`);
       return;
     }
 
@@ -28,7 +28,7 @@ export const initCommand = new Command("init")
     // Create collections directory
     mkdirSync(join(home, "collections"), { recursive: true });
 
-    console.log(`Initialized VeeContext at ${home}`);
+    console.log(`Initialized Frozen Ink at ${home}`);
     console.log(`  config.json  - configuration`);
     console.log(`  context.yml  - collection registry`);
     console.log(`  collections/ - collection data`);

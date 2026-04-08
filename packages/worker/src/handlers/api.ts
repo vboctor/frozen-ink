@@ -14,8 +14,8 @@ import {
 } from "../db/client";
 import { searchEntities } from "../db/search";
 import { getR2Object, getMimeType } from "../storage/r2";
-import { ThemeEngine } from "@veecontext/core/theme";
-import { GitHubTheme, ObsidianTheme, GitTheme, MantisBTTheme } from "@veecontext/crawlers/themes";
+import { ThemeEngine } from "@frozenink/core/theme";
+import { GitHubTheme, ObsidianTheme, GitTheme, MantisBTTheme } from "@frozenink/crawlers/themes";
 
 const themeEngine = new ThemeEngine();
 themeEngine.register(new GitHubTheme());

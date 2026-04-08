@@ -20,7 +20,7 @@ import type { Collection, TreeNode, AppInfo, UIMode } from "./types";
 
 function loadTheme(): ThemeId {
   try {
-    const stored = localStorage.getItem("veecontext-theme");
+    const stored = localStorage.getItem("frozenink-theme");
     if (stored) return stored as ThemeId;
   } catch {}
   return "default";
@@ -28,29 +28,29 @@ function loadTheme(): ThemeId {
 
 function applyTheme(theme: ThemeId) {
   document.documentElement.setAttribute("data-theme", theme);
-  try { localStorage.setItem("veecontext-theme", theme); } catch {}
+  try { localStorage.setItem("frozenink-theme", theme); } catch {}
 }
 
 
 function loadSidebarWidth(): number {
   try {
-    const stored = localStorage.getItem("veecontext-sidebar-width");
+    const stored = localStorage.getItem("frozenink-sidebar-width");
     if (stored) return Math.max(160, Math.min(600, Number(stored)));
   } catch {}
   return 280;
 }
 
 function saveSidebarWidth(width: number) {
-  try { localStorage.setItem("veecontext-sidebar-width", String(width)); } catch {}
+  try { localStorage.setItem("frozenink-sidebar-width", String(width)); } catch {}
   savePreferenceToServer("sidebarWidth", width);
 }
 
 function loadLastCollection(): string | null {
-  try { return localStorage.getItem("veecontext-collection") ?? null; } catch { return null; }
+  try { return localStorage.getItem("frozenink-collection") ?? null; } catch { return null; }
 }
 
 function saveLastCollection(name: string) {
-  try { localStorage.setItem("veecontext-collection", name); } catch {}
+  try { localStorage.setItem("frozenink-collection", name); } catch {}
   savePreferenceToServer("lastCollection", name);
 }
 
@@ -61,13 +61,13 @@ interface SavedTabs {
 
 function loadCollectionTabs(collection: string): SavedTabs | null {
   try {
-    const raw = localStorage.getItem(`veecontext-tabs:${collection}`);
+    const raw = localStorage.getItem(`frozenink-tabs:${collection}`);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
 
 function saveCollectionTabs(collection: string, tabs: { file: string }[], activeFile: string | null) {
-  try { localStorage.setItem(`veecontext-tabs:${collection}`, JSON.stringify({ tabs, activeFile })); } catch {}
+  try { localStorage.setItem(`frozenink-tabs:${collection}`, JSON.stringify({ tabs, activeFile })); } catch {}
   savePreferenceToServer(`tabs:${collection}`, { tabs, activeFile });
 }
 
@@ -119,14 +119,14 @@ function useIsMobile(breakpoint = 768) {
 
 function loadUIMode(): UIMode {
   try {
-    const stored = localStorage.getItem("veecontext-ui-mode");
+    const stored = localStorage.getItem("frozenink-ui-mode");
     if (stored === "manage") return "manage";
   } catch {}
   return "browse";
 }
 
 function saveUIMode(mode: UIMode) {
-  try { localStorage.setItem("veecontext-ui-mode", mode); } catch {}
+  try { localStorage.setItem("frozenink-ui-mode", mode); } catch {}
 }
 
 export default function App() {
@@ -243,13 +243,13 @@ export default function App() {
         setSelectedCollection((prev) => prev ?? (prefs.lastCollection as string));
       }
       // Hydrate localStorage with server values so subsequent reads work
-      if (prefs.theme) try { localStorage.setItem("veecontext-theme", prefs.theme as string); } catch {}
-      if (prefs.lastCollection) try { localStorage.setItem("veecontext-collection", prefs.lastCollection as string); } catch {}
-      if (prefs.sidebarWidth) try { localStorage.setItem("veecontext-sidebar-width", String(prefs.sidebarWidth)); } catch {}
+      if (prefs.theme) try { localStorage.setItem("frozenink-theme", prefs.theme as string); } catch {}
+      if (prefs.lastCollection) try { localStorage.setItem("frozenink-collection", prefs.lastCollection as string); } catch {}
+      if (prefs.sidebarWidth) try { localStorage.setItem("frozenink-sidebar-width", String(prefs.sidebarWidth)); } catch {}
       // Hydrate tab state for each collection
       for (const [key, value] of Object.entries(prefs)) {
         if (key.startsWith("tabs:") && value) {
-          try { localStorage.setItem(`veecontext-${key}`, JSON.stringify(value)); } catch {}
+          try { localStorage.setItem(`frozenink-${key}`, JSON.stringify(value)); } catch {}
         }
       }
     });

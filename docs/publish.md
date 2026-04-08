@@ -1,8 +1,8 @@
 # Publishing Collections to Cloudflare
 
-VeeContext can publish one or more collections as a read-only, password-protected website on Cloudflare Workers with remote MCP access.
+Frozen Ink can publish one or more collections as a read-only, password-protected website on Cloudflare Workers with remote MCP access.
 
-Sync and collection management remain local. Publishing uploads a snapshot. To update, re-sync locally then re-run `vctx publish`.
+Sync and collection management remain local. Publishing uploads a snapshot. To update, re-sync locally then re-run `fink publish`.
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@ Sync and collection management remain local. Publishing uploads a snapshot. To u
 
 ## Authentication
 
-VeeContext uses the `wrangler` CLI for all Cloudflare operations. Authenticate with one of:
+Frozen Ink uses the `wrangler` CLI for all Cloudflare operations. Authenticate with one of:
 
 ```bash
 # Option 1: Interactive OAuth login (recommended)
@@ -34,20 +34,20 @@ bun run build:ui
 cd packages/worker && bun run build && cd ../..
 
 # Publish one or more collections
-vctx publish my-github my-notes --password secret123 --name my-pub
+fink publish my-github my-notes --password secret123 --name my-pub
 ```
 
 Options:
 - `--password <password>` — Password to protect all access (recommended)
-- `--name <name>` — Worker name (default: `vctx-<first-collection>-<random>`)
+- `--name <name>` — Worker name (default: `fink-<first-collection>-<random>`)
 
 ## Updating a Published Deployment
 
 Re-sync your local data, then publish again with the same `--name`:
 
 ```bash
-vctx sync "*"
-vctx publish my-github my-notes --password secret123 --name my-pub
+fink sync "*"
+fink publish my-github my-notes --password secret123 --name my-pub
 ```
 
 This replaces the D1 database contents, uploads new R2 files, and removes stale files that no longer exist locally.
@@ -63,7 +63,7 @@ A logout button appears at the bottom of the sidebar.
 ### Claude Code
 
 ```bash
-claude mcp add veecontext --transport streamable-http \
+claude mcp add frozenink --transport streamable-http \
   --url https://my-pub.yoursubdomain.workers.dev/mcp \
   --header "Authorization: Bearer <password>"
 ```
@@ -75,7 +75,7 @@ Add to your MCP config:
 ```json
 {
   "mcpServers": {
-    "veecontext": {
+    "frozenink": {
       "url": "https://my-pub.yoursubdomain.workers.dev/mcp",
       "transport": "streamable-http",
       "headers": {
@@ -97,7 +97,7 @@ Add to your MCP config:
 ## Unpublishing
 
 ```bash
-vctx unpublish my-pub
+fink unpublish my-pub
 ```
 
 This deletes the Cloudflare Worker, D1 database, and R2 bucket. Use `--force` to skip confirmation.

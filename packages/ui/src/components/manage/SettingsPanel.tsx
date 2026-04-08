@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import type { VeeContextConfig } from "../../types";
+import type { FrozenInkConfig } from "../../types";
 
 export default function SettingsPanel() {
-  const [config, setConfig] = useState<VeeContextConfig | null>(null);
+  const [config, setConfig] = useState<FrozenInkConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 

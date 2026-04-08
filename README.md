@@ -1,6 +1,6 @@
-# VeeContext
+# Frozen Ink
 
-VeeContext is a local data aggregation tool that crawls multiple sources (GitHub repositories, Obsidian vaults, Git repos, MantisBT), syncs their content into a local SQLite database, renders navigable Obsidian-compatible markdown, and serves everything through a web UI and Model Context Protocol (MCP) server for AI coding assistants.
+Frozen Ink is a local data aggregation tool that crawls multiple sources (GitHub repositories, Obsidian vaults, Git repos, MantisBT), syncs their content into a local SQLite database, renders navigable Obsidian-compatible markdown, and serves everything through a web UI and Model Context Protocol (MCP) server for AI coding assistants.
 
 Collections can also be **published to Cloudflare** as a password-protected website with remote MCP access, or managed through a **cross-platform desktop app** (Electron).
 
@@ -35,17 +35,17 @@ Data Sources (GitHub API, Obsidian Vault, Git Repo, MantisBT, ...)
 
 | Package | Description |
 |---------|-------------|
-| [`@veecontext/core`](packages/core/) | Shared types, Drizzle ORM + SQLite schemas, sync engine, FTS5 search, config loader, context.yml management, runtime compat layer, static export |
-| [`@veecontext/crawlers`](packages/crawlers/) | Data source crawlers and markdown generators |
-| [`@veecontext/mcp`](packages/mcp/) | MCP server with tools and resources for AI assistants |
-| [`@veecontext/cli`](packages/cli/) | CLI (`vctx`) for init, add, sync, search, serve, daemon, publish, unpublish; management API |
-| [`@veecontext/ui`](packages/ui/) | Vite + React web UI with 6 display themes, browse + management modes |
-| [`@veecontext/worker`](packages/worker/) | Cloudflare Worker for published deployments (Hono + D1 + R2) |
-| [`@veecontext/desktop`](packages/desktop/) | Electron desktop app with workspace management, system tray |
+| [`@frozenink/core`](packages/core/) | Shared types, Drizzle ORM + SQLite schemas, sync engine, FTS5 search, config loader, context.yml management, runtime compat layer, static export |
+| [`@frozenink/crawlers`](packages/crawlers/) | Data source crawlers and markdown generators |
+| [`@frozenink/mcp`](packages/mcp/) | MCP server with tools and resources for AI assistants |
+| [`@frozenink/cli`](packages/cli/) | CLI (`fink`) for init, add, sync, search, serve, daemon, publish, unpublish; management API |
+| [`@frozenink/ui`](packages/ui/) | Vite + React web UI with 6 display themes, browse + management modes |
+| [`@frozenink/worker`](packages/worker/) | Cloudflare Worker for published deployments (Hono + D1 + R2) |
+| [`@frozenink/desktop`](packages/desktop/) | Electron desktop app with workspace management, system tray |
 
 ## Crawlers
 
-Each crawler syncs a different data source into VeeContext. See individual docs for setup and details:
+Each crawler syncs a different data source into Frozen Ink. See individual docs for setup and details:
 
 | Crawler | Source | Entities | Docs |
 |---------|--------|----------|------|
@@ -62,28 +62,28 @@ All commands below run from the **repository root**. No global install required.
 # Install dependencies
 bun install
 
-# Initialize VeeContext (~/.veecontext/)
-bun run vctx -- init
+# Initialize Frozen Ink (~/.frozenink/)
+bun run fink -- init
 ```
 
 ### Adding collections
 
 **Obsidian vault** — syncs all markdown notes and attachments:
 ```bash
-bun run vctx -- add obsidian --name my-vault --path ~/Documents/MyVault
+bun run fink -- add obsidian --name my-vault --path ~/Documents/MyVault
 ```
 
 **Git repository** — syncs commits, branches, and tags:
 ```bash
-bun run vctx -- add git --name my-repo --path ~/projects/my-repo
+bun run fink -- add git --name my-repo --path ~/projects/my-repo
 
 # Include full commit diffs in the rendered markdown:
-bun run vctx -- add git --name my-repo --path ~/projects/my-repo --include-diffs
+bun run fink -- add git --name my-repo --path ~/projects/my-repo --include-diffs
 ```
 
 **GitHub repository** — syncs issues and pull requests via the GitHub API:
 ```bash
-bun run vctx -- add github --name my-gh \
+bun run fink -- add github --name my-gh \
   --token ghp_yourPersonalAccessToken \
   --owner your-username \
   --repo your-repo-name
@@ -93,18 +93,18 @@ bun run vctx -- add github --name my-gh \
 
 ```bash
 # Sync a single collection
-bun run vctx -- sync my-vault
+bun run fink -- sync my-vault
 
 # Sync all collections
-bun run vctx -- sync "*"
+bun run fink -- sync "*"
 
 # Check sync status
-bun run vctx -- status
+bun run fink -- status
 
 # Start the background daemon (syncs on the configured interval)
-bun run vctx -- daemon start
-bun run vctx -- daemon status
-bun run vctx -- daemon stop
+bun run fink -- daemon start
+bun run fink -- daemon status
+bun run fink -- daemon stop
 ```
 
 ### Running the web UI
@@ -117,13 +117,13 @@ bun run dev
 bun run serve
 
 # MCP server only (for AI assistants, no web UI)
-bun run vctx -- serve --mcp-only
+bun run fink -- serve --mcp-only
 ```
 
-> **Optional: install `vctx` globally** to drop the `bun run vctx --` prefix:
+> **Optional: install `fink` globally** to drop the `bun run fink --` prefix:
 > ```bash
 > cd packages/cli && bun link && cd ../..
-> vctx sync "*"   # works from anywhere
+> fink sync "*"   # works from anywhere
 > ```
 
 ### Publishing to Cloudflare
@@ -136,14 +136,14 @@ bun run build:ui
 cd packages/worker && bun run build && cd ../..
 
 # Publish
-bun run vctx -- publish my-github my-notes --password secret123 --name my-pub
+bun run fink -- publish my-github my-notes --password secret123 --name my-pub
 
 # Update (re-sync locally first, then re-publish with same --name)
-bun run vctx -- sync "*"
-bun run vctx -- publish my-github my-notes --password secret123 --name my-pub
+bun run fink -- sync "*"
+bun run fink -- publish my-github my-notes --password secret123 --name my-pub
 
 # Unpublish
-bun run vctx -- unpublish my-pub
+bun run fink -- unpublish my-pub
 ```
 
 See [docs/publish.md](docs/publish.md) for full details.
@@ -166,7 +166,7 @@ cd packages/desktop
 bun run start
 ```
 
-`bun run start` runs two steps: compiles TypeScript to JavaScript via esbuild (bundling all `@veecontext/*` workspace packages inline), then launches Electron.
+`bun run start` runs two steps: compiles TypeScript to JavaScript via esbuild (bundling all `@frozenink/*` workspace packages inline), then launches Electron.
 
 **Packaging for distribution:**
 
@@ -205,19 +205,19 @@ curl -X POST http://localhost:3747/api/export \
 
 | Command | Description |
 |---------|-------------|
-| `vctx init` | Initialize `~/.veecontext/` directory and config |
-| `vctx add <type>` | Add a new collection (github, obsidian, git, mantisbt) |
-| `vctx sync <name\|"*">` | Sync a collection or all (`"*"`) |
-| `vctx status` | Show sync status for all collections |
-| `vctx search <query>` | Full-text search across all collections |
-| `vctx collections list\|remove\|enable\|disable\|rename\|update` | Manage collections |
-| `vctx config get\|set\|list` | View/edit configuration |
-| `vctx generate <name\|"*">` | Re-generate markdown without re-syncing |
-| `vctx index <name\|"*">` | Rebuild search index and links |
-| `vctx serve` | Start API server + MCP server |
-| `vctx daemon start\|stop\|status` | Background sync daemon |
-| `vctx publish <collections...>` | Publish to Cloudflare (see [docs/publish.md](docs/publish.md)) |
-| `vctx unpublish <name>` | Remove a Cloudflare deployment |
+| `fink init` | Initialize `~/.frozenink/` directory and config |
+| `fink add <type>` | Add a new collection (github, obsidian, git, mantisbt) |
+| `fink sync <name\|"*">` | Sync a collection or all (`"*"`) |
+| `fink status` | Show sync status for all collections |
+| `fink search <query>` | Full-text search across all collections |
+| `fink collections list\|remove\|enable\|disable\|rename\|update` | Manage collections |
+| `fink config get\|set\|list` | View/edit configuration |
+| `fink generate <name\|"*">` | Re-generate markdown without re-syncing |
+| `fink index <name\|"*">` | Rebuild search index and links |
+| `fink serve` | Start API server + MCP server |
+| `fink daemon start\|stop\|status` | Background sync daemon |
+| `fink publish <collections...>` | Publish to Cloudflare (see [docs/publish.md](docs/publish.md)) |
+| `fink unpublish <name>` | Remove a Cloudflare deployment |
 
 ## Web UI
 
@@ -250,21 +250,21 @@ Exposes 5 tools and 4 resources for AI assistants:
 
 **Tools:** `collection_list`, `entity_search`, `entity_get_data`, `entity_get_markdown`, `entity_get_attachment`
 
-**Resources:** `veecontext://collections`, `veecontext://collections/{name}`, `veecontext://entities/{collection}/{externalId}`, `veecontext://markdown/{collection}/{+path}`
+**Resources:** `frozenink://collections`, `frozenink://collections/{name}`, `frozenink://entities/{collection}/{externalId}`, `frozenink://markdown/{collection}/{+path}`
 
 ## Development
 
 ```bash
-# Install the vctx CLI globally (one-time)
+# Install the fink CLI globally (one-time)
 cd packages/cli && bun link && cd ../..
 
 # Dev server: API on :3000 + Vite hot reload on :5173
 bun run dev
 
 # Run any CLI command during development
-vctx sync "*"
-vctx status
-vctx search "my query"
+fink sync "*"
+fink status
+fink search "my query"
 
 # Build UI for production
 bun run build:ui
@@ -293,7 +293,7 @@ packages/
   core/           Shared types, DB schemas, sync engine, search, config, compat layer, export
   crawlers/       GitHub, Obsidian, Git, and MantisBT crawlers + markdown generators
   mcp/            MCP server (tools + resources)
-  cli/            CLI entry point (vctx) + management API
+  cli/            CLI entry point (fink) + management API
   ui/             Vite + React web viewer (browse + manage modes)
   worker/         Cloudflare Worker for published deployments
   desktop/        Electron desktop app

@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { getVeeContextHome, loadConfig } from "@veecontext/core";
+import { getFrozenInkHome, loadConfig } from "@frozenink/core";
 
 function getConfigPath(): string {
-  return join(getVeeContextHome(), "config.json");
+  return join(getFrozenInkHome(), "config.json");
 }
 
 function readConfigFile(): Record<string, unknown> {
@@ -86,7 +86,7 @@ const setCommand = new Command("set")
   .action((key: string, value: string) => {
     const configPath = getConfigPath();
     if (!existsSync(configPath)) {
-      console.error("VeeContext not initialized. Run: vctx init");
+      console.error("Frozen Ink not initialized. Run: fink init");
       process.exit(1);
     }
 

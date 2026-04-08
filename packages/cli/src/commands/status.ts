@@ -7,21 +7,21 @@ import {
   getCollectionDbPath,
   entities,
   syncRuns,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import { desc } from "drizzle-orm";
 
 export const statusCommand = new Command("status")
   .description("Show sync status for all collections")
   .action(() => {
     if (!contextExists()) {
-      console.error("VeeContext not initialized. Run: vctx init");
+      console.error("Frozen Ink not initialized. Run: fink init");
       process.exit(1);
     }
 
     const collectionRows = listCollections();
 
     if (collectionRows.length === 0) {
-      console.log("No collections configured. Run: vctx add <crawler>");
+      console.log("No collections configured. Run: fink add <crawler>");
       return;
     }
 

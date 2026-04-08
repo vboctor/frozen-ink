@@ -38,8 +38,8 @@ export async function handleMcpRequest(
       {
         protocolVersion: "2025-03-26",
         capabilities: { tools: {} },
-        serverInfo: { name: "veecontext", version: "0.1.0" },
-        instructions: "VeeContext MCP server. Provides collection and entity retrieval tools over published collections.",
+        serverInfo: { name: "frozenink", version: "0.1.0" },
+        instructions: "Frozen Ink MCP server. Provides collection and entity retrieval tools over published collections.",
       },
       rpc.id,
     );

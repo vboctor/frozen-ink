@@ -20,7 +20,7 @@ export default function WorkspaceScreen({
   return (
     <div className="workspace-screen">
       <div className="workspace-header">
-        <h1>VeeContext</h1>
+        <h1>Frozen Ink</h1>
         <p className="workspace-subtitle">Choose a workspace to get started</p>
       </div>
 

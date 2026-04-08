@@ -3,7 +3,7 @@ import { join, dirname } from "path";
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import yaml from "js-yaml";
-import { getVeeContextHome } from "./loader";
+import { getFrozenInkHome } from "./loader";
 
 // --- Zod Schemas ---
 
@@ -28,7 +28,7 @@ const deploymentEntrySchema = z.object({
   publishedAt: z.string(),
 });
 
-const veeContextSchema = z.object({
+const frozenInkSchema = z.object({
   collections: z.record(collectionEntrySchema).default({}),
   deployments: z.record(deploymentEntrySchema).default({}),
 });
@@ -38,27 +38,27 @@ const veeContextSchema = z.object({
 export type CollectionEntry = z.infer<typeof collectionEntrySchema>;
 export type CollectionEntryInput = z.input<typeof collectionEntrySchema>;
 export type DeploymentEntry = z.infer<typeof deploymentEntrySchema>;
-export type VeeContextYaml = z.infer<typeof veeContextSchema>;
+export type FrozenInkYaml = z.infer<typeof frozenInkSchema>;
 
 // --- Paths ---
 
 function getContextPath(): string {
-  return join(getVeeContextHome(), "context.yml");
+  return join(getFrozenInkHome(), "context.yml");
 }
 
 // --- Load / Save ---
 
-export function loadContext(): VeeContextYaml {
+export function loadContext(): FrozenInkYaml {
   const contextPath = getContextPath();
   if (!existsSync(contextPath)) {
     return { collections: {}, deployments: {} };
   }
   const raw = readFileSync(contextPath, "utf-8");
   const parsed = yaml.load(raw) as Record<string, unknown> | null;
-  return veeContextSchema.parse(parsed ?? {});
+  return frozenInkSchema.parse(parsed ?? {});
 }
 
-export function saveContext(ctx: VeeContextYaml): void {
+export function saveContext(ctx: FrozenInkYaml): void {
   const contextPath = getContextPath();
   const dir = dirname(contextPath);
   mkdirSync(dir, { recursive: true });
@@ -89,7 +89,7 @@ export function listCollections(): Array<CollectionEntry & { name: string }> {
 }
 
 export function getCollectionDbPath(name: string): string {
-  const home = getVeeContextHome();
+  const home = getFrozenInkHome();
   return join(home, "collections", name, "data.db");
 }
 

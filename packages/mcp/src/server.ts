@@ -9,18 +9,18 @@ import { registerCollectionResources } from "./resources/collection";
 import { registerEntityResources } from "./resources/entity";
 
 export interface McpServerOptions {
-  veecontextHome: string;
+  frozeninkHome: string;
 }
 
 export function createMcpServer(options: McpServerOptions): McpServer {
   const server = new McpServer(
     {
-      name: "veecontext",
+      name: "frozenink",
       version: "0.1.0",
     },
     {
       instructions:
-        "VeeContext MCP server. Provides collection and entity retrieval tools over synced collections for LLM clients.",
+        "Frozen Ink MCP server. Provides collection and entity retrieval tools over synced collections for LLM clients.",
     },
   );
 

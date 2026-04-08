@@ -4,7 +4,7 @@ import type {
   CrawlerEntityData,
   SyncCursor,
   SyncResult,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import type {
   GitHubConfig,
   GitHubCredentials,

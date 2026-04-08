@@ -1,7 +1,7 @@
 import type { Context, Next } from "hono";
 import type { Env } from "./types";
 
-const COOKIE_NAME = "vctx_token";
+const COOKIE_NAME = "fink_token";
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
 
 export async function hashPassword(password: string): Promise<string> {

@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-import { configSchema, type VeeContextConfig } from "./schema";
+import { configSchema, type FrozenInkConfig } from "./schema";
 import { defaultConfig } from "./defaults";
 
-export function getVeeContextHome(): string {
-  return process.env.VEECONTEXT_HOME ?? join(homedir(), ".veecontext");
+export function getFrozenInkHome(): string {
+  return process.env.FROZENINK_HOME ?? join(homedir(), ".frozenink");
 }
 
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
@@ -32,24 +32,24 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
   return result;
 }
 
-const ENV_MAPPING: Record<string, [keyof VeeContextConfig, string]> = {
-  VEECONTEXT_DB_MODE: ["db", "mode"],
-  VEECONTEXT_DB_TURSO_URL: ["db", "tursoUrl"],
-  VEECONTEXT_DB_TURSO_TOKEN: ["db", "tursoToken"],
-  VEECONTEXT_STORAGE_MODE: ["storage", "mode"],
-  VEECONTEXT_STORAGE_S3_BUCKET: ["storage", "s3Bucket"],
-  VEECONTEXT_STORAGE_S3_REGION: ["storage", "s3Region"],
-  VEECONTEXT_STORAGE_S3_ENDPOINT: ["storage", "s3Endpoint"],
-  VEECONTEXT_STORAGE_S3_ACCESS_KEY_ID: ["storage", "s3AccessKeyId"],
-  VEECONTEXT_STORAGE_S3_SECRET_ACCESS_KEY: ["storage", "s3SecretAccessKey"],
-  VEECONTEXT_SYNC_INTERVAL: ["sync", "interval"],
-  VEECONTEXT_SYNC_CONCURRENCY: ["sync", "concurrency"],
-  VEECONTEXT_SYNC_RETRIES: ["sync", "retries"],
-  VEECONTEXT_UI_PORT: ["ui", "port"],
-  VEECONTEXT_MCP_TRANSPORT: ["mcp", "transport"],
-  VEECONTEXT_MCP_PORT: ["mcp", "port"],
-  VEECONTEXT_LOGGING_LEVEL: ["logging", "level"],
-  VEECONTEXT_LOGGING_FILE: ["logging", "file"],
+const ENV_MAPPING: Record<string, [keyof FrozenInkConfig, string]> = {
+  FROZENINK_DB_MODE: ["db", "mode"],
+  FROZENINK_DB_TURSO_URL: ["db", "tursoUrl"],
+  FROZENINK_DB_TURSO_TOKEN: ["db", "tursoToken"],
+  FROZENINK_STORAGE_MODE: ["storage", "mode"],
+  FROZENINK_STORAGE_S3_BUCKET: ["storage", "s3Bucket"],
+  FROZENINK_STORAGE_S3_REGION: ["storage", "s3Region"],
+  FROZENINK_STORAGE_S3_ENDPOINT: ["storage", "s3Endpoint"],
+  FROZENINK_STORAGE_S3_ACCESS_KEY_ID: ["storage", "s3AccessKeyId"],
+  FROZENINK_STORAGE_S3_SECRET_ACCESS_KEY: ["storage", "s3SecretAccessKey"],
+  FROZENINK_SYNC_INTERVAL: ["sync", "interval"],
+  FROZENINK_SYNC_CONCURRENCY: ["sync", "concurrency"],
+  FROZENINK_SYNC_RETRIES: ["sync", "retries"],
+  FROZENINK_UI_PORT: ["ui", "port"],
+  FROZENINK_MCP_TRANSPORT: ["mcp", "transport"],
+  FROZENINK_MCP_PORT: ["mcp", "port"],
+  FROZENINK_LOGGING_LEVEL: ["logging", "level"],
+  FROZENINK_LOGGING_FILE: ["logging", "file"],
 };
 
 const NUMERIC_FIELDS = new Set([
@@ -77,8 +77,8 @@ function applyEnvOverrides(config: Record<string, unknown>): Record<string, unkn
   return result;
 }
 
-export function loadConfig(): VeeContextConfig {
-  const home = getVeeContextHome();
+export function loadConfig(): FrozenInkConfig {
+  const home = getFrozenInkHome();
   const configPath = join(home, "config.json");
 
   let fileConfig: Record<string, unknown> = {};

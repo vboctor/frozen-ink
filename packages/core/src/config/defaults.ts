@@ -1,6 +1,6 @@
-import type { VeeContextConfig } from "./schema";
+import type { FrozenInkConfig } from "./schema";
 
-export const defaultConfig: VeeContextConfig = {
+export const defaultConfig: FrozenInkConfig = {
   db: {
     mode: "local",
     tursoUrl: undefined,

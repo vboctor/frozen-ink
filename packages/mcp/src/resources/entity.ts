@@ -9,7 +9,7 @@ import {
   getCollectionDbPath,
   entities,
   entityTags,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
@@ -19,7 +19,7 @@ export function registerEntityResources(
 ): void {
   // Template resource: entity by collection and externalId
   const entityTemplate = new ResourceTemplate(
-    "veecontext://entities/{collection}/{externalId}",
+    "frozenink://entities/{collection}/{externalId}",
     {
       list: undefined,
     },
@@ -43,7 +43,7 @@ export function registerEntityResources(
             {
               uri: uri.toString(),
               mimeType: "application/json",
-              text: JSON.stringify({ error: "VeeContext not initialized" }),
+              text: JSON.stringify({ error: "Frozen Ink not initialized" }),
             },
           ],
         };
@@ -118,7 +118,7 @@ export function registerEntityResources(
 
   // Template resource: markdown by collection and path
   const markdownTemplate = new ResourceTemplate(
-    "veecontext://markdown/{collection}/{+path}",
+    "frozenink://markdown/{collection}/{+path}",
     {
       list: undefined,
     },
@@ -141,7 +141,7 @@ export function registerEntityResources(
             {
               uri: uri.toString(),
               mimeType: "text/plain",
-              text: "VeeContext not initialized",
+              text: "Frozen Ink not initialized",
             },
           ],
         };
@@ -161,7 +161,7 @@ export function registerEntityResources(
       }
 
       const collectionDir = join(
-        options.veecontextHome,
+        options.frozeninkHome,
         "collections",
         collectionName,
       );

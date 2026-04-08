@@ -9,7 +9,7 @@ import {
   getCollectionDbPath,
   entities,
   attachments,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import { and, eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
@@ -104,7 +104,7 @@ export function registerGetAttachment(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ error: "VeeContext not initialized" }),
+              text: JSON.stringify({ error: "Frozen Ink not initialized" }),
             },
           ],
         };
@@ -248,7 +248,7 @@ export function registerGetAttachment(
         };
       }
 
-      const collectionDir = join(options.veecontextHome, "collections", args.collection);
+      const collectionDir = join(options.frozeninkHome, "collections", args.collection);
       const fullPath = join(collectionDir, attachmentRow.storagePath);
       const normalizedCollectionDir = join(collectionDir, "/");
       if (!join(fullPath, "/").startsWith(normalizedCollectionDir)) {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { GitHubTheme } from "../theme";
-import type { ThemeRenderContext } from "@veecontext/core";
+import type { ThemeRenderContext } from "@frozenink/core";
 
 const theme = new GitHubTheme();
 

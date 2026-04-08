@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
-  getVeeContextHome,
+  getFrozenInkHome,
   getCollectionDb,
   contextExists,
   listCollections,
@@ -13,7 +13,7 @@ import {
   entityLinks,
   SearchIndexer,
   extractWikilinks,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import { eq } from "drizzle-orm";
 
 export const indexCommand = new Command("index")
@@ -23,11 +23,11 @@ export const indexCommand = new Command("index")
   .argument("<collection>", 'Collection name or "*" for all collections')
   .action(async (collection: string) => {
     if (!contextExists()) {
-      console.error("VeeContext not initialized. Run: vctx init");
+      console.error("Frozen Ink not initialized. Run: fink init");
       process.exit(1);
     }
 
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
     let collectionRows = collection === "*"
       ? listCollections()
       : (() => {

@@ -1,10 +1,10 @@
 # Agents Guide
 
-This file helps AI agents navigate and work effectively in the VeeContext codebase.
+This file helps AI agents navigate and work effectively in the Frozen Ink codebase.
 
 ## Project Overview
 
-VeeContext is a TypeScript monorepo that crawls data sources, stores them in SQLite, renders Obsidian-compatible markdown, and serves via a web UI and MCP server. Collections can be published to Cloudflare as password-protected websites with remote MCP access, or managed through an Electron desktop app. The codebase runs under both **Bun** (CLI, tests) and **Node.js** (Electron desktop) via a compatibility layer. See [README.md](README.md) for the full overview.
+Frozen Ink is a TypeScript monorepo that crawls data sources, stores them in SQLite, renders Obsidian-compatible markdown, and serves via a web UI and MCP server. Collections can be published to Cloudflare as password-protected websites with remote MCP access, or managed through an Electron desktop app. The codebase runs under both **Bun** (CLI, tests) and **Node.js** (Electron desktop) via a compatibility layer. See [README.md](README.md) for the full overview.
 
 ## Repository Layout
 
@@ -17,7 +17,7 @@ packages/
       sqlite.ts           SQLite driver factory (bun:sqlite ↔ better-sqlite3)
       subprocess.ts       spawn() wrapper (Bun.spawn ↔ child_process.spawn)
       paths.ts            getModuleDir() replaces import.meta.dir
-    config/               Zod schemas, defaults, loader (reads ~/.veecontext/config.json)
+    config/               Zod schemas, defaults, loader (reads ~/.frozenink/config.json)
                           context.ts — context.yml management (collections + deployments CRUD)
     crawler/              Crawler interface, CrawlerRegistry, SyncEngine
     db/                   Drizzle ORM schemas (collection-schema.ts), client factory
@@ -68,7 +68,7 @@ packages/
 
   desktop/                Electron desktop app
     src/main/index.ts     Main process (window, API server lifecycle, workspace management)
-    src/main/workspace-manager.ts  Workspace CRUD (~/.veecontext-desktop/workspaces.json)
+    src/main/workspace-manager.ts  Workspace CRUD (~/.frozenink/workspaces.json)
     src/main/ipc-handlers.ts       IPC bridge (file picker, workspace ops)
     src/main/tray.ts      System tray (sync status, quick actions)
     src/preload/index.ts  Context bridge for secure IPC
@@ -89,7 +89,7 @@ The codebase runs in two runtimes: **Bun** (CLI, tests) and **Node.js** (Electro
 **`import.meta.dir` → `getModuleDir(import.meta.url)`.** Bun's non-standard `import.meta.dir` is replaced with `dirname(fileURLToPath(import.meta.url))`. Call sites pass `import.meta.url` and get back the directory. Test files still use `import.meta.dir` directly since tests always run under Bun.
 
 **Import paths within `core/`.** Internal modules must import from specific files, not the barrel index:
-- `getVeeContextHome` is in `config/loader.ts`, NOT `config/context.ts`
+- `getFrozenInkHome` is in `config/loader.ts`, NOT `config/context.ts`
 - `getCollectionDb` is in `db/client.ts`, NOT `config/context.ts`
 - The barrel `core/src/index.ts` re-exports everything, but circular or missing re-exports can cause `SyntaxError: Export named 'X' not found` at runtime — always verify the source module when adding new internal imports.
 
@@ -111,7 +111,7 @@ The same React app (`packages/ui`) serves all three contexts:
 | Context | `GET /api/app-info` returns | UI shows |
 |---------|---------------------------|----------|
 | Published (Cloudflare Worker) | `{ mode: "published" }` | Browse only |
-| Local (`vctx serve`) | `{ mode: "local" }` | Browse only |
+| Local (`fink serve`) | `{ mode: "local" }` | Browse only |
 | Desktop (Electron) | `{ mode: "desktop" }` | Browse + Manage toggle |
 
 The mode is set by calling `setAppMode("desktop")` from the Electron main process before starting the API server. The management API endpoints are always registered but only meaningful in desktop mode.
@@ -120,15 +120,15 @@ In `App.tsx`, the main content area renders `manageContent || browseContent` —
 
 ### Workspace Model (Desktop Only)
 
-A **workspace** maps to a `VEECONTEXT_HOME` directory. The Electron main process manages workspaces:
+A **workspace** maps to a `FROZENINK_HOME` directory. The Electron main process manages workspaces:
 
-1. `~/.veecontext-desktop/workspaces.json` stores workspace metadata (name, path, lastOpened)
+1. `~/.frozenink/workspaces.json` stores workspace metadata (name, path, lastOpened)
 2. On launch, auto-opens the last workspace (or shows a welcome screen)
-3. `process.env.VEECONTEXT_HOME` is set to the workspace path before any core module is loaded
+3. `process.env.FROZENINK_HOME` is set to the workspace path before any core module is loaded
 4. The API server is started bound to that workspace
-5. **Switching workspaces restarts the API server** — the main process calls `stop()` on the current server, updates `VEECONTEXT_HOME`, and creates a new server. Brief loading screen during the switch.
+5. **Switching workspaces restarts the API server** — the main process calls `stop()` on the current server, updates `FROZENINK_HOME`, and creates a new server. Brief loading screen during the switch.
 
-Each workspace is a standard VeeContext home directory (same structure as CLI's `~/.veecontext/`), so CLI and desktop can operate on the same data.
+Each workspace is a standard Frozen Ink home directory (same structure as CLI's `~/.frozenink/`), so CLI and desktop can operate on the same data.
 
 ### Progress Reporting Pattern
 
@@ -153,8 +153,8 @@ For publish specifically, the core logic is in `publishCollections(options, onPr
 ### Adding a New Crawler
 
 1. Create `packages/crawlers/src/<name>/types.ts` with config and credential interfaces
-2. Create `packages/crawlers/src/<name>/crawler.ts` implementing the `Crawler` interface from `@veecontext/core`
-   - Use `createCryptoHasher()` from `@veecontext/core` for hashing (NOT `Bun.CryptoHasher`)
+2. Create `packages/crawlers/src/<name>/crawler.ts` implementing the `Crawler` interface from `@frozenink/core`
+   - Use `createCryptoHasher()` from `@frozenink/core` for hashing (NOT `Bun.CryptoHasher`)
 3. Create `packages/crawlers/src/<name>/theme.ts` implementing the `Theme` interface (markdown generator)
 4. Register in `packages/crawlers/src/index.ts`: add to `createDefaultRegistry()` and export the theme
 5. Update `packages/cli/src/commands/add.ts` with crawler-specific CLI flags
@@ -179,7 +179,7 @@ interface Crawler {
 
 ### Collection Registry (context.yml)
 
-VeeContext uses `~/.veecontext/context.yml` as the collection registry (replacing the previous `master.db`). The file is managed by `packages/core/src/config/context.ts` with atomic writes and Zod validation.
+Frozen Ink uses `~/.frozenink/context.yml` as the collection registry (replacing the previous `master.db`). The file is managed by `packages/core/src/config/context.ts` with atomic writes and Zod validation.
 
 ```yaml
 collections:
@@ -208,13 +208,13 @@ deployments:
 
 Key functions: `loadContext()`, `saveContext()`, `getCollection()`, `listCollections()`, `addCollection()`, `getCollectionDbPath()`, `addDeployment()`, `getDeployment()`.
 
-Collection DB path is inferred: `~/.veecontext/collections/{name}/data.db` (no explicit `dbPath` stored).
+Collection DB path is inferred: `~/.frozenink/collections/{name}/data.db` (no explicit `dbPath` stored).
 
 ### SQLite Schema
 
 Each collection has its own SQLite database.
 
-#### Collection DBs (`~/.veecontext/collections/<name>/data.db`)
+#### Collection DBs (`~/.frozenink/collections/<name>/data.db`)
 
 ```sql
 entities
@@ -294,14 +294,15 @@ Tables are created via raw SQL `CREATE IF NOT EXISTS` in `client.ts` (no migrati
 | Rendered markdown files | Filesystem (`collections/<name>/markdown/`) | Large, rebuildable from DB data |
 | Attachment binary files | Filesystem (`collections/<name>/attachments/`) | Large binaries, served by HTTP |
 | FTS search index | Collection DB (`entities_fts` virtual table) | SQLite FTS5 for fast text search |
-| Desktop workspace list | `~/.veecontext-desktop/workspaces.json` | App-level metadata, not per-workspace |
+| Desktop workspace list | `~/.frozenink/workspaces.json` | App-level metadata, not per-workspace |
 
 ### Filesystem Layout
 
 ```
-~/.veecontext/                               -- default workspace (CLI)
+~/.frozenink/                               -- default workspace (CLI + desktop)
   config.json                                -- app configuration
   context.yml                                -- collection registry + deployment metadata
+  workspaces.json                            -- desktop app workspace registry
   collections/
     <name>/
       data.db                                -- collection database (entities, sync state, etc.)
@@ -312,16 +313,13 @@ Tables are created via raw SQL `CREATE IF NOT EXISTS` in `client.ts` (no migrati
       attachments/                           -- binary files (images, etc.)
         images/photo.png
         git/abc1234/logo.png
-
-~/.veecontext-desktop/                       -- desktop app metadata (NOT a workspace)
-  workspaces.json                            -- { workspaces: [{ name, path, lastOpened }], lastWorkspace }
 ```
 
-A workspace is any directory with a `context.yml` and `collections/` subdirectory. The CLI defaults to `~/.veecontext/`. The desktop app can create and switch between multiple workspaces at arbitrary paths, each functioning as an independent `VEECONTEXT_HOME`.
+A workspace is any directory with a `context.yml` and `collections/` subdirectory. The CLI defaults to `~/.frozenink/`. The desktop app can create and switch between multiple workspaces at arbitrary paths, each functioning as an independent `FROZENINK_HOME`.
 
 ### Publishing to Cloudflare
 
-The `vctx publish` command uses the `wrangler` CLI for all Cloudflare operations. Authentication is handled by wrangler — run `wrangler login` once, or set `CLOUDFLARE_API_TOKEN`. No API tokens or account IDs are passed on the command line.
+The `fink publish` command uses the `wrangler` CLI for all Cloudflare operations. Authentication is handled by wrangler — run `wrangler login` once, or set `CLOUDFLARE_API_TOKEN`. No API tokens or account IDs are passed on the command line.
 
 Three CF resources are created per deployment:
 
@@ -334,7 +332,7 @@ The publish flow:
 - Files are uploaded via `wrangler r2 object put`
 - Worker is deployed by generating a temp `wrangler.toml` and running `wrangler deploy --config`
 
-Re-running `vctx publish --name <existing>` **updates** an existing deployment:
+Re-running `fink publish --name <existing>` **updates** an existing deployment:
 - D1 tables are dropped and recreated with fresh data
 - R2 files are uploaded, then stale files are detected via the `r2_manifest` D1 table and deleted
 - Worker is redeployed with the same bindings
@@ -345,7 +343,7 @@ The worker implements MCP via direct JSON-RPC (not the SDK's StreamableHTTPServe
 
 | Scenario | Command |
 |----------|---------|
-| Changed crawler data, synced new entities | Full publish: `vctx publish <collections...> --name <name>` |
+| Changed crawler data, synced new entities | Full publish: `fink publish <collections...> --name <name>` |
 | Changed `packages/worker/src/**` (server logic, HTML rendering, routes) | Worker-only (after rebuild): see below |
 | Changed `packages/ui/src/**` (React components, CSS) | Worker-only (after rebuild): see below |
 | Changed `packages/crawlers/src/mantisbt/theme.ts` (HTML renderer) | Worker-only — HTML is rendered on-the-fly by the worker at request time, not pre-stored |
@@ -384,7 +382,7 @@ cd packages/worker && bun run build  # esbuild worker bundle
 
 ### Desktop App Build
 
-The Electron desktop app lives in `packages/desktop/`. It uses esbuild to bundle all TypeScript (main process + all `@veecontext/*` workspace packages) into a single ESM file (`dist/main/index.mjs`) that Electron loads directly.
+The Electron desktop app lives in `packages/desktop/`. It uses esbuild to bundle all TypeScript (main process + all `@frozenink/*` workspace packages) into a single ESM file (`dist/main/index.mjs`) that Electron loads directly.
 
 ```bash
 bun install                           # install all workspace deps (from repo root, NOT npm)
@@ -413,7 +411,7 @@ See `packages/desktop/electron-builder.yml` for build targets (macOS DMG, Window
 
 ### Important Conventions
 
-- Package names: `@veecontext/<name>` with `workspace:*` for inter-package deps
+- Package names: `@frozenink/<name>` with `workspace:*` for inter-package deps
 - TypeScript: strict mode, ESNext target, bundler module resolution, project references with `composite: true`
 - Tests: `bun:test` for all packages except UI which uses `vitest` with `happy-dom`
 - Test files: `src/__tests__/*.test.ts` — excluded from tsc dist output via tsconfig `exclude`
@@ -422,11 +420,11 @@ See `packages/desktop/electron-builder.yml` for build targets (macOS DMG, Window
 - Desktop package: separate tsconfig with `module: "commonjs"`, `target: "ES2022"` for Electron
 - DB: WAL journal mode, foreign keys ON, JSON columns via `text(..., { mode: "json" })`
 - Attachment `storagePath`: use optional field to override default `attachments/{externalId}/{filename}` path
-- Markdown generators use helpers from `@veecontext/core`: `frontmatter()`, `wikilink()`, `callout()`, `embed()`
-- Hashing: always use `createCryptoHasher()` from `@veecontext/core`, never `Bun.CryptoHasher` directly
-- Subprocesses: use `spawnProcess()` / `spawnDetached()` from `@veecontext/core`, never `Bun.spawn` directly
-- Module paths: use `getModuleDir(import.meta.url)` from `@veecontext/core`, never `import.meta.dir`
-- New subpath exports in `core` (like `@veecontext/core/export`) require both a barrel `index.ts` and a matching entry in `packages/core/package.json` `exports` field
+- Markdown generators use helpers from `@frozenink/core`: `frontmatter()`, `wikilink()`, `callout()`, `embed()`
+- Hashing: always use `createCryptoHasher()` from `@frozenink/core`, never `Bun.CryptoHasher` directly
+- Subprocesses: use `spawnProcess()` / `spawnDetached()` from `@frozenink/core`, never `Bun.spawn` directly
+- Module paths: use `getModuleDir(import.meta.url)` from `@frozenink/core`, never `import.meta.dir`
+- New subpath exports in `core` (like `@frozenink/core/export`) require both a barrel `index.ts` and a matching entry in `packages/core/package.json` `exports` field
 - UI management components live in `packages/ui/src/components/manage/` — CSS uses existing CSS variable system (--bg, --text, --accent, etc.) from App.css
 
 ## Key Files
@@ -462,7 +460,7 @@ See `packages/desktop/electron-builder.yml` for build targets (macOS DMG, Window
 - Never use `Bun.CryptoHasher`, `Bun.spawn`, `bun:sqlite`, or `import.meta.dir` directly in `packages/core` or `packages/crawlers` — use the compat layer (`createCryptoHasher()`, `spawnProcess()`, `openDatabase()`, `getModuleDir()`)
 - `db/client.ts` uses `require()` not `import()` for drizzle driver selection — this is intentional (sync function)
 - When importing within `packages/core/src/`, use specific file paths (e.g., `../config/loader` not `../config/context`) — barrel re-exports can cause "Export not found" errors if the target module doesn't actually export that symbol
-- The `@veecontext/core/export` subpath requires a matching `exports` entry in `packages/core/package.json`
+- The `@frozenink/core/export` subpath requires a matching `exports` entry in `packages/core/package.json`
 - `better-sqlite3` must be rebuilt for Electron's Node ABI using `npx @electron/rebuild -m .` — without this you get `NODE_MODULE_VERSION` mismatch errors at runtime
 
 ### Server / API
@@ -471,7 +469,7 @@ See `packages/desktop/electron-builder.yml` for build targets (macOS DMG, Window
 - Sync/publish/export progress uses polling (500ms), not SSE/WebSocket — the in-memory state objects reset when the server restarts
 
 ### Desktop App
-- The Electron main process sets `process.env.VEECONTEXT_HOME` before importing any `@veecontext/core` modules — module-level code in core reads this env var via `getVeeContextHome()`
+- The Electron main process sets `process.env.FROZENINK_HOME` before importing any `@frozenink/core` modules — module-level code in core reads this env var via `getFrozenInkHome()`
 - Switching workspaces restarts the API server (creates a new `http.createServer` or `Bun.serve`). The old server must be stopped first or the port will conflict
 - `packages/desktop/tsconfig.json` uses `module: "commonjs"` because Electron's main process expects CJS
 
@@ -488,7 +486,7 @@ See `packages/desktop/electron-builder.yml` for build targets (macOS DMG, Window
 
 ## REST API Endpoints
 
-Served by `vctx serve` locally, or by the Cloudflare Worker when published:
+Served by `fink serve` locally, or by the Cloudflare Worker when published:
 
 | Endpoint | Description |
 |----------|-------------|

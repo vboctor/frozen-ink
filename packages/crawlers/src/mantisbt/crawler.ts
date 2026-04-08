@@ -4,8 +4,8 @@ import type {
   CrawlerEntityData,
   SyncCursor,
   SyncResult,
-} from "@veecontext/core";
-import { createCryptoHasher } from "@veecontext/core";
+} from "@frozenink/core";
+import { createCryptoHasher } from "@frozenink/core";
 import type {
   MantisBTConfig,
   MantisBTCredentials,

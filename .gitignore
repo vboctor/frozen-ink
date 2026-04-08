@@ -5,7 +5,7 @@ node_modules
 .env
 dist/
 daemon.pid
-.veecontext/
+.frozenink/
 .context
 .wrangler/
 *.tsbuildinfo

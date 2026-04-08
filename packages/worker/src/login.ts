@@ -4,7 +4,7 @@ import type { Env } from "./types";
 export function renderLoginPage(c: Context<{ Bindings: Env }>): Response {
   const url = new URL(c.req.url);
   const hasError = url.searchParams.has("error");
-  const workerName = c.env.WORKER_NAME || "VeeContext";
+  const workerName = c.env.WORKER_NAME || "Frozen Ink";
 
   const html = `<!DOCTYPE html>
 <html lang="en">

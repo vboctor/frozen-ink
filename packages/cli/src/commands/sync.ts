@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { existsSync } from "fs";
 import { join } from "path";
 import {
-  getVeeContextHome,
+  getFrozenInkHome,
   getCollectionDb,
   contextExists,
   listCollections,
@@ -18,9 +18,9 @@ import {
   attachments,
   entityLinks,
   entityRelations,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import { sql } from "drizzle-orm";
-import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisBTTheme } from "@veecontext/crawlers";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisBTTheme } from "@frozenink/crawlers";
 
 export const syncCommand = new Command("sync")
   .description("Sync collections")
@@ -31,11 +31,11 @@ export const syncCommand = new Command("sync")
   .option("--max-prs <count>", "Maximum pull requests to sync (overrides collection config)", parseInt)
   .action(async (collection: string, opts: { full?: boolean; max?: number; maxIssues?: number; maxPrs?: number }) => {
     if (!contextExists()) {
-      console.error("VeeContext not initialized. Run: vctx init");
+      console.error("Frozen Ink not initialized. Run: fink init");
       process.exit(1);
     }
 
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
     let collectionRows = collection === "*"
       ? listCollections()
       : (() => {

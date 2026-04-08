@@ -1,6 +1,7 @@
 {
-  "name": "@veecontext/desktop",
+  "name": "@frozenink/desktop",
   "version": "0.1.0",
+  "productName": "Frozen Ink",
   "private": true,
   "main": "dist/main/index.mjs",
   "scripts": {

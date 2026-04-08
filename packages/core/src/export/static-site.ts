@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, statSync, readFileSync, mkdirSync, writeFileSync, copyFileSync } from "fs";
 import { join, relative, dirname, extname } from "path";
-import { getVeeContextHome } from "../config/loader";
+import { getFrozenInkHome } from "../config/loader";
 import { getCollection, getCollectionDbPath } from "../config/context";
 import { getCollectionDb } from "../db/client";
 import { entities, entityTags } from "../db/collection-schema";
@@ -20,7 +20,7 @@ export interface ExportOptions {
  */
 export async function exportStaticSite(options: ExportOptions): Promise<void> {
   const { collections, outputDir, format, onProgress } = options;
-  const home = getVeeContextHome();
+  const home = getFrozenInkHome();
 
   mkdirSync(outputDir, { recursive: true });
 
@@ -39,7 +39,7 @@ async function exportMarkdown(
   outputDir: string,
   onProgress?: (step: string, current: number, total: number) => void,
 ): Promise<void> {
-  const indexLines: string[] = ["# VeeContext Export\n"];
+  const indexLines: string[] = ["# Frozen Ink Export\n"];
   let totalFiles = 0;
   let exported = 0;
 
@@ -261,7 +261,7 @@ function generateIndexHtml(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VeeContext Export</title>
+<title>Frozen Ink Export</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; color: #1f2328; }
   a { color: #0969da; text-decoration: none; }
@@ -273,7 +273,7 @@ function generateIndexHtml(
 </style>
 </head>
 <body>
-<h1>VeeContext Export</h1>
+<h1>Frozen Ink Export</h1>
 ${navHtml}
 </body>
 </html>`;

@@ -13,7 +13,7 @@ export interface WorkspacesData {
   lastWorkspace: string | null;
 }
 
-const WORKSPACES_DIR = join(homedir(), ".veecontext-desktop");
+const WORKSPACES_DIR = join(homedir(), ".frozenink");
 const WORKSPACES_FILE = join(WORKSPACES_DIR, "workspaces.json");
 
 function ensureDir() {

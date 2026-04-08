@@ -1,4 +1,4 @@
-// @veecontext/core - Shared types, schemas, and database layer
+// @frozenink/core - Shared types, schemas, and database layer
 export * from "./compat";
 export * from "./db";
 export * from "./config";

@@ -1,6 +1,6 @@
-export { configSchema, type VeeContextConfig, type DbConfig, type StorageConfig, type SyncConfig, type UiConfig, type McpConfig, type LoggingConfig } from "./schema";
+export { configSchema, type FrozenInkConfig, type DbConfig, type StorageConfig, type SyncConfig, type UiConfig, type McpConfig, type LoggingConfig } from "./schema";
 export { defaultConfig } from "./defaults";
-export { loadConfig, getVeeContextHome } from "./loader";
+export { loadConfig, getFrozenInkHome } from "./loader";
 export {
   loadContext,
   saveContext,
@@ -19,5 +19,5 @@ export {
   type CollectionEntry,
   type CollectionEntryInput,
   type DeploymentEntry,
-  type VeeContextYaml,
+  type FrozenInkYaml,
 } from "./context";

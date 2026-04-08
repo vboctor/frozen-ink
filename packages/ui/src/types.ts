@@ -110,7 +110,7 @@ export interface CollectionConfig {
   credentials: Record<string, unknown>;
 }
 
-export interface VeeContextConfig {
+export interface FrozenInkConfig {
   sync: { interval: number; concurrency: number; retries: number };
   logging: { level: string };
   [key: string]: unknown;

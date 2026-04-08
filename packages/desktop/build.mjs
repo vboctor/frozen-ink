@@ -3,7 +3,7 @@
  * Bundles TypeScript source (main process + preload) into JavaScript
  * that Electron's Node.js runtime can load.
  *
- * - Inlines all @veecontext/* workspace packages (they're TypeScript)
+ * - Inlines all @frozenink/* workspace packages (they're TypeScript)
  * - Externalizes electron, better-sqlite3, and Node builtins (native / provided at runtime)
  */
 import { build } from "esbuild";

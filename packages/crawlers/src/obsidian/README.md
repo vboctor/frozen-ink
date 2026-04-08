@@ -7,7 +7,7 @@ Syncs markdown files and attachments from a local Obsidian vault, preserving the
 ## Setup
 
 ```bash
-bunx vctx add obsidian \
+bunx fink add obsidian \
   --name my-vault \
   --path /path/to/vault
 ```

@@ -2,7 +2,7 @@ import { join } from "path";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
-import { getModuleDir, spawnProcess, resolveWrangler as resolveWranglerPath, getVeeContextHome } from "@veecontext/core";
+import { getModuleDir, spawnProcess, resolveWrangler as resolveWranglerPath, getFrozenInkHome } from "@frozenink/core";
 
 const __moduleDir = getModuleDir(import.meta.url);
 
@@ -16,7 +16,7 @@ async function resolveWranglerBin(): Promise<string> {
   // Check user-configured path in workspace config.json
   let configuredPath: string | undefined;
   try {
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
     const configPath = join(home, "config.json");
     if (existsSync(configPath)) {
       const config = JSON.parse(readFileSync(configPath, "utf-8"));
@@ -256,7 +256,7 @@ bucket_name = "${config.r2BucketName}"
 
 export function writeTempFile(content: string, extension: string): string {
   const tmpDir = process.env.TMPDIR || "/tmp";
-  const name = `vctx-${randomBytes(6).toString("hex")}${extension}`;
+  const name = `fink-${randomBytes(6).toString("hex")}${extension}`;
   const path = join(tmpDir, name);
   writeFileSync(path, content, "utf-8");
   return path;
