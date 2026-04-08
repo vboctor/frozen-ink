@@ -44,7 +44,7 @@ export const configSchema = z.object({
   logging: loggingConfigSchema.default({}),
 });
 
-export type VeeContextConfig = z.infer<typeof configSchema>;
+export type FrozenInkConfig = z.infer<typeof configSchema>;
 export type DbConfig = z.infer<typeof dbConfigSchema>;
 export type StorageConfig = z.infer<typeof storageConfigSchema>;
 export type SyncConfig = z.infer<typeof syncConfigSchema>;

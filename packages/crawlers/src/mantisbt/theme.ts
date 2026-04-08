@@ -1,5 +1,5 @@
-import type { Theme, ThemeRenderContext } from "@veecontext/core/theme";
-import { frontmatter, wikilink } from "@veecontext/core/theme";
+import type { Theme, ThemeRenderContext } from "@frozenink/core/theme";
+import { frontmatter, wikilink } from "@frozenink/core/theme";
 
 function slugify(text: string): string {
   return text

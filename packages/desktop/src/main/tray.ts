@@ -18,7 +18,7 @@ export function createTray(callbacks: {
     : nativeImage.createEmpty();
 
   tray = new Tray(icon);
-  tray.setToolTip("VeeContext");
+  tray.setToolTip("Frozen Ink");
 
   updateTrayMenu("idle", callbacks);
 
@@ -42,7 +42,7 @@ export function updateTrayMenu(
     },
     { type: "separator" },
     {
-      label: "Open VeeContext",
+      label: "Open Frozen Ink",
       click: callbacks.onShowApp,
     },
     { type: "separator" },

@@ -1,5 +1,5 @@
-import type { Theme, ThemeRenderContext } from "@veecontext/core/theme";
-import { frontmatter, wikilink, callout } from "@veecontext/core/theme";
+import type { Theme, ThemeRenderContext } from "@frozenink/core/theme";
+import { frontmatter, wikilink, callout } from "@frozenink/core/theme";
 import { gemoji } from "gemoji";
 
 // Build emoji shortcode lookup map once

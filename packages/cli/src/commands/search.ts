@@ -7,7 +7,7 @@ import {
   getCollectionDbPath,
   SearchIndexer,
   type SearchResult,
-} from "@veecontext/core";
+} from "@frozenink/core";
 
 export const searchCommand = new Command("search")
   .description("Search across synced content")
@@ -27,7 +27,7 @@ export const searchCommand = new Command("search")
       },
     ) => {
       if (!contextExists()) {
-        console.error("VeeContext not initialized. Run: vctx init");
+        console.error("Frozen Ink not initialized. Run: fink init");
         process.exit(1);
       }
 

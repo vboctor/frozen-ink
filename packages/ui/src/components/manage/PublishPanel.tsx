@@ -129,7 +129,25 @@ export default function PublishPanel() {
     closeForm();
   };
 
-  const handleDeleteSite = (idx: number) => {
+  const handleDeleteSite = async (idx: number) => {
+    const preset = presets[idx];
+    const dep = preset ? getDeployment(preset.workerName) : undefined;
+    if (dep) {
+      setUnpublishing(preset.workerName);
+      setError(null);
+      try {
+        const res = await fetch(`/api/deployments/${encodeURIComponent(dep.name)}`, { method: "DELETE" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({ error: "Unpublish failed" }));
+          setError(data.error || "Unpublish failed");
+        }
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setUnpublishing(null);
+        loadDeployments();
+      }
+    }
     persistPresets(presets.filter((_, i) => i !== idx));
     if (editIdx === idx) closeForm();
   };
@@ -163,28 +181,6 @@ export default function PublishPanel() {
         }
       } catch {}
     }, 1000);
-  };
-
-  // --- Unpublish ---
-
-  const handleUnpublish = async (preset: PublishPreset) => {
-    const dep = getDeployment(preset.workerName);
-    if (!dep) return;
-
-    setUnpublishing(preset.workerName);
-    setError(null);
-    try {
-      const res = await fetch(`/api/deployments/${encodeURIComponent(dep.name)}`, { method: "DELETE" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Unpublish failed" }));
-        setError(data.error || "Unpublish failed");
-      }
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setUnpublishing(null);
-      loadDeployments();
-    }
   };
 
   // --- Render ---
@@ -226,7 +222,6 @@ export default function PublishPanel() {
           <div className="preset-list">
             {presets.map((p, i) => {
               const dep = getDeployment(p.workerName);
-              const isUnpublishing = unpublishing === p.workerName;
               return (
                 <div key={i} className="preset-card">
                   <div className="preset-card-header">
@@ -260,15 +255,6 @@ export default function PublishPanel() {
                       >
                         {publishing ? "Publishing..." : "Publish"}
                       </button>
-                      {dep && (
-                        <button
-                          className="btn btn-sm btn-danger"
-                          onClick={() => handleUnpublish(p)}
-                          disabled={isUnpublishing || publishing}
-                        >
-                          {isUnpublishing ? "Removing..." : "Unpublish"}
-                        </button>
-                      )}
                     </div>
                   </div>
                   <div className="preset-card-details">
@@ -316,7 +302,7 @@ export default function PublishPanel() {
               type="text"
               value={workerName}
               onChange={(e) => setWorkerName(e.target.value)}
-              placeholder="vctx-my-project"
+              placeholder="fink-my-project"
               className="form-input"
             />
           </div>

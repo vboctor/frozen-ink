@@ -2,7 +2,7 @@
 
 ## Overview
 
-VeeContext supports theming for the terminal UI dashboard, allowing users to customize the visual appearance to match their terminal environment and preferences.
+Frozen Ink supports theming for the terminal UI dashboard, allowing users to customize the visual appearance to match their terminal environment and preferences.
 
 ## Default Theme
 

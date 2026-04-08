@@ -8,12 +8,12 @@ Crawls a local Git repository, capturing metadata for all commits, branches, and
 
 ```bash
 # Without diffs (metadata only)
-bunx vctx add git \
+bunx fink add git \
   --name my-repo \
   --path /path/to/repo
 
 # With diffs included
-bunx vctx add git \
+bunx fink add git \
   --name my-repo \
   --path /path/to/repo \
   --include-diffs

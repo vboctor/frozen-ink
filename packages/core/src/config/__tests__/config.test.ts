@@ -3,15 +3,15 @@ import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { configSchema } from "../schema";
 import { defaultConfig } from "../defaults";
-import { loadConfig, getVeeContextHome } from "../loader";
+import { loadConfig, getFrozenInkHome } from "../loader";
 
 const TEST_DIR = join(import.meta.dir, ".test-config");
 
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
-  // Clear all VEECONTEXT_ env vars
+  // Clear all FROZENINK_ env vars
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith("VEECONTEXT_")) {
+    if (key.startsWith("FROZENINK_")) {
       delete process.env[key];
     }
   }
@@ -20,7 +20,7 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith("VEECONTEXT_")) {
+    if (key.startsWith("FROZENINK_")) {
       delete process.env[key];
     }
   }
@@ -34,7 +34,7 @@ describe("Config Schema", () => {
       sync: { interval: 600, concurrency: 4, retries: 5 },
       ui: { port: 8080 },
       mcp: { transport: "sse", port: 9090 },
-      logging: { level: "debug", file: "/var/log/veecontext.log" },
+      logging: { level: "debug", file: "/var/log/frozenink.log" },
     });
 
     expect(config.db.mode).toBe("turso");
@@ -46,7 +46,7 @@ describe("Config Schema", () => {
     expect(config.ui.port).toBe(8080);
     expect(config.mcp.transport).toBe("sse");
     expect(config.logging.level).toBe("debug");
-    expect(config.logging.file).toBe("/var/log/veecontext.log");
+    expect(config.logging.file).toBe("/var/log/frozenink.log");
   });
 
   it("applies defaults for empty config", () => {
@@ -110,23 +110,23 @@ describe("Default Config", () => {
   });
 });
 
-describe("getVeeContextHome", () => {
-  it("returns ~/.veecontext by default", () => {
-    delete process.env.VEECONTEXT_HOME;
-    const home = getVeeContextHome();
-    expect(home).toMatch(/\.veecontext$/);
+describe("getFrozenInkHome", () => {
+  it("returns ~/.frozenink by default", () => {
+    delete process.env.FROZENINK_HOME;
+    const home = getFrozenInkHome();
+    expect(home).toMatch(/\.frozenink$/);
   });
 
-  it("respects VEECONTEXT_HOME env var", () => {
-    process.env.VEECONTEXT_HOME = "/custom/path";
-    const home = getVeeContextHome();
+  it("respects FROZENINK_HOME env var", () => {
+    process.env.FROZENINK_HOME = "/custom/path";
+    const home = getFrozenInkHome();
     expect(home).toBe("/custom/path");
   });
 });
 
 describe("Config Loader", () => {
   it("returns defaults when no config file exists", () => {
-    process.env.VEECONTEXT_HOME = join(TEST_DIR, "empty");
+    process.env.FROZENINK_HOME = join(TEST_DIR, "empty");
     mkdirSync(join(TEST_DIR, "empty"), { recursive: true });
 
     const config = loadConfig();
@@ -146,7 +146,7 @@ describe("Config Loader", () => {
       }),
     );
 
-    process.env.VEECONTEXT_HOME = configDir;
+    process.env.FROZENINK_HOME = configDir;
     const config = loadConfig();
 
     // Overridden values
@@ -160,14 +160,14 @@ describe("Config Loader", () => {
     expect(config.sync.concurrency).toBe(2);
   });
 
-  it("applies VEECONTEXT_* env var overrides", () => {
-    process.env.VEECONTEXT_HOME = join(TEST_DIR, "env-test");
+  it("applies FROZENINK_* env var overrides", () => {
+    process.env.FROZENINK_HOME = join(TEST_DIR, "env-test");
     mkdirSync(join(TEST_DIR, "env-test"), { recursive: true });
 
-    process.env.VEECONTEXT_DB_MODE = "turso";
-    process.env.VEECONTEXT_SYNC_INTERVAL = "60";
-    process.env.VEECONTEXT_UI_PORT = "8080";
-    process.env.VEECONTEXT_LOGGING_LEVEL = "debug";
+    process.env.FROZENINK_DB_MODE = "turso";
+    process.env.FROZENINK_SYNC_INTERVAL = "60";
+    process.env.FROZENINK_UI_PORT = "8080";
+    process.env.FROZENINK_LOGGING_LEVEL = "debug";
 
     const config = loadConfig();
 
@@ -185,8 +185,8 @@ describe("Config Loader", () => {
       JSON.stringify({ ui: { port: 4000 } }),
     );
 
-    process.env.VEECONTEXT_HOME = configDir;
-    process.env.VEECONTEXT_UI_PORT = "9999";
+    process.env.FROZENINK_HOME = configDir;
+    process.env.FROZENINK_UI_PORT = "9999";
 
     const config = loadConfig();
     expect(config.ui.port).toBe(9999);
@@ -200,7 +200,7 @@ describe("Config Loader", () => {
       JSON.stringify({ db: { mode: "postgres" } }),
     );
 
-    process.env.VEECONTEXT_HOME = configDir;
+    process.env.FROZENINK_HOME = configDir;
     expect(() => loadConfig()).toThrow();
   });
 });

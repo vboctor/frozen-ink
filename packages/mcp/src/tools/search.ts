@@ -8,7 +8,7 @@ import {
   getCollectionDbPath,
   SearchIndexer,
   type SearchResult,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import type { McpServerOptions } from "../server";
 
 export function registerSearch(
@@ -47,7 +47,7 @@ export function registerSearch(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ error: "VeeContext not initialized" }),
+              text: JSON.stringify({ error: "Frozen Ink not initialized" }),
             },
           ],
         };

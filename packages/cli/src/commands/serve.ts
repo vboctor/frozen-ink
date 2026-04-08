@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { existsSync, readdirSync, statSync, readFileSync } from "fs";
 import { join, extname } from "path";
 import {
-  getVeeContextHome,
+  getFrozenInkHome,
   getCollectionDb,
   contextExists,
   listCollections,
@@ -17,14 +17,14 @@ import {
   getModuleDir,
   isBun,
   resolveUiDist,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import {
   gitHubTheme,
   obsidianTheme,
   gitTheme,
   mantisBTTheme,
-} from "@veecontext/crawlers";
-import { startStdioServer } from "@veecontext/mcp";
+} from "@frozenink/crawlers";
+import { startStdioServer } from "@frozenink/mcp";
 import { eq, desc, like } from "drizzle-orm";
 import { handleManagementRequest, setAppMode } from "./management-api";
 
@@ -692,10 +692,10 @@ export const serveCommand = new Command("serve")
   .option("--ui-only", "Start only the REST API server (no MCP)")
   .option("--port <port>", "Port for the REST API server")
   .action(async (opts: { mcpOnly?: boolean; uiOnly?: boolean; port?: string }) => {
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
 
     if (!contextExists()) {
-      console.error("VeeContext not initialized. Run: vctx init");
+      console.error("Frozen Ink not initialized. Run: fink init");
       process.exit(1);
     }
 
@@ -703,20 +703,20 @@ export const serveCommand = new Command("serve")
     const port = opts.port ? parseInt(opts.port, 10) : config.ui.port;
 
     if (opts.mcpOnly) {
-      console.error("Starting VeeContext MCP server (STDIO)...");
-      await startStdioServer({ veecontextHome: home });
+      console.error("Starting Frozen Ink MCP server (STDIO)...");
+      await startStdioServer({ frozeninkHome: home });
       return;
     }
 
     if (opts.uiOnly) {
       const server = await Promise.resolve(createApiServer(home, port));
-      console.log(`VeeContext API server running on http://localhost:${server.port}`);
+      console.log(`Frozen Ink API server running on http://localhost:${server.port}`);
       return;
     }
 
     // Start both
     const server = await Promise.resolve(createApiServer(home, port));
-    console.log(`VeeContext API server running on http://localhost:${server.port}`);
-    console.error("Starting VeeContext MCP server (STDIO)...");
-    await startStdioServer({ veecontextHome: home });
+    console.log(`Frozen Ink API server running on http://localhost:${server.port}`);
+    console.error("Starting Frozen Ink MCP server (STDIO)...");
+    await startStdioServer({ frozeninkHome: home });
   });

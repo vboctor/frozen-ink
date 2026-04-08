@@ -2,7 +2,7 @@
 
 ## Overview
 
-Crawlers are the data ingestion layer of VeeContext. Each crawler syncs data from an external service into the local SQLite database, normalizing it into a common schema.
+Crawlers are the data ingestion layer of Frozen Ink. Each crawler syncs data from an external service into the local SQLite database, normalizing it into a common schema.
 
 ## Crawler Interface
 
@@ -40,4 +40,4 @@ This ensures efficient operation even with large data volumes.
 
 ## Configuration
 
-Crawlers are configured per-project in a `.veecontext/config.json` file. Each crawler entry specifies authentication credentials (via environment variables) and crawler-specific options like which repositories or channels to sync.
+Crawlers are configured per-project in a `.frozenink/config.json` file. Each crawler entry specifies authentication credentials (via environment variables) and crawler-specific options like which repositories or channels to sync.

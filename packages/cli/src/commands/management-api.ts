@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import {
-  getVeeContextHome,
+  getFrozenInkHome,
   getCollectionDb,
   listCollections,
   getCollection,
@@ -23,14 +23,14 @@ import {
   LocalStorageBackend,
   syncRuns,
   entities,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import {
   createDefaultRegistry,
   gitHubTheme,
   obsidianTheme,
   gitTheme,
   mantisBTTheme,
-} from "@veecontext/crawlers";
+} from "@frozenink/crawlers";
 import { desc, eq } from "drizzle-orm";
 
 // --- In-memory sync/publish/export progress tracking ---
@@ -138,7 +138,7 @@ export function handleManagementRequest(req: Request): Response | null {
     return jsonResponse({
       mode: appMode,
       version: "0.1.0",
-      workspacePath: getVeeContextHome(),
+      workspacePath: getFrozenInkHome(),
     });
   }
 
@@ -159,7 +159,7 @@ export function handleManagementRequest(req: Request): Response | null {
       addCollection(name, { title, crawler, enabled, config, credentials });
 
       // Ensure collection directory exists
-      const home = getVeeContextHome();
+      const home = getFrozenInkHome();
       const colDir = join(home, "collections", name);
       mkdirSync(join(colDir, "markdown"), { recursive: true });
 
@@ -291,7 +291,7 @@ export function handleManagementRequest(req: Request): Response | null {
   if (deleteDepMatch && method === "DELETE") {
     const name = decodeURIComponent(deleteDepMatch[1]);
     return handleAsync(async () => {
-      const { getDeployment: getDeploymentEntry } = await import("@veecontext/core");
+      const { getDeployment: getDeploymentEntry } = await import("@frozenink/core");
       const deployment = getDeploymentEntry(name);
       if (!deployment) return errorResponse("Deployment not found", 404);
 
@@ -317,7 +317,7 @@ export function handleManagementRequest(req: Request): Response | null {
       }
 
       // Dynamic import to avoid circular deps
-      const { exportStaticSite } = await import("@veecontext/core/export");
+      const { exportStaticSite } = await import("@frozenink/core/export");
       exportProgress = { active: true, step: "starting", current: 0, total: 0, error: null };
       try {
         await exportStaticSite({
@@ -353,7 +353,7 @@ export function handleManagementRequest(req: Request): Response | null {
   if (path === "/api/config" && method === "PATCH") {
     return handleAsync(async () => {
       const body = await readBody(req);
-      const home = getVeeContextHome();
+      const home = getFrozenInkHome();
       const configPath = join(home, "config.json");
 
       let existing: Record<string, unknown> = {};
@@ -371,7 +371,7 @@ export function handleManagementRequest(req: Request): Response | null {
 
   // GET /api/preferences
   if (path === "/api/preferences" && method === "GET") {
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
     const configPath = join(home, "config.json");
     let prefs: Record<string, unknown> = {};
     if (existsSync(configPath)) {
@@ -387,7 +387,7 @@ export function handleManagementRequest(req: Request): Response | null {
   if (path === "/api/preferences" && method === "PATCH") {
     return handleAsync(async () => {
       const body = await readBody(req);
-      const home = getVeeContextHome();
+      const home = getFrozenInkHome();
       const configPath = join(home, "config.json");
 
       let existing: Record<string, unknown> = {};
@@ -404,7 +404,7 @@ export function handleManagementRequest(req: Request): Response | null {
 
   // GET /api/publish-presets
   if (path === "/api/publish-presets" && method === "GET") {
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
     const configPath = join(home, "config.json");
     let presets: unknown[] = [];
     if (existsSync(configPath)) {
@@ -421,7 +421,7 @@ export function handleManagementRequest(req: Request): Response | null {
     return handleAsync(async () => {
       const body = await readBody(req);
       const presets = body.presets as unknown[];
-      const home = getVeeContextHome();
+      const home = getFrozenInkHome();
       const configPath = join(home, "config.json");
 
       let existing: Record<string, unknown> = {};
@@ -479,7 +479,7 @@ function handleAsync(fn: () => Promise<Response>): Response {
 // --- Sync logic ---
 
 async function triggerSync(collectionNames: string[], full: boolean): Promise<void> {
-  const home = getVeeContextHome();
+  const home = getFrozenInkHome();
   const registry = createDefaultRegistry();
   const themeEngine = createThemeEngine();
 
@@ -527,7 +527,7 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
           const dbPath = getCollectionDbPath(name);
           if (existsSync(dbPath)) {
             const colDb = getCollectionDb(dbPath);
-            colDb.delete(require("@veecontext/core").syncState).run();
+            colDb.delete(require("@frozenink/core").syncState).run();
           }
         }
 

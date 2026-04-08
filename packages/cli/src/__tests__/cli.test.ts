@@ -9,18 +9,18 @@ import {
   addCollection,
   getCollection,
   listCollections,
-} from "@veecontext/core";
+} from "@frozenink/core";
 
 const TEST_DIR = join(import.meta.dir, ".test-cli");
 
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
-  process.env.VEECONTEXT_HOME = TEST_DIR;
+  process.env.FROZENINK_HOME = TEST_DIR;
 });
 
 afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
-  delete process.env.VEECONTEXT_HOME;
+  delete process.env.FROZENINK_HOME;
 });
 
 describe("CLI: init", () => {
@@ -43,7 +43,7 @@ describe("CLI: init", () => {
     expect(existsSync(join(TEST_DIR, "context.yml"))).toBe(true);
     expect(existsSync(join(TEST_DIR, "collections"))).toBe(true);
     expect(listCollections()).toHaveLength(0);
-    expect(logs.some((l) => l.includes("Initialized VeeContext"))).toBe(true);
+    expect(logs.some((l) => l.includes("Initialized Frozen Ink"))).toBe(true);
   });
 
   it("skips if already initialized", async () => {

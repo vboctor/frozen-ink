@@ -1,5 +1,5 @@
 {
-  "name": "@veecontext/worker",
+  "name": "@frozenink/worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "hono": "^4.0.0",
-    "@veecontext/core": "workspace:*",
-    "@veecontext/crawlers": "workspace:*"
+    "@frozenink/core": "workspace:*",
+    "@frozenink/crawlers": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

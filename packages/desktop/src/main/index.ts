@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, nativeImage } from "electron";
+import { app, BrowserWindow, ipcMain, shell, nativeImage, Menu } from "electron";
 import { join, dirname } from "path";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
@@ -16,7 +16,7 @@ let apiServer: { port: number; stop?: () => void } | null = null;
 
 async function startApiServer(workspacePath: string): Promise<{ port: number; stop?: () => void }> {
   // Set environment before importing core modules
-  process.env.VEECONTEXT_HOME = workspacePath;
+  process.env.FROZENINK_HOME = workspacePath;
 
   setAppMode("desktop");
 
@@ -52,7 +52,7 @@ function createMainWindow(): BrowserWindow {
     height: 800,
     minWidth: 800,
     minHeight: 500,
-    title: "VeeContext",
+    title: "Frozen Ink",
     icon: existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: existsSync(preloadPath) ? preloadPath : undefined,
@@ -77,7 +77,41 @@ function createMainWindow(): BrowserWindow {
   return win;
 }
 
+app.name = "Frozen Ink";
+
 app.whenReady().then(async () => {
+  // Build custom application menu so the menu bar shows "Frozen Ink" instead of "Electron".
+  // Using role: "appMenu" would inherit the binary name, so we construct it manually.
+  if (process.platform === "darwin") {
+    const aboutIconPath = join(__desktopDirname, "../../build/icon.png");
+    app.setAboutPanelOptions({
+      applicationName: "Frozen Ink",
+      applicationVersion: "0.1.0",
+      iconPath: aboutIconPath,
+    });
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      {
+        label: "Frozen Ink",
+        submenu: [
+          { role: "about", label: "About Frozen Ink" },
+          { type: "separator" },
+          { role: "services" },
+          { type: "separator" },
+          { role: "hide", label: "Hide Frozen Ink" },
+          { role: "hideOthers" },
+          { role: "unhide" },
+          { type: "separator" },
+          { role: "quit", label: "Quit Frozen Ink" },
+        ],
+      },
+      { role: "fileMenu" },
+      { role: "editMenu" },
+      { role: "viewMenu" },
+      { role: "windowMenu" },
+      { role: "help" },
+    ]));
+  }
+
   // Set dock/taskbar icon (macOS dock icon isn't set by BrowserWindow.icon)
   const appIconPath = join(__desktopDirname, "../../build/icon.png");
   if (existsSync(appIconPath)) {
@@ -135,7 +169,7 @@ function showWelcomeScreen() {
     <html>
     <head>
       <meta charset="utf-8">
-      <title>VeeContext</title>
+      <title>Frozen Ink</title>
       <style>
         body {
           font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -177,7 +211,7 @@ function showWelcomeScreen() {
     </head>
     <body>
       <div class="welcome">
-        <h1>VeeContext</h1>
+        <h1>Frozen Ink</h1>
         <p>Choose a workspace to get started</p>
         <div class="actions">
           <button class="btn-primary" onclick="createWorkspace()">Create Workspace</button>
@@ -186,17 +220,17 @@ function showWelcomeScreen() {
       </div>
       <script>
         async function createWorkspace() {
-          const path = await window.veecontext?.openDirectoryPicker();
+          const path = await window.frozenink?.openDirectoryPicker();
           if (!path) return;
           const name = path.split('/').pop() || 'Workspace';
-          await window.veecontext?.createWorkspace(name, path);
-          await window.veecontext?.switchWorkspace(path);
+          await window.frozenink?.createWorkspace(name, path);
+          await window.frozenink?.switchWorkspace(path);
         }
         async function openWorkspace() {
-          const path = await window.veecontext?.openDirectoryPicker();
+          const path = await window.frozenink?.openDirectoryPicker();
           if (!path) return;
-          await window.veecontext?.openWorkspace(path);
-          await window.veecontext?.switchWorkspace(path);
+          await window.frozenink?.openWorkspace(path);
+          await window.frozenink?.switchWorkspace(path);
         }
       </script>
     </body>

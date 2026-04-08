@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { join, extname } from "path";
 import {
-  getVeeContextHome,
+  getFrozenInkHome,
   getCollectionDb,
   contextExists,
   getCollection,
@@ -16,7 +16,7 @@ import {
   getModuleDir,
   resolveWorkerBundle,
   resolveUiDist,
-} from "@veecontext/core";
+} from "@frozenink/core";
 
 const __moduleDir = getModuleDir(import.meta.url);
 import { eq } from "drizzle-orm";
@@ -128,7 +128,7 @@ export async function publishCollections(
     collectionNames = existingDeployment.collections;
   }
 
-  const home = getVeeContextHome();
+  const home = getFrozenInkHome();
 
   // Validate collections
   if (!workerOnly) {
@@ -456,7 +456,7 @@ export const publishCommand = new Command("publish")
   .description("Publish collections to Cloudflare as a password-protected website with MCP access")
   .argument("[collections...]", "Collection names to publish")
   .option("--password <password>", "Password to protect access")
-  .option("--name <name>", "Worker name (default: vctx-<first-collection>-<random>)")
+  .option("--name <name>", "Worker name (default: fink-<first-collection>-<random>)")
   .option("--worker-only", "Deploy worker code only (skip D1/R2 data upload); requires --name for an existing deployment")
   .action(async (collectionNamesArg: string[], opts: {
     password?: string;
@@ -465,7 +465,7 @@ export const publishCommand = new Command("publish")
   }) => {
     try {
       if (!contextExists()) {
-        console.error("VeeContext not initialized. Run: vctx init");
+        console.error("Frozen Ink not initialized. Run: fink init");
         process.exit(1);
       }
 
@@ -481,7 +481,7 @@ export const publishCommand = new Command("publish")
         process.exit(1);
       }
 
-      const workerName = opts.name || `vctx-${collectionNames[0]}-${randomSuffix()}`;
+      const workerName = opts.name || `fink-${collectionNames[0]}-${randomSuffix()}`;
 
       const result = await publishCollections(
         { collectionNames, workerName, password: opts.password, workerOnly },
@@ -498,7 +498,7 @@ export const publishCommand = new Command("publish")
       console.log(`MCP URL: ${result.mcpUrl}`);
       if (opts.password) {
         console.log(`\nMCP Setup (Claude Code):`);
-        console.log(`  claude mcp add veecontext --transport streamable-http \\`);
+        console.log(`  claude mcp add frozenink --transport streamable-http \\`);
         console.log(`    --url ${result.mcpUrl} \\`);
         console.log(`    --header "Authorization: Bearer <password>"`);
       }

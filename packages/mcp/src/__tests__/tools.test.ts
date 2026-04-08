@@ -10,7 +10,7 @@ import {
   SearchIndexer,
   addCollection as coreAddCollection,
   saveContext,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import { createMcpServer, type McpServerOptions } from "../server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -22,9 +22,9 @@ let client: Client;
 
 function setupTestEnv() {
   mkdirSync(TEST_DIR, { recursive: true });
-  options = { veecontextHome: TEST_DIR };
-  // Required so getVeeContextHome() / listCollections() / getCollection() etc. resolve to TEST_DIR
-  process.env.VEECONTEXT_HOME = TEST_DIR;
+  options = { frozeninkHome: TEST_DIR };
+  // Required so getFrozenInkHome() / listCollections() / getCollection() etc. resolve to TEST_DIR
+  process.env.FROZENINK_HOME = TEST_DIR;
 
   // Create context.yml (required by contextExists() checks in MCP tools/resources)
   saveContext({ collections: {}, deployments: {} });
@@ -138,7 +138,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
-  delete process.env.VEECONTEXT_HOME;
+  delete process.env.FROZENINK_HOME;
 });
 
 describe("collection_list tool", () => {
@@ -311,7 +311,7 @@ describe("MCP resources", () => {
     await setupClient();
     const result = await client.listResources();
 
-    const collectionsRes = result.resources.find((r) => r.uri === "veecontext://collections");
+    const collectionsRes = result.resources.find((r) => r.uri === "frozenink://collections");
     expect(collectionsRes).toBeDefined();
   });
 
@@ -319,7 +319,7 @@ describe("MCP resources", () => {
     addCollection("read-col");
 
     await setupClient();
-    const result = await client.readResource({ uri: "veecontext://collections" });
+    const result = await client.readResource({ uri: "frozenink://collections" });
 
     const data = JSON.parse(result.contents[0].text as string);
     expect(data).toHaveLength(1);
@@ -331,7 +331,7 @@ describe("MCP resources", () => {
     addEntity(dbPath, { externalId: "e-1", entityType: "issue", title: "Test", data: {} });
 
     await setupClient();
-    const result = await client.readResource({ uri: "veecontext://collections/detail-col" });
+    const result = await client.readResource({ uri: "frozenink://collections/detail-col" });
 
     const data = JSON.parse(result.contents[0].text as string);
     expect(data.name).toBe("detail-col");
@@ -344,7 +344,7 @@ describe("MCP resources", () => {
     addEntity(dbPath, { externalId: "issue-99", entityType: "issue", title: "Resource entity", data: { number: 99 }, tags: ["test"] });
 
     await setupClient();
-    const result = await client.readResource({ uri: "veecontext://entities/ent-res-col/issue-99" });
+    const result = await client.readResource({ uri: "frozenink://entities/ent-res-col/issue-99" });
 
     const data = JSON.parse(result.contents[0].text as string);
     expect(data.externalId).toBe("issue-99");
@@ -360,7 +360,7 @@ describe("MCP resources", () => {
     writeFileSync(join(collectionDir, "markdown", "issues", "1-test.md"), "# Test Issue\n\nBody content.");
 
     await setupClient();
-    const result = await client.readResource({ uri: "veecontext://markdown/md-res-col/markdown/issues/1-test.md" });
+    const result = await client.readResource({ uri: "frozenink://markdown/md-res-col/markdown/issues/1-test.md" });
 
     expect(result.contents[0].text).toBe("# Test Issue\n\nBody content.");
     expect(result.contents[0].mimeType).toBe("text/markdown");

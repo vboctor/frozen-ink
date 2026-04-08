@@ -15,7 +15,7 @@ Syncs issues, pull requests, and user profiles from a GitHub repository via the 
 ### 2. Add the Collection
 
 ```bash
-vctx add github \
+fink add github \
   --name my-repo \
   --token ghp_xxxxxxxxxxxx \
   --repo my-org/my-repo
@@ -44,29 +44,29 @@ The token is validated against the GitHub API before the collection is created.
 ### 3. Sync
 
 ```bash
-vctx sync my-repo                      # Incremental sync (only changed items)
-vctx sync my-repo --full               # Full re-sync (wipes and re-fetches everything)
-vctx sync my-repo --max 10             # At most 10 issues + 10 PRs
-vctx sync my-repo --max-issues 5       # Limit issues only (no PR limit)
-vctx sync my-repo --max-prs 3          # Limit PRs only (no issue limit)
+fink sync my-repo                      # Incremental sync (only changed items)
+fink sync my-repo --full               # Full re-sync (wipes and re-fetches everything)
+fink sync my-repo --max 10             # At most 10 issues + 10 PRs
+fink sync my-repo --max-issues 5       # Limit issues only (no PR limit)
+fink sync my-repo --max-prs 3          # Limit PRs only (no issue limit)
 ```
 
-The `--max` flag sets both `maxIssues` and `maxPullRequests` to the same value. The `--max-issues` and `--max-prs` flags override individually. All flags on `vctx sync` override the collection's config for that run and work with both incremental and full syncs.
+The `--max` flag sets both `maxIssues` and `maxPullRequests` to the same value. The `--max-issues` and `--max-prs` flags override individually. All flags on `fink sync` override the collection's config for that run and work with both incremental and full syncs.
 
 ### Updating Collection Config
 
 ```bash
-vctx update my-repo --open-only        # Switch to open-only mode
-vctx update my-repo --max 50           # Change max to 50 per type
-vctx update my-repo --open-only false  # Disable open-only mode
+fink update my-repo --open-only        # Switch to open-only mode
+fink update my-repo --max 50           # Change max to 50 per type
+fink update my-repo --open-only false  # Disable open-only mode
 ```
 
-After updating, re-sync with `vctx sync my-repo --full` to apply the new settings.
+After updating, re-sync with `fink sync my-repo --full` to apply the new settings.
 
 ### Example: Sync Only Open Issues
 
 ```bash
-vctx add github \
+fink add github \
   --name my-repo-open \
   --token $GITHUB_TOKEN \
   --repo my-org/my-repo \
@@ -215,7 +215,7 @@ The sync engine computes a SHA-256 hash of each entity's data. If the hash match
 
 ## Configuration
 
-Stored in `~/.veecontext/context.yml`:
+Stored in `~/.frozenink/context.yml`:
 
 ```yaml
 collections:
@@ -249,7 +249,7 @@ collections:
 | `maxIssues` | none | Maximum issues to sync |
 | `maxPullRequests` | none | Maximum pull requests to sync |
 
-To change options after creation, edit `~/.veecontext/context.yml` directly and re-sync.
+To change options after creation, edit `~/.frozenink/context.yml` directly and re-sync.
 
 ## API Rate Limits
 

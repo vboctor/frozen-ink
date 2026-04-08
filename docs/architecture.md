@@ -2,7 +2,7 @@
 
 ## Overview
 
-VeeContext follows a layered architecture where data flows from external sources through crawlers into a local SQLite database, and is then served to AI assistants via the Model Context Protocol.
+Frozen Ink follows a layered architecture where data flows from external sources through crawlers into a local SQLite database, and is then served to AI assistants via the Model Context Protocol.
 
 ```
 External Services (GitHub, Linear, Slack, ...)
@@ -31,7 +31,7 @@ External Services (GitHub, Linear, Slack, ...)
 
 ## Packages
 
-### @veecontext/core
+### @frozenink/core
 
 The foundation package. Contains:
 
@@ -40,7 +40,7 @@ The foundation package. Contains:
 - **Domain types** - TypeScript types derived from Zod schemas
 - **Database utilities** - Connection management, migrations
 
-### @veecontext/crawlers
+### @frozenink/crawlers
 
 Each crawler implements a common interface to:
 
@@ -49,7 +49,7 @@ Each crawler implements a common interface to:
 3. Transform data into normalized core types
 4. Write results to the local database
 
-### @veecontext/mcp
+### @frozenink/mcp
 
 Implements a Model Context Protocol server that:
 
@@ -57,7 +57,7 @@ Implements a Model Context Protocol server that:
 - Serves resources representing project state
 - Runs as a stdio-based server for editor integration
 
-### @veecontext/cli
+### @frozenink/cli
 
 Entry point for users. Provides commands for:
 
@@ -67,7 +67,7 @@ Entry point for users. Provides commands for:
 - `daemon` - Background sync management
 - `status` - View sync status
 
-### @veecontext/ui
+### @frozenink/ui
 
 Terminal UI built for real-time monitoring of sync operations and browsing aggregated context.
 

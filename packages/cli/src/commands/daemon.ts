@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { fileURLToPath } from "url";
 import {
-  getVeeContextHome,
+  getFrozenInkHome,
   contextExists,
   listCollections,
   getCollectionDbPath,
@@ -12,11 +12,11 @@ import {
   ThemeEngine,
   LocalStorageBackend,
   spawnDetached,
-} from "@veecontext/core";
-import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@veecontext/crawlers";
+} from "@frozenink/core";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@frozenink/crawlers";
 
 function getPidPath(): string {
-  return join(getVeeContextHome(), "daemon.pid");
+  return join(getFrozenInkHome(), "daemon.pid");
 }
 
 function isProcessRunning(pid: number): boolean {
@@ -29,7 +29,7 @@ function isProcessRunning(pid: number): boolean {
 }
 
 async function runSyncLoop(intervalMs: number): Promise<void> {
-  const home = getVeeContextHome();
+  const home = getFrozenInkHome();
 
   const doSync = async () => {
     if (!contextExists()) return;
@@ -87,11 +87,11 @@ const startCommand = new Command("start")
   .description("Start the sync daemon in the background")
   .action(async () => {
     if (!contextExists()) {
-      console.error("VeeContext not initialized. Run: vctx init");
+      console.error("Frozen Ink not initialized. Run: fink init");
       process.exit(1);
     }
 
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
     const pidPath = getPidPath();
 
     // Check if already running
@@ -112,7 +112,7 @@ const startCommand = new Command("start")
     const modulePath = fileURLToPath(import.meta.url);
     const proc = spawnDetached(
       ["bun", "run", modulePath, "__daemon-run", String(intervalMs)],
-      { env: { ...process.env, VEECONTEXT_HOME: home } },
+      { env: { ...process.env, FROZENINK_HOME: home } },
     );
 
     const pid = proc.pid;

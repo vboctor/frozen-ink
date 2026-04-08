@@ -3,7 +3,7 @@ import {
   contextExists,
   getCollection,
   updateCollection,
-} from "@veecontext/core";
+} from "@frozenink/core";
 
 export const updateCommand = new Command("update")
   .description("Update collection configuration")
@@ -16,7 +16,7 @@ export const updateCommand = new Command("update")
   .option("--sync-check-statuses [value]", "Sync check statuses (true/false)")
   .action(async (collection: string, opts: Record<string, unknown>) => {
     if (!contextExists()) {
-      console.error("VeeContext not initialized. Run: vctx init");
+      console.error("Frozen Ink not initialized. Run: fink init");
       process.exit(1);
     }
 
@@ -94,5 +94,5 @@ export const updateCommand = new Command("update")
     for (const change of changes) {
       console.log(`  ${change}`);
     }
-    console.log(`\nRun "vctx sync ${collection} --full" to re-sync with new settings.`);
+    console.log(`\nRun "fink sync ${collection} --full" to re-sync with new settings.`);
   });

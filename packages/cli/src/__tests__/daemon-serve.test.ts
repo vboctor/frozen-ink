@@ -15,18 +15,18 @@ import {
   SearchIndexer,
   addCollection,
   saveContext,
-} from "@veecontext/core";
+} from "@frozenink/core";
 
 const TEST_DIR = join(import.meta.dir, ".test-daemon-serve");
 
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
-  process.env.VEECONTEXT_HOME = TEST_DIR;
+  process.env.FROZENINK_HOME = TEST_DIR;
 });
 
 afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
-  delete process.env.VEECONTEXT_HOME;
+  delete process.env.FROZENINK_HOME;
 });
 
 function initTestEnv() {

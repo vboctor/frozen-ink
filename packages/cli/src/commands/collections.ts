@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { existsSync, renameSync, rmSync } from "fs";
 import { join } from "path";
 import {
-  getVeeContextHome,
+  getFrozenInkHome,
   isValidCollectionKey,
   contextExists,
   listCollections,
@@ -11,11 +11,11 @@ import {
   updateCollection,
   renameCollection,
   getCollectionDbPath,
-} from "@veecontext/core";
+} from "@frozenink/core";
 
 function requireInit(): void {
   if (!contextExists()) {
-    console.error("VeeContext not initialized. Run: vctx init");
+    console.error("Frozen Ink not initialized. Run: fink init");
     process.exit(1);
   }
 }
@@ -55,7 +55,7 @@ const removeCommand = new Command("remove")
     }
 
     // Remove collection directory
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
     const collectionDir = join(home, "collections", key);
     if (existsSync(collectionDir)) {
       rmSync(collectionDir, { recursive: true, force: true });
@@ -110,7 +110,7 @@ const renameCommand = new Command("rename")
     }
 
     requireInit();
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
     const col = getCollection(oldKey);
 
     if (!col) {

@@ -5,7 +5,7 @@ import {
   getDeployment,
   removeDeployment,
   type DeploymentEntry,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import {
   checkWranglerAuth,
   deleteWorker,
@@ -97,7 +97,7 @@ export const unpublishCommand = new Command("unpublish")
   }) => {
     try {
       if (!contextExists()) {
-        console.error("VeeContext not initialized. Run: vctx init");
+        console.error("Frozen Ink not initialized. Run: fink init");
         process.exit(1);
       }
 

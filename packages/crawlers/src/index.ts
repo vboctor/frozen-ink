@@ -1,4 +1,4 @@
-import { CrawlerRegistry } from "@veecontext/core";
+import { CrawlerRegistry } from "@frozenink/core";
 import { GitHubCrawler } from "./github/crawler";
 import { GitHubTheme } from "./github/theme";
 import { ObsidianCrawler } from "./obsidian/crawler";

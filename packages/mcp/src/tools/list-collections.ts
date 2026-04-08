@@ -7,7 +7,7 @@ import {
   getCollectionDbPath,
   entities,
   syncRuns,
-} from "@veecontext/core";
+} from "@frozenink/core";
 import { desc } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 
@@ -29,7 +29,7 @@ export function registerListCollections(
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ error: "VeeContext not initialized" }),
+              text: JSON.stringify({ error: "Frozen Ink not initialized" }),
             },
           ],
         };

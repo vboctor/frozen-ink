@@ -2,15 +2,15 @@ import { Command } from "commander";
 import { mkdirSync } from "fs";
 import { join } from "path";
 import {
-  getVeeContextHome,
+  getFrozenInkHome,
   getCollectionDb,
   isValidCollectionKey,
   contextExists,
   getCollection,
   addCollection,
   getCollectionDbPath,
-} from "@veecontext/core";
-import { createDefaultRegistry } from "@veecontext/crawlers";
+} from "@frozenink/core";
+import { createDefaultRegistry } from "@frozenink/crawlers";
 
 export const addCommand = new Command("add")
   .description("Add a new collection")
@@ -29,7 +29,7 @@ export const addCommand = new Command("add")
   .option("--open-only", "Only sync open issues/PRs, delete closed ones (for github)")
   .action(async (crawlerType: string, opts: Record<string, string>) => {
     if (!contextExists()) {
-      console.error("VeeContext not initialized. Run: vctx init");
+      console.error("Frozen Ink not initialized. Run: fink init");
       process.exit(1);
     }
 
@@ -140,7 +140,7 @@ export const addCommand = new Command("add")
     }
 
     // Create collection directory and database
-    const home = getVeeContextHome();
+    const home = getFrozenInkHome();
     const collectionDir = join(home, "collections", opts.name);
     mkdirSync(collectionDir, { recursive: true });
     const collectionDbPath = getCollectionDbPath(opts.name);
@@ -160,5 +160,5 @@ export const addCommand = new Command("add")
     const displayName = opts.title ? `${opts.title} (${opts.name})` : opts.name;
     console.log(`Collection "${displayName}" created (${crawlerType})`);
     console.log(`  Database: ${collectionDbPath}`);
-    console.log(`  Run "vctx sync ${opts.name}" to start syncing`);
+    console.log(`  Run "fink sync ${opts.name}" to start syncing`);
   });
