@@ -1,0 +1,57 @@
+appId: com.veecontext.desktop
+productName: VeeContext
+copyright: Copyright © 2026
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - "dist/**/*"
+  - "node_modules/**/*"
+  - "package.json"
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - universal
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+linux:
+  icon: build/icon.png
+  category: Development
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+npmRebuild: true
+nodeGypRebuild: false
+
+extraResources:
+  - from: "../ui/dist"
+    to: "ui-dist"
+    filter:
+      - "**/*"
+  - from: "../worker/dist"
+    to: "worker-dist"
+    filter:
+      - "worker.js"

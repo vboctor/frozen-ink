@@ -5,6 +5,7 @@ import type {
   SyncCursor,
   SyncResult,
 } from "@veecontext/core";
+import { createCryptoHasher } from "@veecontext/core";
 import type {
   MantisBTConfig,
   MantisBTCredentials,
@@ -54,7 +55,7 @@ function padId(id: number): string {
 }
 
 function attachmentFilename(issueId: number, filename: string): string {
-  const hasher = new Bun.CryptoHasher("md5");
+  const hasher = createCryptoHasher("md5");
   hasher.update(filename);
   const hash = hasher.digest("hex").slice(0, 8);
   const dotIdx = filename.lastIndexOf(".");
@@ -63,7 +64,7 @@ function attachmentFilename(issueId: number, filename: string): string {
 }
 
 function noteAttachmentFilename(issueId: number, noteId: number, filename: string): string {
-  const hasher = new Bun.CryptoHasher("md5");
+  const hasher = createCryptoHasher("md5");
   hasher.update(filename);
   const hash = hasher.digest("hex").slice(0, 8);
   const dotIdx = filename.lastIndexOf(".");
@@ -423,7 +424,7 @@ export class MantisBTCrawler implements Crawler {
   }
 
   private async buildIssueEntity(issue: MantisBTIssue): Promise<CrawlerEntityData> {
-    const hasher = new Bun.CryptoHasher("sha256");
+    const hasher = createCryptoHasher("sha256");
     hasher.update(JSON.stringify(issue));
     const contentHash = hasher.digest("hex");
 

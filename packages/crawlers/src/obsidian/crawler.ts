@@ -7,6 +7,7 @@ import type {
   SyncCursor,
   SyncResult,
 } from "@veecontext/core";
+import { createCryptoHasher } from "@veecontext/core";
 import type { ObsidianConfig, ObsidianCredentials, VaultFile } from "./types";
 
 const EXCLUDED_DIRS = new Set([".obsidian", ".trash", ".git", "node_modules"]);
@@ -245,7 +246,7 @@ export class ObsidianCrawler implements Crawler {
     }
 
     // Compute content hash from file content + mtime
-    const hasher = new Bun.CryptoHasher("sha256");
+    const hasher = createCryptoHasher("sha256");
     hasher.update(content);
     hasher.update(String(file.mtime));
     const contentHash = hasher.digest("hex");

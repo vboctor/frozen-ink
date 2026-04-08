@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
+import { fileURLToPath } from "url";
 import {
   getVeeContextHome,
   contextExists,
@@ -10,6 +11,7 @@ import {
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
+  spawnDetached,
 } from "@veecontext/core";
 import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@veecontext/crawlers";
 
@@ -107,12 +109,10 @@ const startCommand = new Command("start")
     const intervalMs = config.sync.interval * 1000;
 
     // Fork a background process
-    const proc = Bun.spawn(
-      ["bun", "run", import.meta.path, "__daemon-run", String(intervalMs)],
-      {
-        stdio: ["ignore", "ignore", "ignore"],
-        env: { ...process.env, VEECONTEXT_HOME: home },
-      },
+    const modulePath = fileURLToPath(import.meta.url);
+    const proc = spawnDetached(
+      ["bun", "run", modulePath, "__daemon-run", String(intervalMs)],
+      { env: { ...process.env, VEECONTEXT_HOME: home } },
     );
 
     const pid = proc.pid;

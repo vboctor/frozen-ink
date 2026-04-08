@@ -82,7 +82,7 @@ export const indexCommand = new Command("index")
           .from(entityTags)
           .where(eq(entityTags.entityId, entity.id))
           .all()
-          .map((t) => t.tag);
+          .map((t: any) => t.tag);
 
         indexer.updateIndex({
           id: entity.id,

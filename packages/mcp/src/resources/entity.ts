@@ -92,7 +92,7 @@ export function registerEntityResources(
         .from(entityTags)
         .where(eq(entityTags.entityId, entity.id))
         .all()
-        .map((t) => t.tag);
+        .map((t: any) => t.tag);
 
       return {
         contents: [

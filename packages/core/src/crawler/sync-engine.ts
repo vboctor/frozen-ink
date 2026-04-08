@@ -1,4 +1,5 @@
 import { eq, and } from "drizzle-orm";
+import { createCryptoHasher } from "../compat/crypto";
 import { getCollectionDb } from "../db/client";
 import {
   entities,
@@ -43,7 +44,7 @@ export function extractWikilinks(markdown: string): string[] {
 }
 
 function computeHash(data: Record<string, unknown>): string {
-  const hasher = new Bun.CryptoHasher("sha256");
+  const hasher = createCryptoHasher("sha256");
   hasher.update(JSON.stringify(data));
   return hasher.digest("hex");
 }
@@ -90,14 +91,15 @@ export class SyncEngine {
     this.onBatchFetched = options.onBatchFetched;
   }
 
-  async run(): Promise<{ created: number; updated: number; deleted: number }> {
+  async run(options?: { syncType?: "full" | "incremental" }): Promise<{ created: number; updated: number; deleted: number }> {
     const crawlerType = this.crawler.metadata.type;
     const startedAt = new Date().toISOString().replace("T", " ").replace("Z", "");
+    const syncType = options?.syncType ?? "incremental";
 
     // Create sync_run record
     this.db
       .insert(syncRuns)
-      .values({ status: "running", startedAt })
+      .values({ status: "running", syncType, startedAt })
       .run();
     const [runRecord] = this.db
       .select()
@@ -372,12 +374,12 @@ export class SyncEngine {
       .where(eq(entityLinks.sourceEntityId, entityId))
       .all();
 
-    const existingTargets = new Map(existingRows.map((r) => [r.targetPath, r.id]));
+    const existingTargets = new Map(existingRows.map((r: any) => [r.targetPath, r.id]));
 
     // Delete links that are no longer present
-    for (const [target, id] of existingTargets) {
+    for (const [target, id] of existingTargets as Map<string, number>) {
       if (!newTargets.has(target)) {
-        this.db.delete(entityLinks).where(eq(entityLinks.id, id)).run();
+        this.db.delete(entityLinks).where(eq(entityLinks.id, id as number)).run();
       }
     }
 
@@ -475,7 +477,7 @@ export class SyncEngine {
         .from(entityTags)
         .where(eq(entityTags.entityId, entity.id))
         .all()
-        .map((t) => t.tag);
+        .map((t: any) => t.tag);
       const expected = this.themeEngine.render({
         entity: {
           externalId: entity.externalId,
@@ -506,7 +508,7 @@ export class SyncEngine {
     // are tool index files that belong to other applications and will be
     // recreated by them; we must not touch them.
     const dbMarkdownPaths = new Set(
-      allEntities.map((e) => e.markdownPath).filter(Boolean),
+      allEntities.map((e: any) => e.markdownPath).filter(Boolean),
     );
     try {
       const diskMarkdownFiles = await this.storage.list(this.markdownBasePath);
@@ -527,7 +529,7 @@ export class SyncEngine {
     // 3. Delete orphaned attachment files (on disk but no matching record in DB)
     const allAttachmentRows = this.db.select().from(attachments).all();
     const dbAttachmentPaths = new Set(
-      allAttachmentRows.map((a) => a.storagePath),
+      allAttachmentRows.map((a: any) => a.storagePath),
     );
     try {
       const diskAttachmentFiles = await this.storage.list("attachments");

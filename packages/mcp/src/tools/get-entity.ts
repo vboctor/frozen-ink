@@ -92,7 +92,7 @@ export function registerGetEntity(
         .from(entityTags)
         .where(eq(entityTags.entityId, entity.id))
         .all()
-        .map((t) => t.tag);
+        .map((t: any) => t.tag);
 
       let markdown: string | null = null;
       if (entity.markdownPath) {

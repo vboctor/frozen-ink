@@ -2,7 +2,7 @@
 
 VeeContext is a local data aggregation tool that crawls multiple sources (GitHub repositories, Obsidian vaults, Git repos, MantisBT), syncs their content into a local SQLite database, renders navigable Obsidian-compatible markdown, and serves everything through a web UI and Model Context Protocol (MCP) server for AI coding assistants.
 
-Collections can also be **published to Cloudflare** as a password-protected website with remote MCP access.
+Collections can also be **published to Cloudflare** as a password-protected website with remote MCP access, or managed through a **cross-platform desktop app** (Electron).
 
 ## Architecture
 
@@ -16,31 +16,32 @@ Data Sources (GitHub API, Obsidian Vault, Git Repo, MantisBT, ...)
          |
          v
   +-------------+
-  |    Core      |  SQLite DB, schemas, sync engine, search (FTS5), context.yml
+  |    Core      |  SQLite DB, schemas, sync engine, search (FTS5), compat layer, export
   +------+------+
          |
-    +----+----+------+
-    v         v      v
-+-------+ +-----+ +--------+
-|  MCP  | | CLI | | Worker |  MCP server; CLI manages everything; Worker runs on CF
-+-------+ +-----+ +--------+
-              |
-              v
-          +------+
-          |  UI  |  Web viewer with themes, file tree, search
-          +------+
+    +----+----+------+--------+
+    v         v      v        v
++-------+ +-----+ +--------+ +---------+
+|  MCP  | | CLI | | Worker | | Desktop |  MCP server; CLI; CF Worker; Electron app
++-------+ +-----+ +--------+ +---------+
+              |                    |
+              v                    v
+          +------+            +------+
+          |  UI  |  <------   |  UI  |  Same React UI (browse + manage modes)
+          +------+            +------+
 ```
 
 ## Packages
 
 | Package | Description |
 |---------|-------------|
-| [`@veecontext/core`](packages/core/) | Shared types, Drizzle ORM + SQLite schemas, sync engine, FTS5 search, config loader, context.yml management |
+| [`@veecontext/core`](packages/core/) | Shared types, Drizzle ORM + SQLite schemas, sync engine, FTS5 search, config loader, context.yml management, runtime compat layer, static export |
 | [`@veecontext/crawlers`](packages/crawlers/) | Data source crawlers and markdown generators |
 | [`@veecontext/mcp`](packages/mcp/) | MCP server with tools and resources for AI assistants |
-| [`@veecontext/cli`](packages/cli/) | CLI (`vctx`) for init, add, sync, search, serve, daemon, publish, unpublish |
-| [`@veecontext/ui`](packages/ui/) | Vite + React web UI with 6 display themes and syntax highlighting |
+| [`@veecontext/cli`](packages/cli/) | CLI (`vctx`) for init, add, sync, search, serve, daemon, publish, unpublish; management API |
+| [`@veecontext/ui`](packages/ui/) | Vite + React web UI with 6 display themes, browse + management modes |
 | [`@veecontext/worker`](packages/worker/) | Cloudflare Worker for published deployments (Hono + D1 + R2) |
+| [`@veecontext/desktop`](packages/desktop/) | Electron desktop app with workspace management, system tray |
 
 ## Crawlers
 
@@ -147,6 +148,59 @@ bun run vctx -- unpublish my-pub
 
 See [docs/publish.md](docs/publish.md) for full details.
 
+### Desktop App
+
+The desktop app wraps the same UI and API server in Electron, adding workspace management, collection CRUD, sync/publish/export UI, and a system tray.
+
+**Building and running:**
+
+```bash
+# 1. Install all dependencies (from repo root — uses Bun workspaces)
+bun install
+
+# 2. Build the React UI (the desktop app serves this via its API server)
+bun run build:ui
+
+# 3. Compile + launch the desktop app
+cd packages/desktop
+bun run start
+```
+
+`bun run start` runs two steps: compiles TypeScript to JavaScript via esbuild (bundling all `@veecontext/*` workspace packages inline), then launches Electron.
+
+**Packaging for distribution:**
+
+```bash
+cd packages/desktop
+npx @electron/rebuild -m .   # rebuild better-sqlite3 for Electron's Node ABI
+bun run dist                 # all platforms
+bun run dist:mac             # macOS DMG (universal)
+bun run dist:win             # Windows NSIS
+bun run dist:linux           # Linux AppImage + deb
+```
+
+Packaged output goes to `packages/desktop/release/`.
+
+> **Note:** Use `bun install` from the repo root, not `npm install`. The monorepo uses Bun's `workspace:*` protocol for inter-package deps, which npm doesn't support.
+
+The desktop app runs core modules under Node.js (via Electron) using a compatibility layer (`packages/core/src/compat/`) that shims Bun-specific APIs (`bun:sqlite` -> `better-sqlite3`, `Bun.CryptoHasher` -> `node:crypto`, etc.). The esbuild step bundles everything into a single ESM file (`dist/main/index.mjs`) that Electron loads directly.
+
+### Static Export
+
+Export collections as standalone files from the desktop app's Export panel, or via the API:
+
+```bash
+# Markdown export (raw files + index)
+curl -X POST http://localhost:3747/api/export \
+  -H 'Content-Type: application/json' \
+  -d '{"collections": ["my-repo"], "outputDir": "/tmp/export", "format": "markdown"}'
+
+# HTML export (rendered pages + navigable index)
+curl -X POST http://localhost:3747/api/export \
+  -H 'Content-Type: application/json' \
+  -d '{"collections": ["my-repo"], "outputDir": "/tmp/export-html", "format": "html"}'
+```
+
 ## CLI Commands
 
 | Command | Description |
@@ -236,12 +290,13 @@ bun run clean
 
 ```
 packages/
-  core/           Shared types, DB schemas, sync engine, search, config, context.yml
+  core/           Shared types, DB schemas, sync engine, search, config, compat layer, export
   crawlers/       GitHub, Obsidian, Git, and MantisBT crawlers + markdown generators
   mcp/            MCP server (tools + resources)
-  cli/            CLI entry point (vctx)
-  ui/             Vite + React web viewer
+  cli/            CLI entry point (vctx) + management API
+  ui/             Vite + React web viewer (browse + manage modes)
   worker/         Cloudflare Worker for published deployments
+  desktop/        Electron desktop app
 docs/
   architecture.md
   crawlers.md
