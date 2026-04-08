@@ -246,6 +246,34 @@ Re-running `vctx publish --name <existing>` **updates** an existing deployment:
 
 The worker implements MCP via direct JSON-RPC (not the SDK's StreamableHTTPServerTransport, which requires Node.js APIs unavailable in Workers).
 
+#### When to do a full publish vs. worker-only
+
+| Scenario | Command |
+|----------|---------|
+| Changed crawler data, synced new entities | Full publish: `vctx publish <collections...> --name <name>` |
+| Changed `packages/worker/src/**` (server logic, HTML rendering, routes) | Worker-only (after rebuild): see below |
+| Changed `packages/ui/src/**` (React components, CSS) | Worker-only (after rebuild): see below |
+| Changed `packages/crawlers/src/mantisbt/theme.ts` (HTML renderer) | Worker-only — HTML is rendered on-the-fly by the worker at request time, not pre-stored |
+
+#### Build steps required before publishing
+
+**Always build before publishing** — the CLI uploads pre-built artifacts, not source files:
+
+```bash
+# After changing packages/ui/src/** (React, CSS):
+cd packages/ui && bun run build          # outputs to packages/ui/dist/
+
+# After changing packages/worker/src/** (server, routes, renderers):
+cd packages/worker && bun run build      # outputs to packages/worker/dist/worker.js
+
+# Then deploy (worker + UI assets only, no D1/R2 data change):
+bun run packages/cli/src/index.ts publish --worker-only --name <deployment-name>
+```
+
+Skipping the build means the old compiled bundle is deployed — source changes have no effect.
+
+**Note:** `wrangler` is not globally installed; invoke it via `bunx wrangler` or use the CLI which calls it as a subprocess automatically.
+
 ### Build & Test Commands
 
 ```bash

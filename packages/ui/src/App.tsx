@@ -124,7 +124,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<LinkItem[]>([]);
-  const [backlinksOpen, setBacklinksOpen] = useState(!isMobile);
+  const [backlinksOpen, setBacklinksOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("markdown");
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [htmlLoading, setHtmlLoading] = useState(false);
@@ -143,7 +143,8 @@ export default function App() {
   // Sync panel defaults when viewport crosses the mobile breakpoint (e.g. window resize)
   useEffect(() => {
     setSidebarOpen(!isMobile);
-    setBacklinksOpen(!isMobile);
+    // Links panel stays closed by default on all breakpoints; close it on mobile transition
+    if (isMobile) setBacklinksOpen(false);
   }, [isMobile]);
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
   const resizingRef = useRef(false);

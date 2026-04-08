@@ -1801,6 +1801,436 @@ body {
   margin-bottom: 12px;
 }
 
+/* ===== MantisBT-Style HTML View ===== */
+
+.mt-issue-view {
+  padding: 16px 24px 32px;
+  font-family: var(--font-sans);
+  color: var(--text);
+}
+
+/* Header — breadcrumb, title, tags */
+.mt-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.mt-breadcrumb {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.mt-title {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 8px;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.mt-id-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  vertical-align: middle;
+  margin-left: 6px;
+  font-family: var(--font-mono);
+}
+
+.mt-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.mt-tag {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* Two-column layout */
+.mt-columns {
+  display: flex;
+  gap: 24px;
+}
+
+.mt-main-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.mt-sidebar-col {
+  flex: 0 0 240px;
+}
+
+/* Stack vertically when narrow — sidebar goes below main content */
+@container (max-width: 700px) {
+  .mt-columns { flex-direction: column; }
+  .mt-sidebar-col {
+    flex: none;
+    width: 100%;
+  }
+}
+
+@media (max-width: 800px) {
+  .mt-columns { flex-direction: column; }
+  .mt-sidebar-col {
+    flex: none;
+    width: 100%;
+  }
+}
+
+/* Sections — Details, Relationships, Activities */
+.mt-section {
+  margin-bottom: 24px;
+}
+
+.mt-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.mt-subsection-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 16px 0 8px;
+  color: var(--text);
+}
+
+.mt-section-body {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.mt-description {
+  color: var(--text);
+  word-break: break-word;
+}
+
+/* Attachments */
+.mt-attachments {
+  margin-top: 8px;
+}
+
+.mt-attachment-item {
+  font-size: 13px;
+  padding: 4px 0;
+  color: var(--text);
+}
+
+.mt-attachment-size {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Relationships */
+.mt-relationship {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 14px;
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.mt-relationship:last-child {
+  border-bottom: none;
+}
+
+.mt-rel-type {
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Issue reference links */
+.mt-issue-ref {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.mt-issue-ref:hover {
+  text-decoration: underline;
+}
+
+/* Activities — notes + history interleaved */
+.mt-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mt-activity {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.mt-activity:last-child {
+  border-bottom: none;
+}
+
+.mt-activity-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.mt-activity-author {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.mt-activity-date {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mt-private-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Activity body — no wrapper indent; children position themselves */
+.mt-activity-body {
+}
+
+/* Note body: bar centered under avatar (avatar=24px, center=12px → margin=11px),
+   text aligned with author name (11 + 3border + 18padding = 32px = avatar+gap) */
+.mt-note-body {
+  margin-left: 11px;
+  padding: 4px 12px 4px 18px;
+  border-left: 3px solid;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.mt-note-public {
+  border-left-color: var(--text);
+}
+
+.mt-note-private {
+  border-left-color: var(--text-muted);
+}
+
+.mt-note-text {
+  color: var(--text);
+  word-break: break-word;
+}
+
+.mt-note-text a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.mt-note-text a:hover {
+  text-decoration: underline;
+}
+
+.mt-note-attachments {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* History entries — compact style */
+.mt-history-entry {
+  padding: 8px 0;
+}
+
+.mt-history-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding-left: 32px;
+}
+
+/* Sidebar */
+.mt-sidebar-heading {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.mt-sidebar-row {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.mt-sidebar-row:last-child {
+  border-bottom: none;
+}
+
+.mt-sidebar-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.mt-sidebar-value {
+  font-size: 14px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mt-sidebar-value strong {
+  font-weight: 600;
+}
+
+.mt-status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mt-priority-dash {
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.mt-sidebar-link-row {
+  padding-top: 12px;
+  border-bottom: none;
+}
+
+.mt-sidebar-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.mt-sidebar-link:hover {
+  text-decoration: underline;
+}
+
+/* Avatars — consistent with gh-avatar */
+.mt-avatar {
+  border-radius: 50%;
+  flex-shrink: 0;
+  object-fit: cover;
+  vertical-align: middle;
+}
+
+.mt-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  line-height: 1;
+  user-select: none;
+}
+
+/* User and project links — inherit color, underline only on hover */
+.mt-user-link,
+.mt-project-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mt-user-link:hover,
+.mt-project-link:hover {
+  text-decoration: underline;
+}
+
+/* User profile card */
+.mt-user-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+}
+
+/* Large avatar on user profile card inherits .mt-avatar styles */
+
+.mt-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mt-user-realname {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mt-user-username {
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+.mt-user-email {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mt-category-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.mt-category-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bg-tertiary);
+  font-size: 14px;
+}
+
+.mt-category-list li:last-child {
+  border-bottom: none;
+}
+
+/* Mobile adjustments for MantisBT view */
+@container (max-width: 500px) {
+  .mt-issue-view { padding: 12px 16px 24px; }
+  .mt-title { font-size: 18px; }
+  .mt-section-title { font-size: 15px; }
+  .mt-note-body { padding: 4px 10px; }
+}
+
+@media (max-width: 600px) {
+  .mt-issue-view { padding: 12px 16px 24px; }
+  .mt-title { font-size: 18px; }
+  .mt-section-title { font-size: 15px; }
+  .mt-note-body { padding: 4px 10px; }
+}
+
 /* ===== Mobile panel overlays ===== */
 .mobile-panel-overlay {
   position: fixed;

@@ -9,6 +9,7 @@ import type {
   MantisBTConfig,
   MantisBTCredentials,
   MantisBTIssue,
+  MantisBTUser,
 } from "./types";
 
 interface MantisBTSyncCursor extends SyncCursor {
@@ -24,6 +25,12 @@ interface MantisBTSyncCursor extends SyncCursor {
   lastPageSignature?: string;
   /** Number of consecutive repeated page signatures. */
   repeatedPageCount?: number;
+  /** Current sync phase. Undefined / missing means "issues". */
+  phase?: "issues" | "users";
+  /** User data accumulated across issue pages (serialized in cursor). */
+  _users?: Record<number, { id: number; name: string; email?: string }>;
+  /** Project data accumulated across issue pages (serialized in cursor). */
+  _projects?: Record<number, { id: number; name: string; categories: string[] }>;
 }
 
 const PAGE_SIZE = 50;
@@ -96,6 +103,10 @@ export class MantisBTCrawler implements Crawler {
   private maxEntities?: number;
   private fetchFn: typeof fetch = globalThis.fetch;
 
+  // Accumulated during the issues phase; emitted in the users phase.
+  private collectedUsers = new Map<number, { id: number; name: string; email?: string }>();
+  private collectedProjects = new Map<number, { id: number; name: string; categories: string[] }>();
+
   async initialize(
     config: Record<string, unknown>,
     credentials: Record<string, unknown>,
@@ -110,6 +121,26 @@ export class MantisBTCrawler implements Crawler {
 
   async sync(cursor: SyncCursor | null): Promise<SyncResult> {
     const c = (cursor as MantisBTSyncCursor) ?? {};
+
+    // Restore accumulated user/project data from cursor (survives across pages).
+    if (cursor === null) {
+      this.collectedUsers.clear();
+      this.collectedProjects.clear();
+    } else if (c._users || c._projects) {
+      this.collectedUsers = new Map(
+        Object.entries(c._users ?? {}).map(([k, v]) => [Number(k), v]),
+      );
+      this.collectedProjects = new Map(
+        Object.entries(c._projects ?? {}).map(([k, v]) => [Number(k), v]),
+      );
+    }
+
+    // Users + projects phase: emit after all issues are processed.
+    if (c.phase === "users") {
+      return this.syncUsersAndProjects(c);
+    }
+
+    // ── Issues phase ─────────────────────────────────────────────
     const isLegacyPageCursor =
       c.page !== undefined &&
       c.updatedSince === undefined &&
@@ -119,7 +150,6 @@ export class MantisBTCrawler implements Crawler {
     const fetched = isLegacyPageCursor ? 0 : (c.fetched ?? 0);
     const updatedSinceTs = parseTimestamp(c.updatedSince);
 
-    // Build URL
     let url = `${this.baseUrl}/api/rest/issues?page_size=${PAGE_SIZE}&page=${page}`;
     if (this.projectId) {
       url += `&project_id=${this.projectId}`;
@@ -129,7 +159,6 @@ export class MantisBTCrawler implements Crawler {
     const data = (await response.json()) as { issues: MantisBTIssue[] };
     const issues = data.issues ?? [];
 
-    // Sort by last_updated descending (API doesn't support sorting)
     issues.sort(
       (a, b) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
@@ -145,8 +174,6 @@ export class MantisBTCrawler implements Crawler {
       newestSeenUpdatedAt = maxTimestamp(newestSeenUpdatedAt, issue.updated_at);
     }
 
-    // Incremental filtering: re-process entities with timestamp >= updatedSince.
-    // Keeping equality avoids missing updates when many issues share the same second.
     let issuesToProcess = issues;
     if (updatedSinceTs !== null) {
       issuesToProcess = issues.filter((issue) => {
@@ -155,7 +182,6 @@ export class MantisBTCrawler implements Crawler {
       });
     }
 
-    // Apply max entities limit to entities that passed incremental filtering.
     let remaining = issuesToProcess.length;
     if (this.maxEntities) {
       remaining = Math.max(0, this.maxEntities - fetched);
@@ -173,18 +199,27 @@ export class MantisBTCrawler implements Crawler {
 
     const apiHasMore = issues.length === PAGE_SIZE;
     const reachedMax = this.maxEntities ? (fetched + issuesToProcess.length) >= this.maxEntities : false;
-    const hasMore = apiHasMore && !reachedMax;
+    const issuesHaveMore = apiHasMore && !reachedMax;
     const finalUpdatedSince = maxTimestamp(c.updatedSince, newestSeenUpdatedAt);
 
-    // Some MantisBT instances appear to return the same "page" repeatedly.
-    // If the signature repeats, stop paginating to avoid an infinite loop.
     if (page > 1 && repeatedPageCount > 0) {
       return {
         entities: [],
-        nextCursor: finalUpdatedSince ? { updatedSince: finalUpdatedSince } : null,
-        hasMore: false,
+        nextCursor: {
+          phase: "users",
+          updatedSince: finalUpdatedSince,
+          _users: Object.fromEntries(this.collectedUsers),
+          _projects: Object.fromEntries(this.collectedProjects),
+        },
+        hasMore: true,
         deletedExternalIds: [],
       };
+    }
+
+    // Collect users + projects from ALL fetched issues (not just processed ones)
+    // so we capture every user/project even in incremental syncs.
+    for (const issue of issues) {
+      this.collectUsersAndProjects(issue);
     }
 
     const entities: CrawlerEntityData[] = await Promise.all(
@@ -192,20 +227,66 @@ export class MantisBTCrawler implements Crawler {
     );
 
     const newFetched = fetched + issuesToProcess.length;
+    const serializedCollected = {
+      _users: Object.fromEntries(this.collectedUsers),
+      _projects: Object.fromEntries(this.collectedProjects),
+    };
 
+    if (issuesHaveMore) {
+      return {
+        entities,
+        nextCursor: {
+          page: page + 1,
+          fetched: newFetched,
+          updatedSince: c.updatedSince,
+          newestSeenUpdatedAt,
+          lastPageSignature: pageSignature,
+          repeatedPageCount,
+          ...serializedCollected,
+        },
+        hasMore: true,
+        deletedExternalIds: [],
+      };
+    }
+
+    // Issues exhausted — transition to users+projects phase.
     return {
       entities,
-      nextCursor: hasMore
-        ? {
-            page: page + 1,
-            fetched: newFetched,
-            updatedSince: c.updatedSince,
-            newestSeenUpdatedAt,
-            lastPageSignature: pageSignature,
-            repeatedPageCount,
-          }
-        : (finalUpdatedSince ? { updatedSince: finalUpdatedSince } : null),
-      hasMore,
+      nextCursor: { phase: "users", updatedSince: finalUpdatedSince, ...serializedCollected },
+      hasMore: true,
+      deletedExternalIds: [],
+    };
+  }
+
+  private async syncUsersAndProjects(c: MantisBTSyncCursor): Promise<SyncResult> {
+    const entities: CrawlerEntityData[] = [];
+
+    // Fetch full user profiles; fall back to basic data on error.
+    for (const basic of this.collectedUsers.values()) {
+      if (!basic.name) continue; // Skip users without a name
+      try {
+        const profile = await this.fetchUser(basic.id);
+        entities.push(this.buildUserEntity(profile));
+      } catch {
+        // Build a minimal user entity from data collected during issue sync.
+        entities.push(this.buildUserEntity({
+          id: basic.id,
+          name: basic.name,
+          email: basic.email,
+        }));
+      }
+    }
+
+    // Emit project entities (data already collected from issues).
+    for (const project of this.collectedProjects.values()) {
+      entities.push(this.buildProjectEntity(project));
+    }
+
+    const finalCursor = c.updatedSince ? { updatedSince: c.updatedSince } : null;
+    return {
+      entities,
+      nextCursor: finalCursor,
+      hasMore: false,
       deletedExternalIds: [],
     };
   }
@@ -230,11 +311,7 @@ export class MantisBTCrawler implements Crawler {
         { headers },
       );
 
-      // Accept 200 (valid token) or allow empty token for anonymous instances
       if (response.ok) return true;
-
-      // If token is empty and we get 401, the instance doesn't support
-      // anonymous access — still valid config, user just can't fetch yet
       if (!token && response.status === 401) return true;
 
       return false;
@@ -264,6 +341,85 @@ export class MantisBTCrawler implements Crawler {
       );
     }
     return response;
+  }
+
+  private async fetchUser(userId: number): Promise<MantisBTUser> {
+    const url = `${this.baseUrl}/api/rest/users/${userId}`;
+    const response = await this.apiFetch(url);
+    return (await response.json()) as MantisBTUser;
+  }
+
+  private buildUserEntity(user: MantisBTUser): CrawlerEntityData {
+    const avatarUrl = user.avatar?.attr?.src ?? null;
+    const displayName = user.real_name ? `${user.real_name} (@${user.name})` : user.name;
+    return {
+      externalId: `user:${user.name}`,
+      entityType: "user",
+      title: displayName,
+      url: `${this.baseUrl}/user_summary_page.php?username=${encodeURIComponent(user.name)}`,
+      tags: ["user"],
+      data: {
+        id: user.id,
+        name: user.name,
+        realName: user.real_name ?? null,
+        email: user.email ?? null,
+        avatarUrl,
+      },
+    };
+  }
+
+  private buildProjectEntity(project: { id: number; name: string; categories: string[] }): CrawlerEntityData {
+    return {
+      externalId: `project:${project.id}`,
+      entityType: "project",
+      title: project.name,
+      url: `${this.baseUrl}/set_project.php?project_id=${project.id}`,
+      tags: ["project"],
+      data: {
+        id: project.id,
+        name: project.name,
+        categories: project.categories,
+      },
+    };
+  }
+
+  /** Collect users and projects from an issue into the accumulation maps. */
+  private collectUsersAndProjects(issue: MantisBTIssue): void {
+    if (issue.reporter?.name) {
+      this.collectedUsers.set(issue.reporter.id, {
+        id: issue.reporter.id,
+        name: issue.reporter.name,
+        email: issue.reporter.email,
+      });
+    }
+    if (issue.handler?.name) {
+      this.collectedUsers.set(issue.handler.id, {
+        id: issue.handler.id,
+        name: issue.handler.name,
+        email: issue.handler.email,
+      });
+    }
+    for (const note of issue.notes ?? []) {
+      if (note.reporter?.name) {
+        this.collectedUsers.set(note.reporter.id, {
+          id: note.reporter.id,
+          name: note.reporter.name,
+          email: note.reporter.email,
+        });
+      }
+    }
+    if (issue.project) {
+      const existing = this.collectedProjects.get(issue.project.id);
+      const categories = existing?.categories ?? [];
+      if (issue.category?.name && !categories.includes(issue.category.name)) {
+        categories.push(issue.category.name);
+      }
+      this.collectedProjects.set(issue.project.id, {
+        id: issue.project.id,
+        name: issue.project.name,
+        categories,
+      });
+    }
   }
 
   private async buildIssueEntity(issue: MantisBTIssue): Promise<CrawlerEntityData> {
@@ -357,7 +513,6 @@ export class MantisBTCrawler implements Crawler {
         createdAt: issue.created_at,
         updatedAt: issue.updated_at,
         sticky: issue.sticky,
-        // Only include storagePath when the file was actually downloaded.
         files: (issue.files ?? []).map((f) => {
           const storagePath = `attachments/mantisbt/${attachmentFilename(issue.id, f.filename)}`;
           return {

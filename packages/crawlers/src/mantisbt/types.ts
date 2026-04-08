@@ -1,3 +1,21 @@
+export interface MantisBTUser {
+  id: number;
+  name: string;
+  real_name?: string;
+  email?: string;
+  avatar?: {
+    tag?: string;
+    attr?: { src?: string };
+  };
+}
+
+export interface MantisBTProject {
+  id: number;
+  name: string;
+  description?: string;
+  status?: { id: number; name: string; label: string };
+}
+
 export interface MantisBTConfig {
   baseUrl: string;
   projectId?: number;
