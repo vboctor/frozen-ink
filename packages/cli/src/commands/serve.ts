@@ -14,6 +14,9 @@ import {
   SearchIndexer,
   ThemeEngine,
   loadConfig,
+  getModuleDir,
+  isBun,
+  resolveUiDist,
 } from "@veecontext/core";
 import {
   gitHubTheme,
@@ -23,6 +26,9 @@ import {
 } from "@veecontext/crawlers";
 import { startStdioServer } from "@veecontext/mcp";
 import { eq, desc, like } from "drizzle-orm";
+import { handleManagementRequest, setAppMode } from "./management-api";
+
+const __moduleDir = getModuleDir(import.meta.url);
 
 function createThemeEngine(): ThemeEngine {
   const themeEngine = new ThemeEngine();
@@ -97,7 +103,7 @@ function errorResponse(message: string, status: number): Response {
 }
 
 function resolveUiDistDir(): string {
-  return join(import.meta.dir, "../../../ui/dist");
+  return resolveUiDist(__moduleDir) ?? join(__moduleDir, "../../../ui/dist");
 }
 
 function tryServeStatic(
@@ -138,15 +144,17 @@ function tryServeStatic(
 export function createApiServer(
   home: string,
   port: number,
-): ReturnType<typeof Bun.serve> {
+): { port: number; stop?: () => void } | Promise<{ port: number; stop?: () => void }> {
   const uiDistDir = resolveUiDistDir();
   const themeEngine = createThemeEngine();
 
-  const server = Bun.serve({
-    port,
-    fetch(req) {
+  function handleRequest(req: Request): Response {
       const url = new URL(req.url);
       const path = url.pathname;
+
+      // Try management endpoints first (active in desktop mode)
+      const mgmtResponse = handleManagementRequest(req);
+      if (mgmtResponse) return mgmtResponse;
 
       // GET /api/collections
       if (path === "/api/collections" && req.method === "GET") {
@@ -623,10 +631,59 @@ export function createApiServer(
       }
 
       return errorResponse("Not found", 404);
-    },
+  }
+
+  if (isBun) {
+    const server = Bun.serve({ port, fetch: handleRequest });
+    return { port: server.port, stop: () => server.stop() };
+  }
+
+  // Node.js / Electron: plain http server
+  const http = require("node:http");
+  const nodeServer = http.createServer(async (nodeReq: any, nodeRes: any) => {
+    try {
+      const actualPort = (nodeServer.address() as any)?.port ?? port;
+      const url = `http://localhost:${actualPort}${nodeReq.url}`;
+      const headers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(nodeReq.headers)) {
+        if (typeof value === "string") headers[key] = value;
+      }
+
+      // Collect body for POST/PATCH/PUT
+      let bodyBuf: Buffer | undefined;
+      if (nodeReq.method !== "GET" && nodeReq.method !== "HEAD") {
+        const chunks: Buffer[] = [];
+        for await (const chunk of nodeReq) chunks.push(chunk);
+        bodyBuf = Buffer.concat(chunks);
+      }
+
+      const req = new Request(url, {
+        method: nodeReq.method,
+        headers,
+        body: bodyBuf,
+      });
+
+      // handleRequest may return a Promise<Response> for async management endpoints
+      const res = await Promise.resolve(handleRequest(req));
+      nodeRes.writeHead(res.status, Object.fromEntries(res.headers.entries()));
+      const body = await res.arrayBuffer();
+      nodeRes.end(Buffer.from(body));
+    } catch (err) {
+      console.error("Server request error:", err);
+      nodeRes.writeHead(500);
+      nodeRes.end("Internal Server Error");
+    }
   });
 
-  return server;
+  // Return a promise that resolves once the server is listening,
+  // with the actual assigned port (important when port=0).
+  return new Promise((resolve) => {
+    nodeServer.listen(port, () => {
+      const addr = nodeServer.address() as any;
+      const actualPort = typeof addr === "object" ? addr.port : port;
+      resolve({ port: actualPort, stop: () => nodeServer.close() });
+    });
+  });
 }
 
 export const serveCommand = new Command("serve")
@@ -652,13 +709,13 @@ export const serveCommand = new Command("serve")
     }
 
     if (opts.uiOnly) {
-      const server = createApiServer(home, port);
+      const server = await Promise.resolve(createApiServer(home, port));
       console.log(`VeeContext API server running on http://localhost:${server.port}`);
       return;
     }
 
     // Start both
-    const server = createApiServer(home, port);
+    const server = await Promise.resolve(createApiServer(home, port));
     console.log(`VeeContext API server running on http://localhost:${server.port}`);
     console.error("Starting VeeContext MCP server (STDIO)...");
     await startStdioServer({ veecontextHome: home });

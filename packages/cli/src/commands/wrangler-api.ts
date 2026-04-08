@@ -2,17 +2,31 @@ import { join } from "path";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
+import { getModuleDir, spawnProcess, resolveWrangler as resolveWranglerPath, getVeeContextHome } from "@veecontext/core";
+
+const __moduleDir = getModuleDir(import.meta.url);
 
 // --- Wrangler binary resolution ---
 
-function resolveWrangler(): string {
-  const localBin = join(import.meta.dir, "../../../worker/node_modules/.bin/wrangler");
-  if (existsSync(localBin)) return localBin;
+let cachedWranglerPath: string | null = null;
 
-  const rootBin = join(import.meta.dir, "../../../../node_modules/.bin/wrangler");
-  if (existsSync(rootBin)) return rootBin;
+async function resolveWranglerBin(): Promise<string> {
+  if (cachedWranglerPath) return cachedWranglerPath;
 
-  return "wrangler";
+  // Check user-configured path in workspace config.json
+  let configuredPath: string | undefined;
+  try {
+    const home = getVeeContextHome();
+    const configPath = join(home, "config.json");
+    if (existsSync(configPath)) {
+      const config = JSON.parse(readFileSync(configPath, "utf-8"));
+      configuredPath = config.wranglerPath;
+    }
+  } catch {}
+
+  const resolved = await resolveWranglerPath(__moduleDir, configuredPath);
+  cachedWranglerPath = resolved;
+  return resolved;
 }
 
 // --- ANSI stripping ---
@@ -39,19 +53,11 @@ async function runWrangler(
   args: string[],
   opts?: { cwd?: string; allowFailure?: boolean },
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const bin = resolveWrangler();
-  const proc = Bun.spawn([bin, ...args], {
+  const bin = await resolveWranglerBin();
+  const { stdout, stderr, exitCode } = await spawnProcess([bin, ...args], {
     cwd: opts?.cwd,
-    stdout: "pipe",
-    stderr: "pipe",
     env: { ...process.env },
   });
-
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  const exitCode = await proc.exited;
 
   if (exitCode !== 0 && !opts?.allowFailure) {
     throw new WranglerError(args, exitCode, stdout, stderr);

@@ -1,4 +1,4 @@
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { openDatabase } from "../compat/sqlite";
 
 export interface SearchResult {
   entityId: number;
@@ -14,10 +14,10 @@ export interface SearchFilters {
 }
 
 export class SearchIndexer {
-  private sqlite: Database;
+  private sqlite: any;
 
   constructor(dbPath: string) {
-    this.sqlite = new Database(dbPath);
+    this.sqlite = openDatabase(dbPath);
     this.sqlite.exec("PRAGMA journal_mode = WAL;");
     this.createFtsTable();
   }
@@ -93,7 +93,7 @@ export class SearchIndexer {
       FROM entities_fts
       WHERE entities_fts MATCH ?
     `;
-    const params: SQLQueryBindings[] = [ftsQuery];
+    const params: (string | number | null)[] = [ftsQuery];
 
     if (filters?.entityType) {
       sql += ` AND entity_type = ?`;

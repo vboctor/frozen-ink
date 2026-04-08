@@ -8,6 +8,7 @@ import type {
   SyncCursor,
   SyncResult,
 } from "@veecontext/core";
+import { createCryptoHasher } from "@veecontext/core";
 import type {
   GitConfig,
   GitCredentials,
@@ -497,7 +498,7 @@ export class GitCrawler implements Crawler {
   ): CrawlerEntityData {
     const recentCommits = this.getBranchCommits(branch.name, commitMap);
 
-    const hasher = new Bun.CryptoHasher("sha256");
+    const hasher = createCryptoHasher("sha256");
     hasher.update(`${branch.name}:${branch.hash}:${recentCommits.length}`);
     const contentHash = hasher.digest("hex");
 
@@ -525,7 +526,7 @@ export class GitCrawler implements Crawler {
       [...commitMap.keys()].find((h) => h.startsWith(tag.targetHash)) ?? "",
     );
 
-    const hasher = new Bun.CryptoHasher("sha256");
+    const hasher = createCryptoHasher("sha256");
     hasher.update(`${tag.name}:${tag.objectHash}:${tag.subject}`);
     const contentHash = hasher.digest("hex");
 

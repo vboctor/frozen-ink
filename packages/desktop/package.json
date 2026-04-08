@@ -1,0 +1,23 @@
+{
+  "name": "@veecontext/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main/index.mjs",
+  "scripts": {
+    "compile": "bun build.mjs",
+    "start": "bun build.mjs && electron .",
+    "dist": "bun build.mjs && electron-builder",
+    "dist:mac": "bun build.mjs && electron-builder --mac",
+    "dist:win": "bun build.mjs && electron-builder --win",
+    "dist:linux": "bun build.mjs && electron-builder --linux"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "@electron/rebuild": "^3.0.0",
+    "esbuild": "^0.25.0"
+  }
+}

@@ -51,6 +51,7 @@ export const syncState = sqliteTable("sync_state", {
 export const syncRuns = sqliteTable("sync_runs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   status: text("status").notNull(),
+  syncType: text("sync_type").notNull().default("incremental"),
   entitiesCreated: integer("entities_created").notNull().default(0),
   entitiesUpdated: integer("entities_updated").notNull().default(0),
   entitiesDeleted: integer("entities_deleted").notNull().default(0),

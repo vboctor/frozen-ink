@@ -1,4 +1,5 @@
 import { eq, and } from "drizzle-orm";
+import { createCryptoHasher } from "../compat/crypto";
 import { getCollectionDb } from "../db/client";
 import {
   entities,
@@ -43,7 +44,7 @@ export function extractWikilinks(markdown: string): string[] {
 }
 
 function computeHash(data: Record<string, unknown>): string {
-  const hasher = new Bun.CryptoHasher("sha256");
+  const hasher = createCryptoHasher("sha256");
   hasher.update(JSON.stringify(data));
   return hasher.digest("hex");
 }
@@ -90,14 +91,15 @@ export class SyncEngine {
     this.onBatchFetched = options.onBatchFetched;
   }
 
-  async run(): Promise<{ created: number; updated: number; deleted: number }> {
+  async run(options?: { syncType?: "full" | "incremental" }): Promise<{ created: number; updated: number; deleted: number }> {
     const crawlerType = this.crawler.metadata.type;
     const startedAt = new Date().toISOString().replace("T", " ").replace("Z", "");
+    const syncType = options?.syncType ?? "incremental";
 
     // Create sync_run record
     this.db
       .insert(syncRuns)
-      .values({ status: "running", startedAt })
+      .values({ status: "running", syncType, startedAt })
       .run();
     const [runRecord] = this.db
       .select()

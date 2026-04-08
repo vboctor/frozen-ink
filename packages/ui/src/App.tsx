@@ -9,59 +9,49 @@ import ThemeSwitcher, { type ThemeId } from "./components/ThemeSwitcher";
 import ViewModeToggle, { type ViewMode } from "./components/ViewModeToggle";
 import TabBar, { type Tab } from "./components/TabBar";
 import LinksPanel, { type Backlink, type LinkItem } from "./components/LinksPanel";
-import type { Collection, TreeNode } from "./types";
+import ModeSwitcher from "./components/ModeSwitcher";
+import ManageNav, { type ManageSection } from "./components/manage/ManageNav";
+import CollectionList from "./components/manage/CollectionList";
+import CollectionForm from "./components/manage/CollectionForm";
+import PublishPanel from "./components/manage/PublishPanel";
+import ExportPanel from "./components/manage/ExportPanel";
+import SettingsPanel from "./components/manage/SettingsPanel";
+import type { Collection, TreeNode, AppInfo, UIMode } from "./types";
 
 function loadTheme(): ThemeId {
   try {
     const stored = localStorage.getItem("veecontext-theme");
     if (stored) return stored as ThemeId;
-  } catch {
-    // localStorage unavailable
-  }
+  } catch {}
   return "default";
 }
 
 function applyTheme(theme: ThemeId) {
   document.documentElement.setAttribute("data-theme", theme);
-  try {
-    localStorage.setItem("veecontext-theme", theme);
-  } catch {
-    // localStorage unavailable
-  }
+  try { localStorage.setItem("veecontext-theme", theme); } catch {}
 }
+
 
 function loadSidebarWidth(): number {
   try {
     const stored = localStorage.getItem("veecontext-sidebar-width");
     if (stored) return Math.max(160, Math.min(600, Number(stored)));
-  } catch {
-    // localStorage unavailable
-  }
+  } catch {}
   return 280;
 }
 
 function saveSidebarWidth(width: number) {
-  try {
-    localStorage.setItem("veecontext-sidebar-width", String(width));
-  } catch {
-    // localStorage unavailable
-  }
+  try { localStorage.setItem("veecontext-sidebar-width", String(width)); } catch {}
+  savePreferenceToServer("sidebarWidth", width);
 }
 
 function loadLastCollection(): string | null {
-  try {
-    return localStorage.getItem("veecontext-collection") ?? null;
-  } catch {
-    return null;
-  }
+  try { return localStorage.getItem("veecontext-collection") ?? null; } catch { return null; }
 }
 
 function saveLastCollection(name: string) {
-  try {
-    localStorage.setItem("veecontext-collection", name);
-  } catch {
-    // localStorage unavailable
-  }
+  try { localStorage.setItem("veecontext-collection", name); } catch {}
+  savePreferenceToServer("lastCollection", name);
 }
 
 interface SavedTabs {
@@ -73,17 +63,31 @@ function loadCollectionTabs(collection: string): SavedTabs | null {
   try {
     const raw = localStorage.getItem(`veecontext-tabs:${collection}`);
     return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function saveCollectionTabs(collection: string, tabs: { file: string }[], activeFile: string | null) {
+  try { localStorage.setItem(`veecontext-tabs:${collection}`, JSON.stringify({ tabs, activeFile })); } catch {}
+  savePreferenceToServer(`tabs:${collection}`, { tabs, activeFile });
+}
+
+// --- Server-side preference helpers (survive port changes in desktop mode) ---
+
+function savePreferenceToServer(key: string, value: unknown) {
+  fetch("/api/preferences", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ [key]: value }),
+  }).catch(() => {});
+}
+
+/** Load all server-side preferences and hydrate localStorage + return them. */
+async function loadServerPreferences(): Promise<Record<string, unknown>> {
   try {
-    localStorage.setItem(`veecontext-tabs:${collection}`, JSON.stringify({ tabs, activeFile }));
-  } catch {
-    // localStorage unavailable
-  }
+    const res = await fetch("/api/preferences");
+    if (!res.ok) return {};
+    return await res.json();
+  } catch { return {}; }
 }
 
 function titleFromPath(file: string): string {
@@ -113,9 +117,28 @@ function useIsMobile(breakpoint = 768) {
   return isMobile;
 }
 
+function loadUIMode(): UIMode {
+  try {
+    const stored = localStorage.getItem("veecontext-ui-mode");
+    if (stored === "manage") return "manage";
+  } catch {}
+  return "browse";
+}
+
+function saveUIMode(mode: UIMode) {
+  try { localStorage.setItem("veecontext-ui-mode", mode); } catch {}
+}
+
 export default function App() {
   const isMobile = useIsMobile();
   const [theme, setTheme] = useState<ThemeId>(loadTheme);
+  const [appMode, setAppMode] = useState<"desktop" | "published" | "local">("local");
+  const [uiMode, setUIMode] = useState<UIMode>(loadUIMode);
+  const [manageSection, setManageSection] = useState<ManageSection>("collections");
+  const [editingCollection, setEditingCollection] = useState<string | null>(null);
+  const [addingCollection, setAddingCollection] = useState(false);
+  // refreshKey: increment to force collections + file tree to re-fetch
+  const [refreshKey, setRefreshKey] = useState(0);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
   const [fileTree, setFileTree] = useState<TreeNode[]>([]);
@@ -169,6 +192,23 @@ export default function App() {
     setNavIndex((prev) => (prev === -1 ? 0 : prev));
   }, [selectedCollection, selectedFile]);
 
+  // Browse mode only shows enabled collections
+  const browseCollections = useMemo(
+    () => collections.filter((c) => c.enabled),
+    [collections],
+  );
+
+  // If the selected collection was disabled or deleted, switch to the first enabled one
+  useEffect(() => {
+    if (!selectedCollection) return;
+    const stillEnabled = browseCollections.some((c) => c.name === selectedCollection);
+    if (!stillEnabled && browseCollections.length > 0) {
+      setSelectedCollection(browseCollections[0].name);
+    } else if (!stillEnabled && browseCollections.length === 0) {
+      setSelectedCollection(null);
+    }
+  }, [browseCollections, selectedCollection]);
+
   // Flat list of all file paths in the current file tree for wikilink resolution
   const allFiles = useMemo(() => {
     function flatten(nodes: TreeNode[]): string[] {
@@ -182,6 +222,53 @@ export default function App() {
     return flatten(fileTree);
   }, [fileTree]);
 
+  // Detect app mode + hydrate preferences from server (survives port changes)
+  useEffect(() => {
+    fetch("/api/app-info")
+      .then((r) => r.ok ? r.json() : null)
+      .then((info: AppInfo | null) => {
+        if (info) setAppMode(info.mode);
+      })
+      .catch(() => {});
+
+    loadServerPreferences().then((prefs) => {
+      if (prefs.theme) {
+        setTheme(prefs.theme as ThemeId);
+        applyTheme(prefs.theme as ThemeId);
+      }
+      if (prefs.sidebarWidth) {
+        setSidebarWidth(Math.max(160, Math.min(600, Number(prefs.sidebarWidth))));
+      }
+      if (prefs.lastCollection) {
+        setSelectedCollection((prev) => prev ?? (prefs.lastCollection as string));
+      }
+      // Hydrate localStorage with server values so subsequent reads work
+      if (prefs.theme) try { localStorage.setItem("veecontext-theme", prefs.theme as string); } catch {}
+      if (prefs.lastCollection) try { localStorage.setItem("veecontext-collection", prefs.lastCollection as string); } catch {}
+      if (prefs.sidebarWidth) try { localStorage.setItem("veecontext-sidebar-width", String(prefs.sidebarWidth)); } catch {}
+      // Hydrate tab state for each collection
+      for (const [key, value] of Object.entries(prefs)) {
+        if (key.startsWith("tabs:") && value) {
+          try { localStorage.setItem(`veecontext-${key}`, JSON.stringify(value)); } catch {}
+        }
+      }
+    });
+  }, []);
+
+  const handleUIModeChange = useCallback((mode: UIMode) => {
+    setUIMode(mode);
+    saveUIMode(mode);
+  }, []);
+
+  const handleThemeChange = useCallback((newTheme: ThemeId) => {
+    setTheme(newTheme);
+    savePreferenceToServer("theme", newTheme);
+  }, []);
+
+  const triggerRefresh = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
@@ -193,13 +280,14 @@ export default function App() {
         const sorted = [...data].sort((a, b) => a.name.localeCompare(b.name));
         setCollections(sorted);
         if (!selectedCollection && sorted.length > 0) {
+          const enabled = sorted.filter((c) => c.enabled);
           const last = loadLastCollection();
-          const found = last ? sorted.find((c) => c.name === last) : null;
-          setSelectedCollection(found ? found.name : sorted[0].name);
+          const found = last ? enabled.find((c) => c.name === last) : null;
+          setSelectedCollection(found ? found.name : (enabled[0]?.name ?? sorted[0].name));
         }
       })
       .catch(console.error);
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
     if (!selectedCollection) {
@@ -281,7 +369,7 @@ export default function App() {
       .catch(console.error);
 
     return () => { cancelled = true; };
-  }, [selectedCollection]);
+  }, [selectedCollection, refreshKey]);
 
   // Persist all tabs for the current collection whenever tabs or active tab change.
   // Uses the tab collection (not selectedCollection) to avoid corrupting on switch.
@@ -618,23 +706,72 @@ export default function App() {
   const canGoForward = navIndex < navHistory.length - 1;
   const showLogout = isPublishedDeployment();
 
+  const isDesktop = appMode === "desktop";
+
   const sidebar = (
     <>
-      <ThemeSwitcher current={theme} onChange={setTheme} />
-      <CollectionPicker
-        collections={collections}
-        selected={selectedCollection}
-        onSelect={setSelectedCollection}
-      />
-      <FileTree
-        tree={fileTree}
-        selectedFile={selectedFile}
-        onSelect={handleFileSelect}
-      />
+      <ThemeSwitcher current={theme} onChange={handleThemeChange} />
+      {isDesktop && <ModeSwitcher mode={uiMode} onChange={handleUIModeChange} />}
+      {uiMode === "browse" && (
+        <>
+          <CollectionPicker
+            collections={browseCollections}
+            selected={selectedCollection}
+            onSelect={setSelectedCollection}
+          />
+          <FileTree
+            tree={fileTree}
+            selectedFile={selectedFile}
+            onSelect={handleFileSelect}
+          />
+        </>
+      )}
+      {uiMode === "manage" && isDesktop && (
+        <ManageNav active={manageSection} onSelect={(section) => {
+          setManageSection(section);
+          // Close any open forms when navigating between manage pages
+          setEditingCollection(null);
+          setAddingCollection(false);
+        }} />
+      )}
     </>
   );
 
-  const main = (
+  const manageContent = isDesktop && uiMode === "manage" ? (
+    <div className="manage-content">
+      {addingCollection ? (
+        <CollectionForm
+          onSave={() => { setAddingCollection(false); triggerRefresh(); }}
+          onCancel={() => setAddingCollection(false)}
+        />
+      ) : editingCollection ? (
+        <CollectionForm
+          editName={editingCollection}
+          editConfig={(() => {
+            const col = collections.find((c) => c.name === editingCollection);
+            return col ? { title: col.title, crawler: col.crawlerType, config: {}, credentials: {} } : undefined;
+          })()}
+          onSave={() => { setEditingCollection(null); triggerRefresh(); }}
+          onCancel={() => setEditingCollection(null)}
+        />
+      ) : manageSection === "collections" ? (
+        <CollectionList
+          onEdit={(name) => setEditingCollection(name)}
+          onAdd={() => setAddingCollection(true)}
+          onSyncComplete={triggerRefresh}
+          onCollectionsChanged={triggerRefresh}
+        />
+      ) : manageSection === "publish" ? (
+        <PublishPanel />
+      ) : manageSection === "export" ? (
+        <ExportPanel />
+      ) : manageSection === "settings" ? (
+        <SettingsPanel />
+      ) : null}
+    </div>
+  ) : null;
+
+  const browseContent = (
     <>
       <div className="toolbar">
         {!isMobile && (
@@ -827,6 +964,8 @@ export default function App() {
       )}
     </>
   );
+
+  const main = manageContent || browseContent;
 
   return (
     <>
