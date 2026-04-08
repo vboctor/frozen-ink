@@ -29,13 +29,13 @@ export function findMonorepoRoot(startDir: string): string | null {
  * Resolve the path to the built worker bundle (worker.js).
  *
  * Search order:
- * 1. Electron packaged app: process.resourcesPath + /worker-dist/worker.js
+ * 1. Electron packaged app: (process as any).resourcesPath + /worker-dist/worker.js
  * 2. Monorepo dev: packages/worker/dist/worker.js
  */
 export function resolveWorkerBundle(moduleDir: string): string | null {
   // Electron packaged app
-  if (process.resourcesPath) {
-    const packaged = join(process.resourcesPath, "worker-dist", "worker.js");
+  if ((process as any).resourcesPath) {
+    const packaged = join((process as any).resourcesPath, "worker-dist", "worker.js");
     if (existsSync(packaged)) return packaged;
   }
 
@@ -53,13 +53,13 @@ export function resolveWorkerBundle(moduleDir: string): string | null {
  * Resolve the path to the built UI dist directory.
  *
  * Search order:
- * 1. Electron packaged app: process.resourcesPath + /ui-dist/
+ * 1. Electron packaged app: (process as any).resourcesPath + /ui-dist/
  * 2. Monorepo dev: packages/ui/dist/
  */
 export function resolveUiDist(moduleDir: string): string | null {
   // Electron packaged app
-  if (process.resourcesPath) {
-    const packaged = join(process.resourcesPath, "ui-dist");
+  if ((process as any).resourcesPath) {
+    const packaged = join((process as any).resourcesPath, "ui-dist");
     if (existsSync(packaged)) return packaged;
   }
 

@@ -341,7 +341,7 @@ export async function publishCollections(
         const tags = colDb.select().from(entityTags)
           .where(eq(entityTags.entityId, entity.id))
           .all()
-          .map((t) => t.tag)
+          .map((t: any) => t.tag)
           .join(" ");
 
         ftsSql.push(`INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES ('${escapeSQL(colName)}', ${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(tags)}');`);

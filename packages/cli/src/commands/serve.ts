@@ -273,7 +273,7 @@ export function createApiServer(
           .from(entityTags)
           .where(eq(entityTags.entityId, entity.id))
           .all()
-          .map((t) => t.tag);
+          .map((t: any) => t.tag);
 
         const data = typeof entity.data === "string"
           ? JSON.parse(entity.data)
@@ -356,13 +356,13 @@ export function createApiServer(
           .all();
 
         // Get tags for each entity
-        const result = rows.map((row) => {
+        const result = rows.map((row: any) => {
           const tags = colDb
             .select()
             .from(entityTags)
             .where(eq(entityTags.entityId, row.id))
             .all()
-            .map((t) => t.tag);
+            .map((t: any) => t.tag);
           return {
             id: row.id,
             externalId: row.externalId,
@@ -635,7 +635,7 @@ export function createApiServer(
 
   if (isBun) {
     const server = Bun.serve({ port, fetch: handleRequest });
-    return { port: server.port, stop: () => server.stop() };
+    return { port: server.port as number, stop: () => server.stop() };
   }
 
   // Node.js / Electron: plain http server
@@ -660,7 +660,7 @@ export function createApiServer(
       const req = new Request(url, {
         method: nodeReq.method,
         headers,
-        body: bodyBuf,
+        body: bodyBuf as BodyInit | undefined,
       });
 
       // handleRequest may return a Promise<Response> for async management endpoints

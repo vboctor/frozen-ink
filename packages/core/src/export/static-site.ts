@@ -137,7 +137,7 @@ async function exportHtml(
         .from(entityTags)
         .where(eq(entityTags.entityId, entity.id))
         .all()
-        .map((t) => t.tag);
+        .map((t: any) => t.tag);
 
       const data = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
       let html = "";

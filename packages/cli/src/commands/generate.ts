@@ -104,7 +104,7 @@ export const generateCommand = new Command("generate")
           .from(entityTags)
           .where(eq(entityTags.entityId, entity.id))
           .all()
-          .map((t) => t.tag);
+          .map((t: any) => t.tag);
 
         const renderCtx = {
           entity: {
