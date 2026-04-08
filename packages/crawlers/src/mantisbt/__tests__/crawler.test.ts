@@ -58,13 +58,29 @@ describe("MantisBTCrawler", () => {
       });
     });
 
+    // Issues phase: syncs 1 issue, then transitions to users phase.
     const first = await crawler.sync(null);
     expect(first.entities).toHaveLength(1);
-    expect(first.nextCursor).toEqual({ updatedSince: "2024-01-02T00:00:00Z" });
+    expect(first.entities[0].externalId).toBe("issue:1");
+    expect((first.nextCursor as any).phase).toBe("users");
+    expect((first.nextCursor as any).updatedSince).toBe("2024-01-02T00:00:00Z");
 
-    const second = await crawler.sync(first.nextCursor);
-    expect(second.entities.map((e) => e.externalId)).toEqual(["issue:2", "issue:1"]);
-    expect(second.nextCursor).toEqual({ updatedSince: "2024-01-03T00:00:00Z" });
+    // Users+projects phase: emits project entity, no users (sample issue has no reporter/handler).
+    const usersPhase = await crawler.sync(first.nextCursor);
+    expect(usersPhase.hasMore).toBe(false);
+    expect(usersPhase.nextCursor).toEqual({ updatedSince: "2024-01-02T00:00:00Z" });
+
+    // Incremental issues phase: filters by updatedSince, returns issues 2 and 1.
+    const incr = await crawler.sync(usersPhase.nextCursor);
+    expect(incr.entities.filter((e) => e.entityType === "issue").map((e) => e.externalId))
+      .toEqual(["issue:2", "issue:1"]);
+    expect((incr.nextCursor as any).phase).toBe("users");
+    expect((incr.nextCursor as any).updatedSince).toBe("2024-01-03T00:00:00Z");
+
+    // Incremental users+projects phase.
+    const incrUsers = await crawler.sync(incr.nextCursor);
+    expect(incrUsers.hasMore).toBe(false);
+    expect(incrUsers.nextCursor).toEqual({ updatedSince: "2024-01-03T00:00:00Z" });
   });
 
   it("includes entities with updated_at equal to updatedSince", async () => {
@@ -104,10 +120,16 @@ describe("MantisBTCrawler", () => {
     expect(first.hasMore).toBe(true);
     expect(first.nextCursor).toBeTruthy();
 
+    // Second call detects repeated page signature and transitions to users phase.
     const second = await crawler.sync(first.nextCursor);
-    expect(second.hasMore).toBe(false);
+    expect(second.hasMore).toBe(true);
+    expect((second.nextCursor as any).phase).toBe("users");
     expect(second.entities).toHaveLength(0);
-    expect(second.nextCursor).toEqual({ updatedSince: "2024-02-01T00:00:00Z" });
+
+    // Users+projects phase: emits 1 project entity (no users in sample issues).
+    const third = await crawler.sync(second.nextCursor);
+    expect(third.hasMore).toBe(false);
+    expect(third.nextCursor).toEqual({ updatedSince: "2024-02-01T00:00:00Z" });
   });
 
   it("advances to page 2 with in-run cursor state", async () => {
