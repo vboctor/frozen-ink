@@ -10,7 +10,7 @@ import {
   addCollection,
   getCollectionDbPath,
 } from "@frozenink/core";
-import { createDefaultRegistry } from "@frozenink/crawlers";
+import { createDefaultRegistry, MantisBTCrawler } from "@frozenink/crawlers";
 
 export const addCommand = new Command("add")
   .description("Add a new collection")
@@ -22,7 +22,7 @@ export const addCommand = new Command("add")
   .option("--path <path>", "Path to local directory (for obsidian, git)")
   .option("--include-diffs", "Include commit diffs (for git)")
   .option("--url <url>", "Base URL (for mantisbt)")
-  .option("--project-id <id>", "Project ID (for mantisbt)", parseInt)
+  .option("--project-name <name>", "Project name (for mantisbt)")
   .option("--max <count>", "Maximum entities per type to sync (applies to issues and PRs independently)", parseInt)
   .option("--max-issues <count>", "Maximum issues to sync (for github)", parseInt)
   .option("--max-prs <count>", "Maximum pull requests to sync (for github)", parseInt)
@@ -108,8 +108,8 @@ export const addCommand = new Command("add")
       config.baseUrl = opts.url;
       credentials.token = opts.token ?? "";
       credentials.baseUrl = opts.url;
-      if (opts.projectId) {
-        config.projectId = opts.projectId;
+      if (opts.projectName) {
+        config.projectName = opts.projectName;
       }
       if (opts.max) {
         config.maxEntities = opts.max;
@@ -137,6 +137,20 @@ export const addCommand = new Command("add")
     if (!valid) {
       console.error("Credential validation failed. Check your token and access.");
       process.exit(1);
+    }
+
+    // Resolve MantisBT project name → ID and persist both
+    if (crawlerType === "mantisbt" && config.projectName) {
+      try {
+        await crawler.initialize(config, credentials);
+        const resolved = await (crawler as MantisBTCrawler).resolveProjectName(config.projectName as string);
+        config.projectId = resolved.id;
+        config.projectName = resolved.name; // canonical casing from server
+        console.log(`  Resolved project "${resolved.name}" → ID ${resolved.id}`);
+      } catch (err) {
+        console.error(`Failed to resolve project name: ${err instanceof Error ? err.message : err}`);
+        process.exit(1);
+      }
     }
 
     // Create collection directory and database

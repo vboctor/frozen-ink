@@ -35,6 +35,26 @@ function openFile(filePath: string): void {
   exec(cmd);
 }
 
+/**
+ * Build a compact prefix for a search result line.
+ * - issue/PR: "#00238:" (the type is obvious from the numeric ID)
+ * - note: nothing (Obsidian vaults are all notes, showing "note:" is noise)
+ * - other types: "user:", "project:", etc.
+ */
+function formatResultPrefix(entityType: string, externalId: string): string | null {
+  const colonIdx = externalId.indexOf(":");
+  const rawId = colonIdx !== -1 ? externalId.slice(colonIdx + 1) : "";
+
+  if (entityType === "issue" || entityType === "pull_request") {
+    const num = parseInt(rawId, 10);
+    if (!isNaN(num)) return `#${String(num).padStart(5, "0")}:`;
+  }
+
+  if (entityType === "note") return null;
+
+  return `${entityType}:`;
+}
+
 function getMarkdownPath(result: SearchResult): string | null {
   const home = getFrozenInkHome();
   const dbPath = getCollectionDbPath(result.collection);
@@ -158,16 +178,19 @@ export function SearchView({
             {results.length === 0 ? (
               <Text dimColor>No results found.</Text>
             ) : (
-              results.map((r, i) => (
-                <Box key={i} gap={1}>
-                  <Text color={i === resultCursor ? "cyan" : undefined}>
-                    {i === resultCursor ? "❯" : " "}
-                  </Text>
-                  {!scoped && <Text dimColor>[{r.collection}]</Text>}
-                  <Text color="cyan">{r.entityType}:</Text>
-                  <Text bold={i === resultCursor}>{r.title}</Text>
-                </Box>
-              ))
+              results.map((r, i) => {
+                const prefix = formatResultPrefix(r.entityType, r.externalId);
+                return (
+                  <Box key={i} gap={1}>
+                    <Text color={i === resultCursor ? "cyan" : undefined}>
+                      {i === resultCursor ? "❯" : " "}
+                    </Text>
+                    {!scoped && <Text dimColor>[{r.collection}]</Text>}
+                    {prefix && <Text color="cyan">{prefix}</Text>}
+                    <Text bold={i === resultCursor}>{r.title}</Text>
+                  </Box>
+                );
+              })
             )}
           </Box>
         </Box>

@@ -11,7 +11,7 @@ import {
   addCollection,
   isValidCollectionKey,
 } from "@frozenink/core";
-import { createDefaultRegistry } from "@frozenink/crawlers";
+import { createDefaultRegistry, MantisBTCrawler } from "@frozenink/crawlers";
 import { SelectInput, type SelectItem } from "./SelectInput.js";
 import { TextInput } from "./TextInput.js";
 
@@ -29,7 +29,7 @@ type Step =
   | "git-include-diffs"
   | "mantisbt-url"
   | "mantisbt-token"
-  | "mantisbt-project-id"
+  | "mantisbt-project-name"
   | "mantisbt-max"
   | "confirm"
   | "validating"
@@ -54,7 +54,7 @@ function getStepsForCrawler(type: string): Step[] {
     case "git":
       return [...base, "git-path", "git-include-diffs", "confirm"];
     case "mantisbt":
-      return [...base, "mantisbt-url", "mantisbt-token", "mantisbt-project-id", "mantisbt-max", "confirm"];
+      return [...base, "mantisbt-url", "mantisbt-token", "mantisbt-project-name", "mantisbt-max", "confirm"];
     default:
       return [...base, "confirm"];
   }
@@ -194,11 +194,9 @@ export function AddCollection({
         setData((d) => ({ ...d, credentials: { ...d.credentials, token: val || "" } }));
         nextStep();
         break;
-      case "mantisbt-project-id": {
+      case "mantisbt-project-name": {
         if (val) {
-          const n = parseInt(val, 10);
-          if (isNaN(n) || n < 1) { setError("Enter a positive number or leave blank"); return; }
-          setData((d) => ({ ...d, config: { ...d.config, projectId: n } }));
+          setData((d) => ({ ...d, config: { ...d.config, projectName: val } }));
         }
         nextStep();
         break;
@@ -223,6 +221,14 @@ export function AddCollection({
       const crawler = factory();
       const valid = await crawler.validateCredentials(data.credentials);
       if (!valid) { setError("Credential validation failed"); setStep("error"); return; }
+
+      // Resolve MantisBT project name → ID and persist both
+      if (data.crawlerType === "mantisbt" && data.config.projectName) {
+        await crawler.initialize(data.config, data.credentials);
+        const resolved = await (crawler as MantisBTCrawler).resolveProjectName(data.config.projectName as string);
+        data.config.projectId = resolved.id;
+        data.config.projectName = resolved.name;
+      }
 
       const home = getFrozenInkHome();
       const dir = join(home, "collections", data.name);
@@ -303,8 +309,8 @@ export function AddCollection({
         {step === "mantisbt-token" && (
           <TextInput label="API token (optional)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
         )}
-        {step === "mantisbt-project-id" && (
-          <TextInput label="Project ID (blank for all)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
+        {step === "mantisbt-project-name" && (
+          <TextInput label="Project name (blank for all)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
         )}
         {step === "mantisbt-max" && (
           <TextInput label="Max entities (blank for unlimited)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />

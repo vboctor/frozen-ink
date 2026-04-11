@@ -26,6 +26,7 @@ import {
 } from "@frozenink/core";
 import {
   createDefaultRegistry,
+  MantisBTCrawler,
   gitHubTheme,
   obsidianTheme,
   gitTheme,
@@ -172,6 +173,20 @@ export function handleManagementRequest(req: Request): Response | null {
       const credentials = (body.credentials ?? {}) as Record<string, unknown>;
       const title = (body.title as string) ?? name;
       const enabled = body.enabled !== false;
+
+      // Resolve MantisBT project name → ID and persist both
+      if (crawler === "mantisbt" && config.projectName && !config.projectId) {
+        try {
+          const registry = createDefaultRegistry();
+          const crawlerInstance = registry.get("mantisbt")!() as MantisBTCrawler;
+          await crawlerInstance.initialize(config, credentials);
+          const resolved = await crawlerInstance.resolveProjectName(config.projectName as string);
+          config.projectId = resolved.id;
+          config.projectName = resolved.name;
+        } catch {
+          // Resolution failed — save with just projectName; will resolve at sync time
+        }
+      }
 
       addCollection(name, { title, crawler, enabled, config, credentials });
 

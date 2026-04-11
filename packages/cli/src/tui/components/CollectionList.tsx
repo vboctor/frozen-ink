@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { existsSync, renameSync, rmSync } from "fs";
 import { join, basename } from "path";
@@ -49,6 +49,14 @@ const W_NAME = 20;
 const W_TITLE = 22;
 const W_TYPE = 12;
 const W_ENTITIES = 10;
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}m ${sec}s`;
+}
 
 function pad(text: string, width: number): string {
   if (text.length >= width) return text.slice(0, width - 1) + " ";
@@ -342,9 +350,20 @@ export function CollectionList({
   const [inputValue, setInputValue] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [syncProgress, setSyncProgress] = useState<string[]>([]);
+  const [syncFetchedCount, setSyncFetchedCount] = useState(0);
+  const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
+  const [syncElapsedMs, setSyncElapsedMs] = useState(0);
   const [editingCollection, setEditingCollection] = useState("");
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  useEffect(() => {
+    if (syncStartTime === null) return;
+    const interval = setInterval(() => {
+      setSyncElapsedMs(Date.now() - syncStartTime);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [syncStartTime]);
 
   const initialized = contextExists();
   const collections = initialized ? listCollections() : [];
@@ -392,6 +411,9 @@ export function CollectionList({
     if (!current) return;
     setMode("syncing");
     setSyncProgress([`Syncing "${current.name}" (${current.crawler})...`]);
+    setSyncFetchedCount(0);
+    const syncStart = Date.now();
+    setSyncStartTime(syncStart);
     try {
       const registry = createDefaultRegistry();
       const themeEngine = new ThemeEngine();
@@ -400,7 +422,7 @@ export function CollectionList({
       themeEngine.register(gitTheme);
       themeEngine.register(mantisBTTheme);
       const factory = registry.get(current.crawler);
-      if (!factory) { setSyncProgress((p) => [...p, `No crawler for ${current.crawler}`]); setMode("list"); return; }
+      if (!factory) { setSyncProgress((p) => [...p, `No crawler for ${current.crawler}`]); setSyncStartTime(null); setMode("list"); return; }
       const crawler = factory();
       await crawler.initialize(current.config as Record<string, unknown>, current.credentials as Record<string, unknown>);
       const home = getFrozenInkHome();
@@ -410,18 +432,22 @@ export function CollectionList({
       const engine = new SyncEngine({
         crawler, dbPath, collectionName: current.name, themeEngine, storage, markdownBasePath: "markdown",
         onBatchFetched: ({ externalIds }: { externalIds: string[] }) => {
-          if (externalIds.length > 0) setSyncProgress((p) => [...p, `  Fetched ${externalIds.length} entities`]);
+          if (externalIds.length > 0) setSyncFetchedCount((c) => c + externalIds.length);
         },
       });
       const stats = await engine.run();
+      setSyncFetchedCount(0);
+      const elapsed = formatElapsed(Date.now() - syncStart);
       const colDb = getCollectionDb(dbPath);
       const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
-      setSyncProgress((p) => [...p, `Done: +${stats.created} ~${stats.updated} -${stats.deleted} (${total} total)`]);
+      setSyncProgress((p) => [...p, `+${stats.created} ~${stats.updated} -${stats.deleted} (${total} total) in ${elapsed}`]);
       await crawler.dispose();
       setMessage(`Sync complete for "${current.name}"`);
     } catch (err) {
+      setSyncFetchedCount(0);
       setSyncProgress((p) => [...p, `Error: ${err instanceof Error ? err.message : String(err)}`]);
     }
+    setSyncStartTime(null);
     setMode("list");
     refresh();
   }, [current, refresh]);
@@ -503,6 +529,9 @@ export function CollectionList({
         <Text bold color="yellow">Syncing...</Text>
         <Box flexDirection="column" marginLeft={1} marginTop={1}>
           {syncProgress.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
+          {syncFetchedCount > 0 && (
+            <Text dimColor>  Fetched {syncFetchedCount} entities... ({formatElapsed(syncElapsedMs)})</Text>
+          )}
         </Box>
       </Box>
     );

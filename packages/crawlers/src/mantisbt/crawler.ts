@@ -10,6 +10,7 @@ import type {
   MantisBTConfig,
   MantisBTCredentials,
   MantisBTIssue,
+  MantisBTProject,
   MantisBTUser,
 } from "./types";
 
@@ -34,7 +35,8 @@ interface MantisBTSyncCursor extends SyncCursor {
   _projects?: Record<number, { id: number; name: string; categories: string[] }>;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
+const PAGE_DELAY_MS = 100;
 
 function parseTimestamp(value: string | undefined): number | null {
   if (!value) return null;
@@ -72,6 +74,17 @@ function noteAttachmentFilename(issueId: number, noteId: number, filename: strin
   return `${padId(issueId)}-${padId(noteId)}-${hash}${ext}`;
 }
 
+/** Detect MantisHub instances by URL pattern. */
+function isMantisHub(baseUrl: string): boolean {
+  return baseUrl.includes(".mantishub.");
+}
+
+/** Attachment download URL info resolved from the API. */
+interface AttachmentUrlInfo {
+  url?: string;
+  signedUrl?: string;
+}
+
 export class MantisBTCrawler implements Crawler {
   metadata: CrawlerMetadata = {
     type: "mantisbt",
@@ -84,10 +97,10 @@ export class MantisBTCrawler implements Crawler {
         required: true,
         description: "Base URL of the MantisBT instance (e.g. https://mantisbt.org/bugs)",
       },
-      projectId: {
-        type: "number",
+      projectName: {
+        type: "string",
         required: false,
-        description: "Optional project ID to filter issues",
+        description: "Optional project name to filter issues (resolved to ID via API)",
       },
       maxEntities: {
         type: "number",
@@ -102,6 +115,7 @@ export class MantisBTCrawler implements Crawler {
   private token = "";
   private projectId?: number;
   private maxEntities?: number;
+  private mantisHubMode = false;
   private fetchFn: typeof fetch = globalThis.fetch;
 
   // Accumulated during the issues phase; emitted in the users phase.
@@ -116,8 +130,36 @@ export class MantisBTCrawler implements Crawler {
     const creds = credentials as unknown as MantisBTCredentials;
     this.baseUrl = cfg.baseUrl.replace(/\/+$/, "");
     this.token = creds.token ?? "";
-    this.projectId = cfg.projectId;
     this.maxEntities = cfg.maxEntities;
+    this.mantisHubMode = isMantisHub(this.baseUrl);
+
+    // Use stored projectId if available (persisted at creation time);
+    // otherwise resolve projectName to projectId via API.
+    if (cfg.projectId) {
+      this.projectId = cfg.projectId;
+    } else if (cfg.projectName) {
+      this.projectId = await this.resolveProjectId(cfg.projectName);
+    }
+  }
+
+  /**
+   * Resolve a project name to its ID and return both.
+   * Public so that callers (CLI, TUI, management API) can persist both
+   * values at collection creation time.
+   */
+  async resolveProjectName(projectName: string): Promise<{ id: number; name: string }> {
+    const projects = await this.fetchProjects();
+    const allProjects = this.flattenProjects(projects);
+    const match = allProjects.find(
+      (p) => p.name.toLowerCase() === projectName.toLowerCase(),
+    );
+    if (!match) {
+      const available = allProjects.map((p) => p.name).join(", ");
+      throw new Error(
+        `Project "${projectName}" not found. Available projects: ${available}`,
+      );
+    }
+    return { id: match.id, name: match.name };
   }
 
   async sync(cursor: SyncCursor | null): Promise<SyncResult> {
@@ -150,6 +192,11 @@ export class MantisBTCrawler implements Crawler {
     const page = isLegacyPageCursor ? 1 : (c.page ?? 1);
     const fetched = isLegacyPageCursor ? 0 : (c.fetched ?? 0);
     const updatedSinceTs = parseTimestamp(c.updatedSince);
+
+    // Throttle requests: sleep between pages to avoid overloading the server
+    if (page > 1) {
+      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+    }
 
     let url = `${this.baseUrl}/api/rest/issues?page_size=${PAGE_SIZE}&page=${page}`;
     if (this.projectId) {
@@ -223,9 +270,13 @@ export class MantisBTCrawler implements Crawler {
       this.collectUsersAndProjects(issue);
     }
 
-    const entities: CrawlerEntityData[] = await Promise.all(
-      issuesToProcess.map((issue) => this.buildIssueEntity(issue)),
-    );
+    // Fetch full issue data individually — the list endpoint omits attachments
+    // and note attachments. Sequential to avoid overwhelming the server.
+    const entities: CrawlerEntityData[] = [];
+    for (const issue of issuesToProcess) {
+      const fullIssue = await this.fetchIssue(issue.id);
+      entities.push(await this.buildIssueEntity(fullIssue));
+    }
 
     const newFetched = fetched + issuesToProcess.length;
     const serializedCollected = {
@@ -344,10 +395,40 @@ export class MantisBTCrawler implements Crawler {
     return response;
   }
 
+  private async fetchIssue(issueId: number): Promise<MantisBTIssue> {
+    const url = `${this.baseUrl}/api/rest/issues/${issueId}`;
+    const response = await this.apiFetch(url);
+    const data = (await response.json()) as { issues: MantisBTIssue[] };
+    return data.issues[0];
+  }
+
   private async fetchUser(userId: number): Promise<MantisBTUser> {
     const url = `${this.baseUrl}/api/rest/users/${userId}`;
     const response = await this.apiFetch(url);
     return (await response.json()) as MantisBTUser;
+  }
+
+  private async fetchProjects(): Promise<MantisBTProject[]> {
+    const url = `${this.baseUrl}/api/rest/projects`;
+    const response = await this.apiFetch(url);
+    const data = (await response.json()) as { projects: MantisBTProject[] };
+    return data.projects ?? [];
+  }
+
+  private async resolveProjectId(projectName: string): Promise<number> {
+    const resolved = await this.resolveProjectName(projectName);
+    return resolved.id;
+  }
+
+  private flattenProjects(projects: MantisBTProject[]): MantisBTProject[] {
+    const result: MantisBTProject[] = [];
+    for (const p of projects) {
+      result.push(p);
+      if ((p as any).subProjects?.length) {
+        result.push(...this.flattenProjects((p as any).subProjects));
+      }
+    }
+    return result;
   }
 
   private buildUserEntity(user: MantisBTUser): CrawlerEntityData {
@@ -423,6 +504,54 @@ export class MantisBTCrawler implements Crawler {
     }
   }
 
+  // ── MantisHub ApiX fallback ──────────────────────────────────────
+  //
+  // MantisHub instances (detected by `.mantishub.` in the URL) expose the
+  // ApiX plugin at /api/rest/plugins/ApiX/. When the core MantisBT REST
+  // API fails to download an attachment (e.g. cloud-stored files that
+  // require session auth), we fall back to the ApiX IssueViewPage endpoint
+  // which provides pre-signed download URLs. The ApiX call is only made
+  // if a core API download fails, and only once per issue (cached across
+  // all attachments on that issue).
+
+  /**
+   * For MantisHub: fetch the IssueViewPage via the ApiX plugin to get
+   * signed download URLs for all attachments (issue-level and note-level).
+   * Returns a map of attachment_id → { url, signedUrl }.
+   */
+  private async fetchMantisHubAttachmentUrls(
+    issueId: number,
+  ): Promise<Map<number, AttachmentUrlInfo>> {
+    const urlMap = new Map<number, AttachmentUrlInfo>();
+    const url = `${this.baseUrl}/api/rest/plugins/ApiX/issues/${issueId}/pages/view`;
+    try {
+      const res = await this.apiFetch(url);
+      const data = (await res.json()) as {
+        issue?: {
+          attachments?: Array<{ id: number; url?: string; signed_url?: string }>;
+          notes?: Array<{
+            attachments?: Array<{ id: number; url?: string; signed_url?: string }>;
+          }>;
+        };
+      };
+
+      // Issue-level attachments
+      for (const att of data.issue?.attachments ?? []) {
+        urlMap.set(att.id, { url: att.url, signedUrl: att.signed_url });
+      }
+
+      // Note-level attachments
+      for (const note of data.issue?.notes ?? []) {
+        for (const att of note.attachments ?? []) {
+          urlMap.set(att.id, { url: att.url, signedUrl: att.signed_url });
+        }
+      }
+    } catch (err) {
+      console.warn(`  Warning: MantisHub IssueViewPage failed for issue ${issueId}: ${err}`);
+    }
+    return urlMap;
+  }
+
   private async buildIssueEntity(issue: MantisBTIssue): Promise<CrawlerEntityData> {
     const hasher = createCryptoHasher("sha256");
     hasher.update(JSON.stringify(issue));
@@ -455,13 +584,32 @@ export class MantisBTCrawler implements Crawler {
     }
 
     // Download attachments; track storage paths that were successfully saved.
+    // Uses core MantisBT REST API first. On MantisHub instances, if the core
+    // API fails, falls back to the ApiX IssueViewPage for signed download URLs.
     const attachments: CrawlerEntityData["attachments"] = [];
     const savedPaths = new Set<string>();
+    let mantisHubUrls: Map<number, AttachmentUrlInfo> | null = null;
 
-    for (const file of issue.files ?? []) {
+    for (const file of issue.attachments ?? []) {
       const storedName = attachmentFilename(issue.id, file.filename);
       const storagePath = `attachments/mantisbt/${storedName}`;
-      const content = await this.downloadAttachment(issue.id, file.id, `issue ${issue.id} file "${file.filename}"`);
+      let content = await this.downloadAttachment(
+        issue.id, file.id, file.download_url,
+        `issue ${issue.id} file "${file.filename}"`,
+      );
+
+      // MantisHub fallback: fetch signed URLs if core API failed
+      if (!content && this.mantisHubMode) {
+        if (!mantisHubUrls) {
+          mantisHubUrls = await this.fetchMantisHubAttachmentUrls(issue.id);
+        }
+        const urlInfo = mantisHubUrls.get(file.id);
+        const signedUrl = urlInfo?.signedUrl ?? urlInfo?.url;
+        if (signedUrl) {
+          content = await this.downloadBinary(signedUrl, `issue ${issue.id} file "${file.filename}" (MantisHub)`);
+        }
+      }
+
       if (content) {
         attachments.push({
           filename: storedName,
@@ -477,7 +625,23 @@ export class MantisBTCrawler implements Crawler {
       for (const att of note.attachments ?? []) {
         const storedName = noteAttachmentFilename(issue.id, note.id, att.filename);
         const storagePath = `attachments/mantisbt/${storedName}`;
-        const content = await this.downloadAttachment(issue.id, att.id, `issue ${issue.id} note ${note.id} file "${att.filename}"`);
+        let content = await this.downloadAttachment(
+          issue.id, att.id, att.download_url,
+          `issue ${issue.id} note ${note.id} file "${att.filename}"`,
+        );
+
+        // MantisHub fallback: fetch signed URLs if core API failed
+        if (!content && this.mantisHubMode) {
+          if (!mantisHubUrls) {
+            mantisHubUrls = await this.fetchMantisHubAttachmentUrls(issue.id);
+          }
+          const urlInfo = mantisHubUrls.get(att.id);
+          const signedUrl = urlInfo?.signedUrl ?? urlInfo?.url;
+          if (signedUrl) {
+            content = await this.downloadBinary(signedUrl, `issue ${issue.id} note ${note.id} file "${att.filename}" (MantisHub)`);
+          }
+        }
+
         if (content) {
           attachments.push({
             filename: storedName,
@@ -514,7 +678,7 @@ export class MantisBTCrawler implements Crawler {
         createdAt: issue.created_at,
         updatedAt: issue.updated_at,
         sticky: issue.sticky,
-        files: (issue.files ?? []).map((f) => {
+        attachments: (issue.attachments ?? []).map((f) => {
           const storagePath = `attachments/mantisbt/${attachmentFilename(issue.id, f.filename)}`;
           return {
             filename: f.filename,
@@ -542,12 +706,19 @@ export class MantisBTCrawler implements Crawler {
   }
 
   /**
-   * Download a file using GET /api/rest/issues/:issue_id/files/:file_id.
-   * The response is JSON: { files: [{ content: "<base64>" }] }
+   * Download an attachment via the core MantisBT REST API.
+   *
+   * Uses GET /api/rest/issues/{id}/files/{file_id} (operationId: IssueFileGet)
+   * which returns JSON with base64-encoded content. Works for both issue-level
+   * and note-level attachments per the MantisBT OpenAPI spec.
+   *
+   * If a download_url is available (e.g. from the issue response), tries that
+   * first as a binary download, then falls back to the REST API endpoint.
    */
   private async downloadAttachment(
     issueId: number,
     fileId: number,
+    downloadUrl: string | undefined,
     label: string,
   ): Promise<Buffer | null> {
     const headers: Record<string, string> = {};
@@ -555,9 +726,25 @@ export class MantisBTCrawler implements Crawler {
       headers["Authorization"] = this.token;
     }
 
-    const url = `${this.baseUrl}/api/rest/issues/${issueId}/files/${fileId}`;
+    // Try download_url first if provided (binary response)
+    if (downloadUrl) {
+      try {
+        const res = await this.fetchFn(downloadUrl, { headers });
+        if (res.ok) {
+          const arrayBuffer = await res.arrayBuffer();
+          if (arrayBuffer.byteLength > 0) {
+            return Buffer.from(arrayBuffer);
+          }
+        }
+      } catch {
+        // Fall through to REST API
+      }
+    }
+
+    // Core MantisBT REST API (IssueFileGet - returns base64 JSON)
+    const apiUrl = `${this.baseUrl}/api/rest/issues/${issueId}/files/${fileId}`;
     try {
-      const res = await this.fetchFn(url, { headers });
+      const res = await this.fetchFn(apiUrl, { headers });
       if (!res.ok) {
         console.warn(`  Warning: could not download attachment ${label} (${res.status} ${res.statusText})`);
         return null;
@@ -571,6 +758,26 @@ export class MantisBTCrawler implements Crawler {
       return Buffer.from(content, "base64");
     } catch (err) {
       console.warn(`  Warning: could not download attachment ${label}: ${err}`);
+      return null;
+    }
+  }
+
+  /** Download a file as binary from a URL (used for MantisHub signed URLs). */
+  private async downloadBinary(url: string, label: string): Promise<Buffer | null> {
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers["Authorization"] = this.token;
+    }
+    try {
+      const res = await this.fetchFn(url, { headers });
+      if (!res.ok) {
+        console.warn(`  Warning: binary download failed for ${label} (${res.status} ${res.statusText})`);
+        return null;
+      }
+      const arrayBuffer = await res.arrayBuffer();
+      return arrayBuffer.byteLength > 0 ? Buffer.from(arrayBuffer) : null;
+    } catch (err) {
+      console.warn(`  Warning: binary download failed for ${label}: ${err}`);
       return null;
     }
   }

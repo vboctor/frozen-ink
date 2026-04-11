@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -37,6 +37,14 @@ const W_NAME = 20;
 const W_TITLE = 22;
 const W_TYPE = 12;
 const W_ENTITIES = 10;
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}m ${sec}s`;
+}
 
 function pad(text: string, width: number): string {
   if (text.length >= width) return text.slice(0, width - 1) + " ";
@@ -87,6 +95,19 @@ export function SyncView(): React.ReactElement {
   const [progress, setProgress] = useState<string[]>([]);
   const [syncModes, setSyncModes] = useState<Map<string, SyncMode>>(new Map());
   const [totalStats, setTotalStats] = useState<{ created: number; updated: number; deleted: number; total: number } | null>(null);
+  const [fetchedCount, setFetchedCount] = useState(0);
+  const [syncingCollection, setSyncingCollection] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
+
+  // Tick elapsed time every second while syncing
+  useEffect(() => {
+    if (syncStartTime === null) return;
+    const interval = setInterval(() => {
+      setElapsedMs(Date.now() - syncStartTime);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [syncStartTime]);
 
   const initialized = contextExists();
   const collections = initialized
@@ -130,6 +151,9 @@ export function SyncView(): React.ReactElement {
     setViewMode("syncing");
     setProgress([]);
     setTotalStats(null);
+    setFetchedCount(0);
+    const syncStart = Date.now();
+    setSyncStartTime(syncStart);
 
     const home = getFrozenInkHome();
     const registry = createDefaultRegistry();
@@ -148,10 +172,13 @@ export function SyncView(): React.ReactElement {
       const isFullSync = syncModes.get(col.name) === "full";
       const label = isFullSync ? "full sync" : "sync";
       setProgress((p) => [...p, `${label}: "${col.name}" (${col.crawler})...`]);
+      setFetchedCount(0);
+      setSyncingCollection(true);
 
       const factory = registry.get(col.crawler);
       if (!factory) {
         setProgress((p) => [...p, `  No crawler for ${col.crawler}, skipping`]);
+        setSyncingCollection(false);
         continue;
       }
 
@@ -189,21 +216,24 @@ export function SyncView(): React.ReactElement {
         markdownBasePath: "markdown",
         onBatchFetched: ({ externalIds }: { externalIds: string[] }) => {
           if (externalIds.length > 0) {
-            setProgress((p) => [...p, `  Fetched ${externalIds.length} entities`]);
+            setFetchedCount((c) => c + externalIds.length);
           }
         },
       });
 
       try {
         const stats = await engine.run();
+        setSyncingCollection(false);
         const colDb = getCollectionDb(dbPath);
         const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
         totalCreated += stats.created;
         totalUpdated += stats.updated;
         totalDeleted += stats.deleted;
         totalEntities += total;
-        setProgress((p) => [...p, `  Done: +${stats.created} ~${stats.updated} -${stats.deleted} (${total} total)`]);
+        const colElapsed = formatElapsed(Date.now() - syncStart);
+        setProgress((p) => [...p, `  +${stats.created} ~${stats.updated} -${stats.deleted} (${total} total) in ${colElapsed}`]);
       } catch (err) {
+        setSyncingCollection(false);
         const msg = err instanceof Error ? err.message : String(err);
         setProgress((p) => [...p, `  Error: ${msg}`]);
       }
@@ -211,7 +241,14 @@ export function SyncView(): React.ReactElement {
       await crawler.dispose();
     }
 
-    setTotalStats({ created: totalCreated, updated: totalUpdated, deleted: totalDeleted, total: totalEntities });
+    const totalElapsed = Date.now() - syncStart;
+    setElapsedMs(totalElapsed);
+    setSyncStartTime(null); // stop the timer
+
+    // Only show combined totals when multiple collections were synced
+    if (toSync.length > 1) {
+      setTotalStats({ created: totalCreated, updated: totalUpdated, deleted: totalDeleted, total: totalEntities });
+    }
     setViewMode("done");
   }, [collections, syncModes]);
 
@@ -222,9 +259,18 @@ export function SyncView(): React.ReactElement {
       if (input === " " && collections[cursor]) {
         cycleSyncMode(collections[cursor].name);
       }
-      if (input === "s") setAllMode("incremental");
-      if (input === "f") setAllMode("full");
-      if (input === "n") setAllMode("skip");
+      if (input === "s" && collections[cursor]) {
+        setSyncModes((prev) => { const next = new Map(prev); next.set(collections[cursor].name, "incremental"); return next; });
+      }
+      if (input === "f" && collections[cursor]) {
+        setSyncModes((prev) => { const next = new Map(prev); next.set(collections[cursor].name, "full"); return next; });
+      }
+      if (input === "n" && collections[cursor]) {
+        setSyncModes((prev) => { const next = new Map(prev); next.set(collections[cursor].name, "skip"); return next; });
+      }
+      if (input === "S") setAllMode("incremental");
+      if (input === "F") setAllMode("full");
+      if (input === "N") setAllMode("skip");
       if (key.return) startSync();
     }
     if (viewMode === "done") {
@@ -258,6 +304,9 @@ export function SyncView(): React.ReactElement {
           {progress.map((line, i) => (
             <Text key={i} dimColor={viewMode === "done"}>{line}</Text>
           ))}
+          {syncingCollection && fetchedCount > 0 && (
+            <Text dimColor>  Fetched {fetchedCount} entities... ({formatElapsed(elapsedMs)})</Text>
+          )}
         </Box>
         {totalStats && (
           <Box marginTop={1} gap={2}>
@@ -314,10 +363,11 @@ export function SyncView(): React.ReactElement {
       </Box>
 
       <Box marginTop={1} gap={2}>
-        <Text dimColor>[Space] Cycle mode</Text>
-        <Text dimColor>[s] All incremental</Text>
-        <Text dimColor>[f] All full</Text>
-        <Text dimColor>[n] All skip</Text>
+        <Text dimColor>[Space] Cycle</Text>
+        <Text dimColor>[s] Sync</Text>
+        <Text dimColor>[f] Full</Text>
+        <Text dimColor>[n] Skip</Text>
+        <Text dimColor>[S/F/N] All</Text>
         <Text dimColor>[Enter] Start{selectedCount > 0 ? ` (${selectedCount})` : ""}</Text>
       </Box>
     </Box>
