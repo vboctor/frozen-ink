@@ -9,7 +9,13 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "types": ["bun-types"]
+    "types": ["bun-types"],
+    "paths": {
+      "@frozenink/core": ["./packages/core/src/index.ts"],
+      "@frozenink/core/*": ["./packages/core/src/*/index.ts"],
+      "@frozenink/crawlers": ["./packages/crawlers/src/index.ts"],
+      "@frozenink/mcp": ["./packages/mcp/src/index.ts"]
+    }
   },
   "exclude": ["node_modules", "dist"],
   "references": [

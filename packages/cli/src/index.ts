@@ -14,6 +14,8 @@ import { daemonCommand } from "./commands/daemon";
 import { publishCommand } from "./commands/publish";
 import { updateCommand } from "./commands/update";
 import { unpublishCommand } from "./commands/unpublish";
+import { tuiCommand } from "./commands/tui";
+import { startTui } from "./tui/index";
 
 const program = new Command();
 
@@ -36,5 +38,12 @@ program.addCommand(serveCommand);
 program.addCommand(daemonCommand);
 program.addCommand(publishCommand);
 program.addCommand(unpublishCommand);
+program.addCommand(tuiCommand);
 
-await program.parseAsync();
+// If no arguments passed (just "fink"), launch TUI by default
+const args = process.argv.slice(2);
+if (args.length === 0 && process.stdin.isTTY) {
+  await startTui();
+} else {
+  await program.parseAsync();
+}

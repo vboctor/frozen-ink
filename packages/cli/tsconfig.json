@@ -3,7 +3,9 @@
   "compilerOptions": {
     "composite": true,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "jsx": "react-jsx",
+    "types": ["bun-types", "@types/react"]
   },
   "include": ["src"],
   "exclude": ["src/**/__tests__"],
