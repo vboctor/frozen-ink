@@ -605,7 +605,8 @@ export function createApiServer(
         const result = buildTextPack(name, filePath);
         if (!result) return errorResponse("File not found", 404);
 
-        return new Response(result.data, {
+        const zipData = Uint8Array.from(result.data);
+        return new Response(zipData, {
           status: 200,
           headers: {
             "Content-Type": "application/zip",
