@@ -186,7 +186,7 @@ api.get("/api/search", async (c) => {
       const entity = await getEntityByExternalId(c.env.DB, r.collectionName, r.externalId);
       const rawPath = entity?.markdown_path ?? null;
       const markdownPath = rawPath ? rawPath.replace(/^markdown\//, "") : null;
-      return { ...r, collection: r.collectionName, markdownPath };
+      return { ...r, collection: r.collectionName, markdownPath, snippet: r.snippet };
     }),
   );
 
