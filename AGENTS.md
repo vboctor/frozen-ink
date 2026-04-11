@@ -41,10 +41,24 @@ packages/
 
   cli/src/                CLI entry point
     index.ts              Commander program with all subcommands
-    commands/             init, add, sync, status, collections, search, config, serve, daemon, generate, index, publish, unpublish
+    commands/             init, add, sync, status, collections, search, config, serve, daemon, generate, index, publish, unpublish, tui
     commands/wrangler-api.ts     Wrangler CLI subprocess helpers (D1, R2, Workers)
     commands/management-api.ts   Management REST API (collection CRUD, sync, publish, export, config)
     commands/publish.ts          publishCollections() reusable function + CLI command
+    tui/                         Interactive TUI (Ink + React)
+      index.tsx                  Entry point, renders the Ink app
+      components/App.tsx         Main app shell with keyboard navigation
+      components/Dashboard.tsx   Status overview (collections + deployments)
+      components/CollectionList.tsx  Collection CRUD (enable/disable, rename, delete, edit title)
+      components/AddCollection.tsx   Step-by-step collection creation wizard
+      components/SyncView.tsx    Sync with real-time progress
+      components/PublishView.tsx  Publish wizard (new/update/worker-only)
+      components/ExportView.tsx  Export to markdown/HTML
+      components/SettingsView.tsx Settings management (sync interval, concurrency, retries, log level)
+      components/SearchView.tsx  Full-text search
+      components/DeploymentList.tsx  View/unpublish deployments
+      components/SelectInput.tsx Reusable arrow-key select component
+      components/TextInput.tsx   Reusable text input component
 
   worker/src/             Cloudflare Worker (published deployments)
     index.ts              Worker entry (export default { fetch })
@@ -103,6 +117,27 @@ The API server supports both runtimes via a `handleRequest(req: Request): Respon
 Management API endpoints can return `Promise<Response>` (for async operations like reading request body, running sync). The `handleAsync()` helper casts `Promise<Response>` to `Response`. This works because Bun.serve's `fetch` handler accepts `Promise<Response>`, and the Node adapter uses `await Promise.resolve(handleRequest(req))`.
 
 Management routes are checked first via `handleManagementRequest(req)` which returns `Response | null`. On `null`, the request falls through to browse API routes.
+
+### CLI TUI (`fink tui`)
+
+The CLI includes an interactive TUI built with Ink (React for terminals). It provides **feature parity with the Desktop app's management UI** for collection management:
+
+| Feature | Desktop (Electron) | CLI TUI (`fink tui`) |
+|---------|-------------------|---------------------|
+| Collection CRUD | CollectionList + CollectionForm | CollectionList + AddCollection |
+| Enable/disable collections | Toggle in CollectionList | [t] key in CollectionList |
+| Sync with progress | SyncPanel + SyncProgress | SyncView with real-time output |
+| Publish wizard | PublishPanel with presets | PublishView (new/update/worker-only) |
+| Export markdown/HTML | ExportPanel | ExportView |
+| Settings (sync, logging) | SettingsPanel | SettingsView |
+| Deployment management | DeploymentList | DeploymentList with unpublish |
+| Full-text search | SearchBar (browse mode) | SearchView |
+| Rename/delete collections | CollectionList actions | [r]/[x] keys in CollectionList |
+| Edit title | CollectionForm | [n] key in CollectionList |
+
+**Navigation**: Keyboard shortcuts `[d]`ashboard, `[c]`ollections, `[a]`dd, `[s]`ync, `[p]`ublish, `[e]`xport, `[f]`ind/search, `[v]` deployments, `[g]` settings. ESC goes back, `q` quits.
+
+**Architecture**: The TUI uses Ink 7 with React 19 to render terminal UI components. Each screen is a standalone React component in `packages/cli/src/tui/components/`. The TUI reuses the same core logic as the CLI commands (e.g., `publishCollections()`, `unpublishDeployment()`, `exportStaticSite()`).
 
 ### UI Mode Architecture
 

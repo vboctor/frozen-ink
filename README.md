@@ -82,17 +82,45 @@ Each crawler syncs a different data source into Frozen Ink. See individual docs 
 | [Git](packages/crawlers/src/git/) | Local Git repository | Commits, Branches, Tags | [README](packages/crawlers/src/git/README.md) |
 | MantisBT | MantisBT REST API | Issues, Attachments | — |
 
-## Quick Start
+## Install the CLI
 
-All commands below run from the **repository root**. No global install required.
+### From npm (easiest)
 
 ```bash
-# Install dependencies
-bun install
-
-# Initialize Frozen Ink (~/.frozenink/)
-bun run fink -- init
+npm install -g @vboctor/fink
+fink    # launches the interactive TUI
 ```
+
+### Standalone binary (no Node.js required)
+
+Download pre-built binaries from the [releases page](https://github.com/vboctor/fink/releases):
+
+```bash
+# macOS Apple Silicon
+curl -L -o fink https://github.com/vboctor/fink/releases/latest/download/fink-darwin-arm64
+chmod +x fink && sudo mv fink /usr/local/bin/
+```
+
+Available binaries: `fink-darwin-arm64`, `fink-darwin-x64`, `fink-linux-x64`, `fink-linux-arm64`
+
+### From source (development)
+
+```bash
+git clone https://github.com/vboctor/fink.git && cd fink
+bun install
+cd packages/cli && bun link && cd ../..   # links `fink` globally
+fink    # works from anywhere
+```
+
+## Quick Start
+
+```bash
+# Initialize Frozen Ink (~/.frozenink/)
+fink init
+```
+
+> **Note:** If running from source without `bun link`, prefix commands with `bun run fink --`:
+> `bun run fink -- init`, `bun run fink -- sync "*"`, etc.
 
 ### Adding collections
 
@@ -231,14 +259,18 @@ curl -X POST http://localhost:3747/api/export \
 
 ## CLI Commands
 
+Running `fink` with no arguments launches the **interactive TUI** with keyboard-driven access to all features (dashboard, collections, sync, publish, export, search, settings).
+
 | Command | Description |
 |---------|-------------|
+| `fink` | Launch interactive TUI |
 | `fink init` | Initialize `~/.frozenink/` directory and config |
 | `fink add <type>` | Add a new collection (github, obsidian, git, mantisbt) |
 | `fink sync <name\|"*">` | Sync a collection or all (`"*"`) |
 | `fink status` | Show sync status for all collections |
 | `fink search <query>` | Full-text search across all collections |
 | `fink collections list\|remove\|enable\|disable\|rename\|update` | Manage collections |
+| `fink update <name>` | Update collection config |
 | `fink config get\|set\|list` | View/edit configuration |
 | `fink generate <name\|"*">` | Re-generate markdown without re-syncing |
 | `fink index <name\|"*">` | Rebuild search index and links |
@@ -246,6 +278,7 @@ curl -X POST http://localhost:3747/api/export \
 | `fink daemon start\|stop\|status` | Background sync daemon |
 | `fink publish <collections...>` | Publish to Cloudflare (see [docs/publish.md](docs/publish.md)) |
 | `fink unpublish <name>` | Remove a Cloudflare deployment |
+| `fink tui` | Launch TUI explicitly |
 
 ## Web UI
 
@@ -283,7 +316,10 @@ Exposes 5 tools and 4 resources for AI assistants:
 ## Development
 
 ```bash
-# Install the fink CLI globally (one-time)
+# Install dependencies (always from repo root, never npm)
+bun install
+
+# Link the fink CLI globally (one-time)
 cd packages/cli && bun link && cd ../..
 
 # Dev server: API on :3000 + Vite hot reload on :5173
@@ -293,12 +329,6 @@ bun run dev
 fink sync "*"
 fink status
 fink search "my query"
-
-# Build UI for production
-bun run build:ui
-
-# Build worker for publishing
-cd packages/worker && bun run build
 
 # Type-check all packages
 bun run typecheck
@@ -313,6 +343,59 @@ cd packages/ui && npx vitest run
 # Clean dist output
 bun run clean
 ```
+
+## Building & Releasing
+
+### CLI npm package (`@vboctor/fink`)
+
+The CLI is published to npm as a minified ESM bundle with the `better-sqlite3` native dependency.
+
+```bash
+cd packages/cli
+
+# Build the minified bundle (dist/fink.mjs + dist/package.json)
+bun run build
+
+# Build standalone Bun executables for all platforms
+bun run build:exe
+
+# Build everything (npm bundle + executables)
+bun run build:all
+
+# Publish to npm (builds automatically, then publishes dist/)
+bun run publish:npm
+```
+
+**What the build produces:**
+
+| Output | Size | Description |
+|--------|------|-------------|
+| `dist/fink.mjs` | ~1.7 MB | Minified ESM bundle (npm package) |
+| `dist/fink-darwin-arm64` | ~60 MB | macOS Apple Silicon standalone |
+| `dist/fink-darwin-x64` | ~65 MB | macOS Intel standalone |
+| `dist/fink-linux-x64` | ~96 MB | Linux x64 standalone |
+| `dist/fink-linux-arm64` | ~96 MB | Linux ARM64 standalone |
+| `dist/package.json` | — | npm package manifest (`@vboctor/fink`) |
+
+The standalone binaries include the Bun runtime and all dependencies — no Node.js or Bun install required. Upload them to GitHub Releases.
+
+**Version bumping:**
+
+Update the version in `packages/cli/package.json` before publishing. The build script copies the version to `dist/package.json`.
+
+### UI and Worker
+
+```bash
+# Build UI for production (required before serve or publish)
+bun run build:ui
+
+# Build worker for Cloudflare publishing
+cd packages/worker && bun run build
+```
+
+### Desktop app
+
+See the [Desktop App](#desktop-app) section above.
 
 ## Project Structure
 

@@ -9,13 +9,24 @@
     "fink": "src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "bun build.mjs --bundle-only",
+    "build:exe": "bun build.mjs --exe-only",
+    "build:all": "bun build.mjs",
+    "prepublish": "bun build.mjs --bundle-only",
+    "publish:npm": "bun build.mjs --bundle-only && cd dist && npm publish --access public"
   },
   "dependencies": {
-    "@frozenink/crawlers": "workspace:*",
     "@frozenink/core": "workspace:*",
+    "@frozenink/crawlers": "workspace:*",
     "@frozenink/mcp": "workspace:*",
     "commander": "^13.0.0",
-    "drizzle-orm": "^0.39.0"
+    "drizzle-orm": "^0.39.0",
+    "ink": "^7.0.0",
+    "react": "^19.2.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "esbuild": "^0.25.0"
   }
 }
