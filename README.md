@@ -1,8 +1,36 @@
 # Frozen Ink
 
-Frozen Ink is a local data aggregation tool that crawls multiple sources (GitHub repositories, Obsidian vaults, Git repos, MantisBT), syncs their content into a local SQLite database, renders navigable Obsidian-compatible markdown, and serves everything through a web UI and Model Context Protocol (MCP) server for AI coding assistants.
+## What Is Frozen Ink?
 
-Collections can also be **published to Cloudflare** as a password-protected website with remote MCP access, or managed through a **cross-platform desktop app** (Electron).
+Frozen Ink is a local-first knowledge layer for technical work. It crawls sources like
+GitHub repositories, Obsidian vaults, Git repos, and MantisBT/MantisHub; syncs them into
+a local SQLite index; renders and serves everything through a web UI and MCP server for
+AI tools.
+
+It can run fully local, be managed through a cross-platform Electron desktop app, or be
+published to Cloudflare as a password-protected site with remote MCP access.
+
+[TypeScript Collection from Github](https://typescript.vboctor.workers.dev/)
+
+## Why Frozen Ink?
+
+Knowledge is spread across many services and SaaS tools. That fragmentation makes search
+inconsistent, context switching expensive, and often limits access to such data by AI models.
+Frozen Ink solves this by creating a unified, queryable, markdown-native workspace that is
+both human-readable and AI-accessible. Such workspaces can be accessible locally or via
+publishing to the cloud.
+
+## Key Features
+
+- **Online to Offline**: Keep offline access to online systems like GitHub and
+  MantisHub.
+- **Offline to Online**: Make local knowledge (for example Obsidian notes)
+  available to cloud agents via MCP.
+- **Optimized for AI**: Markdown-native content, free-text search, and MCP
+  endpoints built in.
+- **Break the Silos**: Efficiently gather and query knowledge across many
+  services in one place.
+- **Archival**: Snapshot data for long-term retention and future reference.
 
 ## Architecture
 

@@ -1,0 +1,102 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f1117"/>
+      <stop offset="100%" stop-color="#1a1a2e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="400" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0969da"/>
+      <stop offset="50%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#cf222e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Subtle grid pattern -->
+  <g opacity="0.04" stroke="#ffffff" stroke-width="1">
+    <line x1="0" y1="100" x2="1200" y2="100"/>
+    <line x1="0" y1="200" x2="1200" y2="200"/>
+    <line x1="0" y1="300" x2="1200" y2="300"/>
+    <line x1="0" y1="400" x2="1200" y2="400"/>
+    <line x1="0" y1="500" x2="1200" y2="500"/>
+    <line x1="200" y1="0" x2="200" y2="630"/>
+    <line x1="400" y1="0" x2="400" y2="630"/>
+    <line x1="600" y1="0" x2="600" y2="630"/>
+    <line x1="800" y1="0" x2="800" y2="630"/>
+    <line x1="1000" y1="0" x2="1000" y2="630"/>
+  </g>
+
+  <!-- Gradient accent line at top -->
+  <rect x="0" y="0" width="1200" height="4" fill="url(#accent)"/>
+
+  <!-- Books icon -->
+  <g transform="translate(100, 200)">
+    <rect x="0" y="80" width="110" height="28" rx="6" fill="#e36209" opacity="0.9"/>
+    <rect x="5" y="48" width="100" height="28" rx="6" fill="#1a9e8f" opacity="0.9"/>
+    <rect x="0" y="16" width="110" height="28" rx="6" fill="#cf222e" opacity="0.9"/>
+  </g>
+
+  <!-- Title -->
+  <text x="100" y="380" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" font-size="72" font-weight="800" fill="#ffffff" letter-spacing="-2">Frozen Ink</text>
+
+  <!-- Subtitle -->
+  <text x="100" y="440" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" font-size="28" fill="#8b8fa3">Local-first knowledge layer for technical work</text>
+
+  <!-- Tags -->
+  <g transform="translate(100, 480)">
+    <rect x="0" y="0" width="130" height="36" rx="18" fill="#0969da" opacity="0.15"/>
+    <text x="65" y="24" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#4da3f0" text-anchor="middle">Offline-first</text>
+
+    <rect x="148" y="0" width="150" height="36" rx="18" fill="#7c3aed" opacity="0.15"/>
+    <text x="223" y="24" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#a78bfa" text-anchor="middle">AI via MCP</text>
+
+    <rect x="316" y="0" width="180" height="36" rx="18" fill="#1a7f37" opacity="0.15"/>
+    <text x="406" y="24" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#4ade80" text-anchor="middle">Publish anywhere</text>
+  </g>
+
+  <!-- Mock window on the right -->
+  <g transform="translate(700, 120)">
+    <!-- Window frame -->
+    <rect x="0" y="0" width="420" height="390" rx="12" fill="#1e1e2e" stroke="#2d2d3d" stroke-width="1"/>
+
+    <!-- Title bar -->
+    <rect x="0" y="0" width="420" height="36" rx="12" fill="#252536"/>
+    <rect x="0" y="24" width="420" height="12" fill="#252536"/>
+    <circle cx="20" cy="18" r="5" fill="#ff5f57"/>
+    <circle cx="38" cy="18" r="5" fill="#febc2e"/>
+    <circle cx="56" cy="18" r="5" fill="#28c840"/>
+
+    <!-- Sidebar -->
+    <rect x="0" y="36" width="120" height="354" fill="#1a1a28"/>
+    <rect x="0" y="378" width="120" height="12" rx="0" fill="#1a1a28"/>
+    <rect x="12" y="52" width="72" height="8" rx="4" fill="#2d2d3d"/>
+    <rect x="12" y="70" width="96" height="8" rx="4" fill="#0969da" opacity="0.3"/>
+    <rect x="12" y="88" width="84" height="8" rx="4" fill="#2d2d3d"/>
+    <rect x="12" y="106" width="78" height="8" rx="4" fill="#2d2d3d"/>
+    <rect x="12" y="132" width="60" height="8" rx="4" fill="#2d2d3d"/>
+    <rect x="12" y="150" width="90" height="8" rx="4" fill="#2d2d3d"/>
+    <rect x="12" y="168" width="70" height="8" rx="4" fill="#2d2d3d"/>
+
+    <!-- Content area -->
+    <rect x="136" y="52" width="200" height="12" rx="4" fill="#c9d1d9" opacity="0.6"/>
+    <rect x="136" y="78" width="260" height="8" rx="4" fill="#2d2d3d"/>
+    <rect x="136" y="96" width="240" height="8" rx="4" fill="#2d2d3d"/>
+    <rect x="136" y="114" width="220" height="8" rx="4" fill="#2d2d3d"/>
+    <rect x="136" y="132" width="250" height="8" rx="4" fill="#2d2d3d"/>
+
+    <!-- Callout block -->
+    <rect x="136" y="156" width="264" height="50" rx="6" fill="#0969da" opacity="0.08"/>
+    <rect x="136" y="156" width="3" height="50" fill="#0969da" opacity="0.5"/>
+    <rect x="148" y="170" width="200" height="6" rx="3" fill="#0969da" opacity="0.2"/>
+    <rect x="148" y="184" width="140" height="6" rx="3" fill="#0969da" opacity="0.2"/>
+
+    <!-- Code block -->
+    <rect x="136" y="220" width="264" height="80" rx="6" fill="#12121e"/>
+    <rect x="148" y="236" width="180" height="6" rx="3" fill="#7c3aed" opacity="0.4"/>
+    <rect x="148" y="252" width="220" height="6" rx="3" fill="#1a9e8f" opacity="0.4"/>
+    <rect x="148" y="268" width="160" height="6" rx="3" fill="#e36209" opacity="0.4"/>
+    <rect x="148" y="284" width="200" height="6" rx="3" fill="#1a9e8f" opacity="0.4"/>
+  </g>
+</svg>

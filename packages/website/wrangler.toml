@@ -1,0 +1,21 @@
+name = "frozenink"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+workers_dev = true
+
+# Custom domain — uncomment once frozen.ink zone is active in Cloudflare
+# routes = [
+#   { pattern = "frozen.ink", custom_domain = true },
+# ]
+
+# Bundle HTML and SVG as text modules
+[[rules]]
+type = "Text"
+globs = ["**/*.html", "**/*.svg"]
+fallthrough = false
+
+# Bundle PNG as binary data module
+[[rules]]
+type = "Data"
+globs = ["**/*.png"]
+fallthrough = false
