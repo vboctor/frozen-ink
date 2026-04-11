@@ -15,6 +15,7 @@ export default function PublishPanel() {
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [workerName, setWorkerName] = useState("");
   const [password, setPassword] = useState("");
+  const [removePassword, setRemovePassword] = useState(false);
 
   // Auth
   const [authChecked, setAuthChecked] = useState<boolean | null>(null);
@@ -51,7 +52,18 @@ export default function PublishPanel() {
   const loadPresets = () => {
     fetch("/api/publish-presets")
       .then((r) => r.json())
-      .then((data: PublishPreset[]) => setPresets(Array.isArray(data) ? data : []))
+      .then((data: PublishPreset[]) => {
+        if (!Array.isArray(data)) {
+          setPresets([]);
+          return;
+        }
+        const normalized = data.map((p) => ({
+          ...p,
+          password: p.password ?? "",
+          removePassword: !!p.removePassword,
+        }));
+        setPresets(normalized);
+      })
       .catch(() => {});
   };
 
@@ -89,6 +101,7 @@ export default function PublishPanel() {
     setWorkerName("");
     setSelectedCollections([]);
     setPassword("");
+    setRemovePassword(false);
   };
 
   const openEdit = (idx: number) => {
@@ -99,6 +112,7 @@ export default function PublishPanel() {
     setWorkerName(p.workerName);
     setSelectedCollections([...p.collections]);
     setPassword(p.password);
+    setRemovePassword(!!p.removePassword);
   };
 
   const closeForm = () => {
@@ -118,6 +132,7 @@ export default function PublishPanel() {
       workerName,
       collections: selectedCollections,
       password,
+      removePassword,
     };
     if (formMode === "editing" && editIdx !== null) {
       const updated = [...presets];
@@ -155,6 +170,19 @@ export default function PublishPanel() {
   // --- Publish ---
 
   const handlePublish = (preset: PublishPreset) => {
+    const existingDeployment = getDeployment(preset.workerName);
+    const isInitialPublish = !existingDeployment;
+    const isPublicInitialPublish = isInitialPublish && !preset.password && !preset.removePassword;
+    let forcePublic = false;
+
+    if (isPublicInitialPublish) {
+      const confirmed = window.confirm(
+        "No password is configured for this initial publish. Collection data will be publicly accessible. Continue?",
+      );
+      if (!confirmed) return;
+      forcePublic = true;
+    }
+
     setPublishing(true);
     setProgress(null);
     setError(null);
@@ -166,6 +194,8 @@ export default function PublishPanel() {
         collections: preset.collections,
         name: preset.workerName || undefined,
         password: preset.password || undefined,
+        removePassword: preset.removePassword || undefined,
+        forcePublic: forcePublic || undefined,
       }),
     }).catch(() => {});
 
@@ -259,6 +289,9 @@ export default function PublishPanel() {
                   </div>
                   <div className="preset-card-details">
                     <span className="text-muted">Collections: {p.collections.join(", ") || "none"}</span>
+                    <span className="text-muted">
+                      Password: {p.removePassword ? "remove on next publish" : p.password ? "set/rotate on next publish" : "preserve current"}
+                    </span>
                     {dep && (
                       <span className="preset-deployment-info">
                         Published {formatTimestamp(dep.publishedAt)}
@@ -322,14 +355,26 @@ export default function PublishPanel() {
           </div>
 
           <div className="form-group">
-            <label>Password (optional — leave blank for public access)</label>
+            <label>Password (optional)</label>
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Leave blank for no password"
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (e.target.value) setRemovePassword(false);
+              }}
+              placeholder="Leave blank to preserve current password setting"
               className="form-input"
+              disabled={removePassword}
             />
+            <label className="checkbox-label" style={{ marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={removePassword}
+                onChange={(e) => setRemovePassword(e.target.checked)}
+              />
+              Explicitly remove password protection on next publish
+            </label>
           </div>
 
           <div className="form-actions">

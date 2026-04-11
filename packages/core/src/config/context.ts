@@ -25,6 +25,7 @@ const deploymentEntrySchema = z.object({
   r2BucketName: z.string(),
   cfAccountId: z.string().optional(),
   passwordProtected: z.boolean(),
+  passwordHash: z.string().optional(),
   publishedAt: z.string(),
 });
 
