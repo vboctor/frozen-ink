@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frozen Ink — Local-first knowledge layer for technical work</title>
+  <meta name="description" content="Crawl GitHub, Obsidian, Git repos and more into a unified, offline-first knowledge base. AI-accessible via MCP. Publish anywhere with one command." />
+
+  <!-- Open Graph (Facebook, LinkedIn, iMessage, WhatsApp, Telegram, Slack, Discord) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Frozen Ink" />
+  <meta property="og:title" content="Frozen Ink — Your knowledge, unified and accessible" />
+  <meta property="og:description" content="Crawl GitHub, Obsidian, Git repos and more into a unified, offline-first knowledge base. AI-accessible via MCP. Publish anywhere with one command." />
+  <meta property="og:image" content="https://frozenink.vboctor.workers.dev/og.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Frozen Ink — Local-first knowledge layer for technical work" />
+  <meta property="og:url" content="https://frozenink.vboctor.workers.dev/" />
+
+  <!-- Twitter Card (also used by Slack and Discord) -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Frozen Ink — Your knowledge, unified and accessible" />
+  <meta name="twitter:description" content="Crawl GitHub, Obsidian, Git repos and more into a unified, offline-first knowledge base. AI-accessible via MCP." />
+  <meta name="twitter:image" content="https://frozenink.vboctor.workers.dev/og.png" />
+  <meta name="twitter:image:alt" content="Frozen Ink — Local-first knowledge layer for technical work" />
+
+  <!-- Theme color (used by Slack, Discord, Telegram, and some browsers) -->
+  <meta name="theme-color" content="#0969da" />
+  <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABjSURBVFhH7c0xDQAgDEXRHwcuwP5dMA0TYKAlYeAO9CX/TndnZmZmZmZmZmZm/6Kq1t0fvN3dT7MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzOzv/E6d2dmZmZmZn/WcQC9fg7gL4VGPAAAAABJRU5ErkJggg==" />
+  <style>
+    /* ===== Reset & Base ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #fafbfc;
+      --bg-card: #ffffff;
+      --text: #1a1a2e;
+      --text-secondary: #555b6e;
+      --text-muted: #8b8fa3;
+      --accent: #0969da;
+      --accent-light: #ddf4ff;
+      --accent-dark: #0550ae;
+      --border: #e1e4e8;
+      --radius: 12px;
+      --radius-lg: 20px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      --max-width: 1120px;
+      --gradient-hero: linear-gradient(135deg, #0969da 0%, #7c3aed 50%, #cf222e 100%);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-dark); }
+
+    /* ===== Nav ===== */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(250, 251, 252, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text);
+    }
+
+    .nav-brand svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
+    .nav-cta {
+      background: var(--text);
+      color: #fff !important;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+
+    .nav-cta:hover { opacity: 0.85; color: #fff !important; }
+
+
+    /* ===== Hero ===== */
+    .hero {
+      padding: 140px 24px 80px;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      padding: 6px 16px;
+      background: var(--accent-light);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 100px;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: clamp(36px, 6vw, 64px);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      max-width: 800px;
+      margin: 0 auto 20px;
+    }
+
+    .hero h1 .gradient-text {
+      background: var(--gradient-hero);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: clamp(17px, 2.2vw, 20px);
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto 40px;
+      line-height: 1.6;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--text);
+      color: #fff;
+    }
+
+    .btn-primary:hover { opacity: 0.85; color: #fff; }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover { border-color: var(--text-muted); color: var(--text); }
+
+    .btn svg { width: 18px; height: 18px; }
+
+    .hero-visual {
+      max-width: 900px;
+      margin: 60px auto 0;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.04);
+    }
+
+    .hero-visual .window-chrome {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 18px;
+      background: #f6f8fa;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .window-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .window-dot.red { background: #ff5f57; }
+    .window-dot.yellow { background: #febc2e; }
+    .window-dot.green { background: #28c840; }
+
+    .hero-visual .window-body {
+      background: #fff;
+      padding: 0;
+      display: flex;
+      min-height: 360px;
+    }
+
+    .mock-sidebar {
+      width: 220px;
+      background: #f6f8fa;
+      border-right: 1px solid var(--border);
+      padding: 16px 0;
+      flex-shrink: 0;
+    }
+
+    .mock-sidebar-item {
+      padding: 7px 18px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-family: var(--font);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mock-sidebar-item.active {
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .mock-sidebar-item .icon { opacity: 0.5; font-size: 14px; }
+    .mock-sidebar-item.active .icon { opacity: 1; }
+
+    .mock-sidebar-section {
+      padding: 10px 18px 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .mock-content {
+      flex: 1;
+      padding: 28px 32px;
+    }
+
+    .mock-content h3 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+
+    .mock-content .mock-line {
+      height: 10px;
+      background: #f0f2f5;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+
+    .mock-content .mock-line:nth-child(2) { width: 95%; }
+    .mock-content .mock-line:nth-child(3) { width: 80%; }
+    .mock-content .mock-line:nth-child(4) { width: 88%; }
+    .mock-content .mock-line:nth-child(5) { width: 72%; }
+    .mock-content .mock-line:nth-child(6) { width: 60%; margin-bottom: 20px; }
+
+    .mock-callout {
+      background: #ddf4ff;
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 16px;
+    }
+
+    .mock-callout .mock-line { background: #b6dcfe; height: 8px; margin-bottom: 8px; }
+    .mock-callout .mock-line:last-child { width: 50%; margin-bottom: 0; }
+
+    .mock-code {
+      background: #f6f8fa;
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.8;
+    }
+
+    .mock-code .kw { color: #d73a49; }
+    .mock-code .fn { color: #6f42c1; }
+    .mock-code .str { color: #032f62; }
+    .mock-code .cmt { color: #6a737d; }
+
+    /* ===== Section shared ===== */
+    section { padding: 80px 24px; }
+
+    .section-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+
+    .section-subtitle {
+      font-size: 17px;
+      color: var(--text-secondary);
+      max-width: 560px;
+      line-height: 1.6;
+    }
+
+    .section-header {
+      margin-bottom: 48px;
+    }
+
+    .section-header.center {
+      text-align: center;
+    }
+
+    .section-header.center .section-subtitle {
+      margin: 0 auto;
+    }
+
+    /* ===== Why section ===== */
+    .why { background: #fff; }
+
+    .why-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .why-card {
+      padding: 32px 28px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      transition: box-shadow 0.2s, border-color 0.2s;
+    }
+
+    .why-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 8px 30px rgba(9, 105, 218, 0.08);
+    }
+
+    .why-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+      font-size: 22px;
+    }
+
+    .why-icon.blue { background: #ddf4ff; }
+    .why-icon.purple { background: #ede9fe; }
+    .why-icon.green { background: #dafbe1; }
+    .why-icon.orange { background: #fff1e5; }
+    .why-icon.red { background: #ffebe9; }
+    .why-icon.teal { background: #ccfbf1; }
+
+    .why-card h3 {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .why-card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* ===== How It Works ===== */
+    .how { background: var(--bg); }
+
+    .how-steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      counter-reset: step;
+    }
+
+    .how-step {
+      counter-increment: step;
+      position: relative;
+    }
+
+    .how-step::before {
+      content: counter(step);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--text);
+      color: #fff;
+      font-weight: 700;
+      font-size: 16px;
+      margin-bottom: 18px;
+    }
+
+    .how-step h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .how-step p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .how-step code {
+      display: block;
+      margin-top: 14px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow-x: auto;
+    }
+
+    /* ===== Sources ===== */
+    .sources { background: #fff; }
+
+    .sources-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .source-card {
+      padding: 28px 24px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      text-align: center;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .source-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 4px 20px rgba(9, 105, 218, 0.06);
+    }
+
+    .source-icon {
+      font-size: 32px;
+      margin-bottom: 12px;
+    }
+
+    .source-card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .source-card p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* ===== CTA ===== */
+    .cta {
+      background: var(--bg);
+      text-align: center;
+      padding: 100px 24px;
+    }
+
+    .cta-inner {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .cta h2 {
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+
+    .cta p {
+      font-size: 17px;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+      line-height: 1.6;
+    }
+
+    .cta-actions {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* ===== Footer ===== */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 24px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    footer a { color: var(--text-secondary); }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 900px) {
+      .why-grid { grid-template-columns: repeat(2, 1fr); }
+      .how-steps { grid-template-columns: 1fr; max-width: 480px; }
+      .sources-grid { grid-template-columns: repeat(2, 1fr); }
+      .mock-sidebar { display: none; }
+    }
+
+    @media (max-width: 640px) {
+      .why-grid { grid-template-columns: 1fr; }
+      .sources-grid { grid-template-columns: 1fr; }
+
+      .nav-links { display: none; }
+
+      .hero { padding: 120px 20px 60px; }
+      section { padding: 60px 20px; }
+
+      .btn { padding: 12px 22px; font-size: 14px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <div class="nav-inner">
+    <a href="/" class="nav-brand">
+      <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="3" y="16" width="22" height="5" rx="1.5" fill="#e36209"/>
+        <rect x="4" y="10" width="20" height="5" rx="1.5" fill="#1a9e8f"/>
+        <rect x="3" y="4" width="22" height="5" rx="1.5" fill="#cf222e"/>
+      </svg>
+      Frozen Ink
+    </a>
+    <ul class="nav-links">
+      <li><a href="#why">Why</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#sources">Sources</a></li>
+      <li><a href="#download" class="nav-cta">Download</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-badge">Local-first &middot; Offline-ready &middot; AI-accessible</div>
+  <h1>Your knowledge,<br/><span class="gradient-text">unified and accessible</span></h1>
+  <p>Bring online data offline, publish offline notes online for cloud agents, and query everything through markdown, free-text search, and MCP.</p>
+  <div class="hero-actions">
+    <a href="#download" class="btn btn-primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download for macOS
+    </a>
+    <a href="https://demo.frozenink.dev" class="btn btn-secondary" target="_blank">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      View live demo
+    </a>
+  </div>
+
+  <!-- App mockup -->
+  <div class="hero-visual">
+    <div class="window-chrome">
+      <span class="window-dot red"></span>
+      <span class="window-dot yellow"></span>
+      <span class="window-dot green"></span>
+    </div>
+    <div class="window-body">
+      <div class="mock-sidebar">
+        <div class="mock-sidebar-section">Collections</div>
+        <div class="mock-sidebar-item active"><span class="icon">&#9679;</span> my-obsidian-vault</div>
+        <div class="mock-sidebar-item"><span class="icon">&#9679;</span> github-issues</div>
+        <div class="mock-sidebar-item"><span class="icon">&#9679;</span> project-repo</div>
+        <div class="mock-sidebar-section">Files</div>
+        <div class="mock-sidebar-item"><span class="icon">&#9656;</span> architecture.md</div>
+        <div class="mock-sidebar-item active"><span class="icon">&#9656;</span> api-design.md</div>
+        <div class="mock-sidebar-item"><span class="icon">&#9656;</span> deployment.md</div>
+        <div class="mock-sidebar-item"><span class="icon">&#9656;</span> onboarding.md</div>
+      </div>
+      <div class="mock-content">
+        <h3>API Design Guidelines</h3>
+        <div class="mock-line" style="width:95%"></div>
+        <div class="mock-line" style="width:80%"></div>
+        <div class="mock-line" style="width:88%"></div>
+        <div class="mock-line" style="width:72%"></div>
+        <div class="mock-line" style="width:60%"></div>
+        <div class="mock-callout">
+          <div class="mock-line" style="width:90%"></div>
+          <div class="mock-line" style="width:50%"></div>
+        </div>
+        <div class="mock-code">
+          <span class="cmt">// All endpoints follow RESTful conventions</span><br/>
+          <span class="kw">const</span> router = <span class="fn">createRouter</span>()<br/>
+          router.<span class="fn">get</span>(<span class="str">"/api/collections"</span>, listHandler)<br/>
+          router.<span class="fn">get</span>(<span class="str">"/api/entities/:id"</span>, getHandler)
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Why -->
+<section class="why" id="why">
+  <div class="section-inner">
+    <div class="section-header center">
+      <div class="section-label">Why Frozen Ink</div>
+      <h2 class="section-title">Five key capabilities for modern knowledge workflows.</h2>
+      <p class="section-subtitle">From offline access to AI-ready context, Frozen Ink is built to move knowledge across boundaries without losing fidelity.</p>
+    </div>
+    <div class="why-grid">
+      <div class="why-card">
+        <div class="why-icon blue">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0969da" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>
+        </div>
+        <h3>Online to Offline</h3>
+        <p>Keep offline access to online systems like GitHub and MantisHub by syncing them into a local knowledge base.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-icon purple">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 12 15 16 10"/></svg>
+        </div>
+        <h3>Offline to Online</h3>
+        <p>Make local knowledge, including Obsidian notes, available to cloud agents through MCP-powered deployments.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-icon green">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a7f37" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <h3>Optimized for AI</h3>
+        <p>Frozen Ink is built for LLM workflows with markdown-native output, free-text search, and MCP access out of the box.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-icon orange">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d4730f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 7l-5 5-5-5"/><path d="M17 17l-5-5-5 5"/></svg>
+        </div>
+        <h3>Break the Silos</h3>
+        <p>Efficiently gather knowledge across many services into one unified workspace you can browse, search, and query.</p>
+      </div>
+      <div class="why-card">
+        <div class="why-icon red">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#cf222e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+        </div>
+        <h3>Archival</h3>
+        <p>Create durable snapshots of your knowledge for long-term archival, compliance, and historical reference.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section class="how" id="how">
+  <div class="section-inner">
+    <div class="section-header center">
+      <div class="section-label">How it works</div>
+      <h2 class="section-title">Three steps to unified knowledge</h2>
+      <p class="section-subtitle">Get up and running in minutes. No configuration files, no cloud accounts required.</p>
+    </div>
+    <div class="how-steps">
+      <div class="how-step">
+        <h3>Add your sources</h3>
+        <p>Point Frozen Ink at your GitHub repos, Obsidian vaults, Git repositories, or MantisBT instances.</p>
+        <code>fink add obsidian --name my-vault --path ~/Vault</code>
+      </div>
+      <div class="how-step">
+        <h3>Sync &amp; search</h3>
+        <p>Frozen Ink crawls your sources, indexes everything with full-text search, and renders clean markdown.</p>
+        <code>fink sync "*" && fink serve</code>
+      </div>
+      <div class="how-step">
+        <h3>Use everywhere</h3>
+        <p>Browse in the web UI, query from AI assistants via MCP, or publish to Cloudflare for team access.</p>
+        <code>fink publish my-vault --name team-docs</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Sources -->
+<section class="sources" id="sources">
+  <div class="section-inner">
+    <div class="section-header center">
+      <div class="section-label">Data sources</div>
+      <h2 class="section-title">Connect what you already use</h2>
+      <p class="section-subtitle">Crawlers sync your data into a unified local index. More sources coming soon.</p>
+    </div>
+    <div class="sources-grid">
+      <div class="source-card">
+        <div class="source-icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/></svg>
+        </div>
+        <h3>GitHub</h3>
+        <p>Issues &amp; Pull Requests</p>
+      </div>
+      <div class="source-card">
+        <div class="source-icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+        </div>
+        <h3>Obsidian</h3>
+        <p>Notes &amp; Attachments</p>
+      </div>
+      <div class="source-card">
+        <div class="source-icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="1.05" y1="12" x2="7" y2="12"/><line x1="17.01" y1="12" x2="22.96" y2="12"/></svg>
+        </div>
+        <h3>Git</h3>
+        <p>Commits, Branches &amp; Tags</p>
+      </div>
+      <div class="source-card">
+        <div class="source-icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <h3>MantisBT</h3>
+        <p>Issues &amp; Attachments</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Download CTA -->
+<section class="cta" id="download">
+  <div class="cta-inner">
+    <h2>Start building your<br/>knowledge layer today</h2>
+    <p>Free to use. Download the desktop app for macOS to get started in minutes.</p>
+    <div class="cta-actions">
+      <a href="#download" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download for macOS
+      </a>
+      <a href="https://demo.frozenink.dev" class="btn btn-secondary" target="_blank">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+        View live demo
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p>Frozen Ink &mdash; local-first knowledge layer for technical work.</p>
+</footer>
+
+</body>
+</html>
