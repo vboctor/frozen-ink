@@ -20,10 +20,12 @@ bunx fink add git \
 ```
 
 **Required flags:**
+
 - `--name` - Collection name
 - `--path` - Path to a local Git repository (must contain a `.git` directory)
 
 **Optional flags:**
+
 - `--include-diffs` - Include patch diffs in commit markdown (default: off)
 
 Validation checks that the path exists and is a valid Git repository via `git rev-parse --git-dir`.
@@ -96,6 +98,7 @@ Each commit renders as rich markdown with:
 ### Navigation
 
 All entities are cross-linked via Obsidian wikilinks:
+
 - Commits link to parent commits
 - Branches link to their tip commit and list recent commits
 - Tags link to their target commit

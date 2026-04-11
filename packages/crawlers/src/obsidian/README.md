@@ -13,6 +13,7 @@ bunx fink add obsidian \
 ```
 
 **Required flags:**
+
 - `--name` - Collection name
 - `--path` - Absolute or relative path to the Obsidian vault directory
 
@@ -55,6 +56,7 @@ The Obsidian theme is a **passthrough** — it returns the original vault markdo
 ### File paths
 
 Files are stored at their original vault-relative paths:
+
 - `notes/daily/2024-01-15.md` stays at `notes/daily/2024-01-15.md`
 - `projects/alpha/readme.md` stays at `projects/alpha/readme.md`
 

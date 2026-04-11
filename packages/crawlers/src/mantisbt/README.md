@@ -42,7 +42,7 @@ MantisHub instances may store file attachments in cloud storage (S3) rather than
 
 The crawler always tries the core MantisBT REST API first for every attachment download. Only if the core API fails to return the file content does MantisHub mode kick in. When it does, it makes one API call per issue (cached across all attachments on that issue) to MantisHub's **ApiX plugin**:
 
-```
+```text
 GET /api/rest/plugins/ApiX/issues/{id}/pages/view
 ```
 

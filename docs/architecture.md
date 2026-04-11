@@ -4,7 +4,7 @@
 
 Frozen Ink follows a layered architecture where data flows from external sources through crawlers into a local SQLite database, and is then served to AI assistants via the Model Context Protocol.
 
-```
+```text
 External Services (GitHub, Linear, Slack, ...)
         │
         ▼

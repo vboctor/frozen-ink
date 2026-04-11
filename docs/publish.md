@@ -22,6 +22,7 @@ export CLOUDFLARE_API_TOKEN=your-token-here
 ```
 
 To verify authentication:
+
 ```bash
 wrangler whoami
 ```
@@ -38,6 +39,7 @@ fink publish my-github my-notes --password secret123 --name my-pub
 ```
 
 Options:
+
 - `--password <password>` — Password to protect all access (recommended)
 - `--name <name>` — Worker name (default: `fink-<first-collection>-<random>`)
 
@@ -103,6 +105,7 @@ fink unpublish my-pub
 This deletes the Cloudflare Worker, D1 database, and R2 bucket. Use `--force` to skip confirmation.
 
 Options:
+
 - `--force` — Skip confirmation prompt
 
 ## Cloudflare API Token Setup
