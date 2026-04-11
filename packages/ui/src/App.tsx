@@ -5,6 +5,7 @@ import FileTree from "./components/FileTree";
 import MarkdownView from "./components/MarkdownView";
 import HtmlView from "./components/HtmlView";
 import SearchBar from "./components/SearchBar";
+import FullTextSearch from "./components/FullTextSearch";
 import ThemeSwitcher, { type ThemeId } from "./components/ThemeSwitcher";
 import ViewModeToggle, { type ViewMode } from "./components/ViewModeToggle";
 import TabBar, { type Tab } from "./components/TabBar";
@@ -144,6 +145,9 @@ export default function App() {
   const [fileTree, setFileTree] = useState<TreeNode[]>([]);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [ftsOpen, setFtsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [outgoingLinks, setOutgoingLinks] = useState<LinkItem[]>([]);
@@ -560,10 +564,29 @@ export default function App() {
     [],
   );
 
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
+
+      // Full-text search: Shift+Cmd+F
+      if (mod && e.shiftKey && e.key === "f") {
+        e.preventDefault();
+        setFtsOpen((open) => !open);
+        return;
+      }
 
       // Search: Cmd+P or Cmd+K
       if (mod && (e.key === "p" || e.key === "k")) {
@@ -574,6 +597,7 @@ export default function App() {
 
       if (e.key === "Escape") {
         setSearchOpen(false);
+        setFtsOpen(false);
         return;
       }
 
@@ -667,6 +691,15 @@ export default function App() {
     (collection: string, markdownPath: string, openNewTab?: boolean) => {
       navigateTo(collection, markdownPath, openNewTab);
       setSearchOpen(false);
+      if (isMobile) setSidebarOpen(false);
+    },
+    [navigateTo, isMobile],
+  );
+
+  const handleFtsNavigate = useCallback(
+    (collection: string, markdownPath: string, openNewTab?: boolean) => {
+      navigateTo(collection, markdownPath, openNewTab);
+      setFtsOpen(false);
       if (isMobile) setSidebarOpen(false);
     },
     [navigateTo, isMobile],
@@ -824,6 +857,17 @@ export default function App() {
               ⌘P
             </button>
             <button
+              className="nav-btn"
+              onClick={() => setFtsOpen(true)}
+              title="Full-text search (⇧⌘F)"
+              aria-label="Full-text search"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </button>
+            <button
               className={`nav-btn icon-btn${backlinksOpen ? " active" : ""}`}
               onClick={() => setBacklinksOpen((o) => !o)}
               title="Toggle links panel"
@@ -856,6 +900,53 @@ export default function App() {
                 </svg>
               </button>
             )}
+            <div className="toolbar-menu-wrapper" ref={menuRef}>
+              <button
+                className={`nav-btn icon-btn${menuOpen ? " active" : ""}`}
+                onClick={() => setMenuOpen((o) => !o)}
+                title="Menu"
+                aria-label="Menu"
+                aria-expanded={menuOpen}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <circle cx="12" cy="5" r="2" />
+                  <circle cx="12" cy="12" r="2" />
+                  <circle cx="12" cy="19" r="2" />
+                </svg>
+              </button>
+              {menuOpen && (
+                <div className="toolbar-menu" role="menu">
+                  <button className="toolbar-menu-item" role="menuitem" onClick={() => { setSearchOpen(true); setMenuOpen(false); }}>
+                    <span>Find by title</span><kbd>⌘P</kbd>
+                  </button>
+                  <button className="toolbar-menu-item" role="menuitem" onClick={() => { setFtsOpen(true); setMenuOpen(false); }}>
+                    <span>Search content</span><kbd>⇧⌘F</kbd>
+                  </button>
+                  <div className="toolbar-menu-separator" />
+                  <button className="toolbar-menu-item" role="menuitem" onClick={() => { setSidebarOpen((o) => !o); setMenuOpen(false); }}>
+                    <span>{sidebarOpen ? "Hide" : "Show"} sidebar</span><kbd>⌘\</kbd>
+                  </button>
+                  <button className="toolbar-menu-item" role="menuitem" onClick={() => { setBacklinksOpen((o) => !o); setMenuOpen(false); }}>
+                    <span>{backlinksOpen ? "Hide" : "Show"} links panel</span>
+                  </button>
+                  <div className="toolbar-menu-separator" />
+                  <button className="toolbar-menu-item" role="menuitem" onClick={() => { navigateBack(); setMenuOpen(false); }} disabled={!canGoBack}>
+                    <span>Go back</span><kbd>⌥←</kbd>
+                  </button>
+                  <button className="toolbar-menu-item" role="menuitem" onClick={() => { navigateForward(); setMenuOpen(false); }} disabled={!canGoForward}>
+                    <span>Go forward</span><kbd>⌥→</kbd>
+                  </button>
+                  {activeTabId && (
+                    <>
+                      <div className="toolbar-menu-separator" />
+                      <button className="toolbar-menu-item" role="menuitem" onClick={() => { handleCloseTab(activeTabId); setMenuOpen(false); }}>
+                        <span>Close tab</span><kbd>⌘W</kbd>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
             {showLogout && (
               <form method="POST" action="/logout" className="logout-form-inline">
                 <button type="submit" className="nav-btn icon-btn logout-icon-btn" title="Sign out" aria-label="Sign out">
@@ -889,7 +980,7 @@ export default function App() {
               <p>{isMobile ? "Tap the sidebar icon below to browse files" : "Select a file from the sidebar to view its contents"}</p>
               {!isMobile && (
                 <p className="hint">
-                  Press <kbd>⌘P</kbd> or <kbd>⌘K</kbd> to search
+                  Press <kbd>⌘P</kbd> to find by title · <kbd>⇧⌘F</kbd> to search content
                 </p>
               )}
             </div>
@@ -1006,6 +1097,13 @@ export default function App() {
           collection={selectedCollection ?? ""}
           onClose={() => setSearchOpen(false)}
           onNavigate={handleSearchNavigate}
+        />
+      )}
+      {ftsOpen && (
+        <FullTextSearch
+          collection={selectedCollection ?? ""}
+          onClose={() => setFtsOpen(false)}
+          onNavigate={handleFtsNavigate}
         />
       )}
     </>

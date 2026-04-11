@@ -6,6 +6,7 @@ export interface SearchResult {
   entityType: string;
   title: string;
   rank: number;
+  snippet: string;
 }
 
 export interface SearchFilters {
@@ -89,7 +90,8 @@ export class SearchIndexer {
     if (!ftsQuery) return [];
 
     let sql = `
-      SELECT entity_id, external_id, entity_type, title, rank
+      SELECT entity_id, external_id, entity_type, title, rank,
+        snippet(entities_fts, 4, '<mark>', '</mark>', '…', 48) AS snippet
       FROM entities_fts
       WHERE entities_fts MATCH ?
     `;
@@ -109,6 +111,7 @@ export class SearchIndexer {
       entity_type: string;
       title: string;
       rank: number;
+      snippet: string;
     }>;
 
     return rows.map((row) => ({
@@ -117,6 +120,7 @@ export class SearchIndexer {
       entityType: row.entity_type,
       title: row.title,
       rank: row.rank,
+      snippet: row.snippet ?? "",
     }));
   }
 

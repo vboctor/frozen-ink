@@ -5,6 +5,7 @@ export interface SearchResult {
   title: string;
   collectionName: string;
   rank: number;
+  snippet: string;
 }
 
 export async function searchEntities(
@@ -18,7 +19,8 @@ export async function searchEntities(
   let sql = `
     SELECT
       entity_id, external_id, entity_type, title, collection_name,
-      rank
+      rank,
+      snippet(entities_fts, 4, '<mark>', '</mark>', '…', 48) AS snippet
     FROM entities_fts
     WHERE entities_fts MATCH ?
   `;
@@ -44,6 +46,7 @@ export async function searchEntities(
     title: string;
     collection_name: string;
     rank: number;
+    snippet: string;
   }>();
 
   return (results ?? []).map((r) => ({
@@ -53,5 +56,6 @@ export async function searchEntities(
     title: r.title,
     collectionName: r.collection_name,
     rank: r.rank,
+    snippet: r.snippet ?? "",
   }));
 }

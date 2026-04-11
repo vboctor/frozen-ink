@@ -408,6 +408,7 @@ export function createApiServer(
           title: string;
           markdownPath: string | null;
           rank: number;
+          snippet: string;
         }> = [];
 
         for (const col of collectionRows) {
@@ -432,6 +433,7 @@ export function createApiServer(
                 ...r,
                 collection: col.name,
                 markdownPath,
+                snippet: r.snippet,
               });
             }
           } finally {
