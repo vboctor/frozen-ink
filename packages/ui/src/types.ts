@@ -99,6 +99,7 @@ export interface PublishPreset {
   workerName: string;
   collections: string[];
   password: string;
+  removePassword?: boolean;
 }
 
 export interface CollectionConfig {

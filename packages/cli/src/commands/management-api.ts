@@ -85,6 +85,23 @@ let exportProgress: ExportProgress = {
   error: null,
 };
 
+type PublishCollectionsFn = (
+  options: {
+    collectionNames: string[];
+    workerName: string;
+    password?: string;
+    removePassword?: boolean;
+    forcePublic?: boolean;
+  },
+  onProgress: (step: string, detail: string) => void,
+) => Promise<unknown>;
+
+let publishCollectionsOverride: PublishCollectionsFn | null = null;
+
+export function setPublishCollectionsOverride(fn: PublishCollectionsFn | null): void {
+  publishCollectionsOverride = fn;
+}
+
 // --- Mode detection ---
 let appMode: "desktop" | "local" | "published" = "local";
 
@@ -581,13 +598,16 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
 async function triggerPublish(opts: Record<string, unknown>): Promise<void> {
   publishProgress = { active: true, step: "starting", detail: "Starting publish...", error: null };
   try {
-    const { publishCollections } = await import("./publish");
+    const publishCollections = publishCollectionsOverride
+      ?? (await import("./publish")).publishCollections;
     const collectionNames = (opts.collections as string[]) ?? [];
     const workerName = (opts.name as string) ?? "";
     const password = opts.password as string | undefined;
+    const removePassword = opts.removePassword as boolean | undefined;
+    const forcePublic = opts.forcePublic as boolean | undefined;
 
     await publishCollections(
-      { collectionNames, workerName, password },
+      { collectionNames, workerName, password, removePassword, forcePublic },
       (step, detail) => {
         publishProgress = { ...publishProgress, step, detail };
       },

@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { join, extname } from "path";
+import { createInterface } from "readline";
 import {
   getFrozenInkHome,
   getCollectionDb,
@@ -33,6 +34,7 @@ import {
   writeTempFile,
   cleanupTempFile,
 } from "./wrangler-api";
+import { assertInitialPublishConfirmation } from "./publish-policy";
 
 function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 8);
@@ -90,6 +92,8 @@ export interface PublishOptions {
   collectionNames: string[];
   workerName: string;
   password?: string;
+  removePassword?: boolean;
+  forcePublic?: boolean;
   workerOnly?: boolean;
 }
 
@@ -104,6 +108,16 @@ export interface PublishResult {
 
 export type PublishProgressCallback = (step: string, detail: string) => void;
 
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  const data = new TextEncoder().encode(salt + password);
+  const hashBuf = await crypto.subtle.digest("SHA-256", data);
+  const hashHex = Array.from(new Uint8Array(hashBuf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `${salt}:${hashHex}`;
+}
+
 /**
  * Core publish logic, callable from both CLI and desktop app.
  * Progress is reported via the onProgress callback instead of console.log.
@@ -114,7 +128,11 @@ export async function publishCollections(
 ): Promise<PublishResult> {
   await checkWranglerAuth();
 
-  const { workerName, workerOnly = false } = options;
+  const { workerName, workerOnly = false, removePassword = false, forcePublic = false } = options;
+  const password = options.password?.trim();
+  if (password && removePassword) {
+    throw new Error("Cannot use --password and --remove-password together.");
+  }
   let collectionNames = [...options.collectionNames];
 
   const existingDeployment = getDeployment(workerName);
@@ -154,17 +172,25 @@ export async function publishCollections(
     r2BucketName = `${workerName}-files`;
   }
 
-  // Hash password
+  // Password behavior:
+  // - New password supplied: rotate hash.
+  // - removePassword=true: clear protection.
+  // - Otherwise preserve existing hash on updates.
   let passwordHash = "";
-  if (options.password) {
-    const salt = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-    const data = new TextEncoder().encode(salt + options.password);
-    const hashBuf = await crypto.subtle.digest("SHA-256", data);
-    const hashHex = Array.from(new Uint8Array(hashBuf))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-    passwordHash = `${salt}:${hashHex}`;
+  if (password) {
+    passwordHash = await hashPassword(password);
+  } else if (removePassword) {
+    passwordHash = "";
+  } else if (existingDeployment?.passwordHash) {
+    passwordHash = existingDeployment.passwordHash;
+  } else if (isUpdate && existingDeployment?.passwordProtected) {
+    throw new Error(
+      `Deployment "${workerName}" is password protected but no reusable password hash is stored locally. ` +
+      "Re-publish with --password <new-password> to rotate credentials or --remove-password to disable protection.",
+    );
   }
+
+  assertInitialPublishConfirmation({ isUpdate, workerOnly, passwordHash, forcePublic });
 
   // --- Phase 1: Create resources + deploy worker ---
   // The worker must be deployed before data so the site is reachable
@@ -431,7 +457,7 @@ export async function publishCollections(
     workerUrl = `https://${workerName}.workers.dev`;
   }
   const mcpUrl = `${workerUrl}/mcp`;
-  const passwordProtected = options.password ? true : (existingDeployment?.passwordProtected ?? false);
+  const passwordProtected = passwordHash.length > 0;
 
   // Save deployment
   addDeployment(workerName, {
@@ -442,6 +468,7 @@ export async function publishCollections(
     d1DatabaseName,
     r2BucketName,
     passwordProtected,
+    passwordHash: passwordHash || undefined,
     publishedAt: new Date().toISOString(),
   });
 
@@ -456,10 +483,14 @@ export const publishCommand = new Command("publish")
   .description("Publish collections to Cloudflare as a password-protected website with MCP access")
   .argument("[collections...]", "Collection names to publish")
   .option("--password <password>", "Password to protect access")
+  .option("--remove-password", "Explicitly remove password protection")
+  .option("--public", "Explicitly allow public access on initial publish (skip confirmation prompt)")
   .option("--name <name>", "Worker name (default: fink-<first-collection>-<random>)")
   .option("--worker-only", "Deploy worker code only (skip D1/R2 data upload); requires --name for an existing deployment")
   .action(async (collectionNamesArg: string[], opts: {
     password?: string;
+    removePassword?: boolean;
+    public?: boolean;
     name?: string;
     workerOnly?: boolean;
   }) => {
@@ -482,9 +513,36 @@ export const publishCommand = new Command("publish")
       }
 
       const workerName = opts.name || `fink-${collectionNames[0]}-${randomSuffix()}`;
+      let forcePublic = !!opts.public;
+
+      if (!forcePublic && !opts.password && !workerOnly) {
+        const existingDeployment = getDeployment(workerName);
+        const isInitialPublish = !existingDeployment;
+        if (isInitialPublish && process.stdin.isTTY && process.stdout.isTTY) {
+          console.warn("\nWARNING: No password was provided.");
+          console.warn("This initial publish will make collection data publicly accessible.");
+          const rl = createInterface({ input: process.stdin, output: process.stdout });
+          const answer = await new Promise<string>((resolve) => {
+            rl.question("Continue with public publish? Type 'yes' to continue: ", (value) => resolve(value));
+          });
+          rl.close();
+          if (answer.trim().toLowerCase() !== "yes") {
+            console.log("Publish cancelled.");
+            process.exit(0);
+          }
+          forcePublic = true;
+        }
+      }
 
       const result = await publishCollections(
-        { collectionNames, workerName, password: opts.password, workerOnly },
+        {
+          collectionNames,
+          workerName,
+          password: opts.password,
+          removePassword: opts.removePassword,
+          forcePublic,
+          workerOnly,
+        },
         (step, detail) => console.log(`  [${step}] ${detail}`),
       );
 
