@@ -1,0 +1,17 @@
+{
+  "config": {
+    "default": true,
+    // Allow long lines - common in tables and links
+    "MD013": false,
+    // Allow duplicate headings in different sections
+    "MD024": { "siblings_only": true },
+    // Allow inline HTML (used in some docs)
+    "MD033": false,
+    // Allow bare URLs
+    "MD034": false,
+    // Disable table column alignment style (overly strict for compact tables)
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": ["node_modules", "**/node_modules", ".context"]
+}

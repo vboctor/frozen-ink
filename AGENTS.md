@@ -8,7 +8,7 @@ Frozen Ink is a TypeScript monorepo that crawls data sources, stores them in SQL
 
 ## Repository Layout
 
-```
+```text
 packages/
   core/src/               Foundation package
     compat/               Runtime compatibility layer (Bun ↔ Node.js/Electron)
@@ -103,6 +103,7 @@ The codebase runs in two runtimes: **Bun** (CLI, tests) and **Node.js** (Electro
 **`import.meta.dir` → `getModuleDir(import.meta.url)`.** Bun's non-standard `import.meta.dir` is replaced with `dirname(fileURLToPath(import.meta.url))`. Call sites pass `import.meta.url` and get back the directory. Test files still use `import.meta.dir` directly since tests always run under Bun.
 
 **Import paths within `core/`.** Internal modules must import from specific files, not the barrel index:
+
 - `getFrozenInkHome` is in `config/loader.ts`, NOT `config/context.ts`
 - `getCollectionDb` is in `db/client.ts`, NOT `config/context.ts`
 - The barrel `core/src/index.ts` re-exports everything, but circular or missing re-exports can cause `SyntaxError: Export named 'X' not found` at runtime — always verify the source module when adding new internal imports.
@@ -176,11 +177,13 @@ Sync, publish, and export all use the same pattern for progress reporting:
 No SSE or WebSocket — polling is simpler and works across all deployment contexts (Bun, Node, packaged Electron).
 
 For publish specifically, the core logic is in `publishCollections(options, onProgress)`:
+
 - **CLI** passes `(step, detail) => console.log(...)` as the callback
 - **Management API** passes `(step, detail) => { publishProgress = { ...publishProgress, step, detail }; }`
 - Same logic, different output channels
 
 ### Terminology
+
 - **Crawler** = code that syncs data from an external source (implements `Crawler` interface)
 - **Theme** (core) = markdown generator that renders entity data into Obsidian-compatible markdown (implements `Theme` interface)
 - **Theme** (UI) = CSS display theme for the web viewer (6 options, selected via ThemeSwitcher)
@@ -335,7 +338,7 @@ Tables are created via raw SQL `CREATE IF NOT EXISTS` in `client.ts` (no migrati
 
 ### Filesystem Layout
 
-```
+```text
 ~/.frozenink/                               -- default workspace (CLI + desktop)
   config.json                                -- app configuration
   context.yml                                -- collection registry + deployment metadata
@@ -365,11 +368,13 @@ Three CF resources are created per deployment:
 3. **Worker** (`{workerName}`) — Hono server with D1 + R2 bindings, password auth, REST API, MCP
 
 The publish flow:
+
 - All SQL (schema DDL + data INSERTs + FTS5) is written to a single temp `.sql` file and executed via `wrangler d1 execute --file`
 - Files are uploaded via `wrangler r2 object put`
 - Worker is deployed by generating a temp `wrangler.toml` and running `wrangler deploy --config`
 
 Re-running `fink publish --name <existing>` **updates** an existing deployment:
+
 - D1 tables are dropped and recreated with fresh data
 - R2 files are uploaded, then stale files are detected via the `r2_manifest` D1 table and deleted
 - Worker is redeployed with the same bindings
@@ -430,6 +435,7 @@ cd packages/desktop && bun run start  # compile + run in dev mode
 `bun run start` runs `bun build.mjs && electron .` — the build step takes ~1s.
 
 For distribution packaging:
+
 ```bash
 cd packages/desktop
 npx @electron/rebuild -m .            # rebuild better-sqlite3 for Electron's Node ABI
@@ -439,6 +445,7 @@ bun run dist                          # package for all platforms (output: relea
 **Important:** Always use `bun install` from the repo root. Do NOT run `npm install` in the desktop directory or anywhere in the monorepo — npm doesn't support the `workspace:*` protocol used by sibling packages.
 
 **Build details:**
+
 - `build.mjs` uses esbuild with `format: "esm"` and a banner that shims `require()` via `createRequire(import.meta.url)`
 - `electron`, `better-sqlite3`, `bun:sqlite`, and `drizzle-orm/bun-sqlite` are externalized (not bundled)
 - The preload script is bundled separately as CJS (Electron requires CJS for preload)
@@ -489,11 +496,13 @@ See `packages/desktop/electron-builder.yml` for build targets (macOS DMG, Window
 ## Common Gotchas
 
 ### Tests
+
 - Run `bun test` from project root, not from `packages/ui/` (UI uses vitest, not bun:test)
 - `tsc --build` compiles test files into dist unless excluded — check tsconfig `exclude` patterns
 - UI tests have pre-existing failures in `@testing-library/user-event` + `happy-dom` (document not initialized). These are not caused by code changes.
 
 ### Runtime Compatibility
+
 - Never use `Bun.CryptoHasher`, `Bun.spawn`, `bun:sqlite`, or `import.meta.dir` directly in `packages/core` or `packages/crawlers` — use the compat layer (`createCryptoHasher()`, `spawnProcess()`, `openDatabase()`, `getModuleDir()`)
 - `db/client.ts` uses `require()` not `import()` for drizzle driver selection — this is intentional (sync function)
 - When importing within `packages/core/src/`, use specific file paths (e.g., `../config/loader` not `../config/context`) — barrel re-exports can cause "Export not found" errors if the target module doesn't actually export that symbol
@@ -501,20 +510,24 @@ See `packages/desktop/electron-builder.yml` for build targets (macOS DMG, Window
 - `better-sqlite3` must be rebuilt for Electron's Node ABI using `npx @electron/rebuild -m .` — without this you get `NODE_MODULE_VERSION` mismatch errors at runtime
 
 ### Server / API
+
 - Management API endpoints that read the request body (`POST`, `PATCH`) return `Promise<Response>` via `handleAsync()` — the Node http adapter handles this with `await Promise.resolve()`
 - `handleManagementRequest()` is called before browse routes in `serve.ts` — management routes like `DELETE /api/collections/:name` must match before the browse `GET /api/collections/:name/tree` pattern
 - Sync/publish/export progress uses polling (500ms), not SSE/WebSocket — the in-memory state objects reset when the server restarts
 
 ### Desktop App
+
 - The Electron main process sets `process.env.FROZENINK_HOME` before importing any `@frozenink/core` modules — module-level code in core reads this env var via `getFrozenInkHome()`
 - Switching workspaces restarts the API server (creates a new `http.createServer` or `Bun.serve`). The old server must be stopped first or the port will conflict
 - `packages/desktop/tsconfig.json` uses `module: "commonjs"` because Electron's main process expects CJS
 
 ### Publishing
+
 - `publishCollections()` in `publish.ts` is the reusable core function — both the CLI command and management API call it with different `onProgress` callbacks
 - The worker bundle (`packages/worker/dist/worker.js`) must be pre-built before publish — the Electron app resolves it relative to `__moduleDir`
 
 ### Other
+
 - FTS5 query parser interprets `-` as NOT — quote or avoid hyphens in test search terms
 - react-markdown v9 sanitizes non-standard URL schemes — use fragment URLs (`#wikilink/target`) for internal links
 - `for-each-ref` format doesn't support `%x00` — use `\t` (tab) as separator for branch/tag parsing

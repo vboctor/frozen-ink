@@ -140,6 +140,7 @@ fink unpublish my-site
 ```
 
 Published sites include:
+
 - Web UI for browsing synced data
 - Full-text search
 - MCP endpoint for AI assistants at `https://my-site.workers.dev/mcp`
@@ -175,7 +176,7 @@ fink config set logging.level debug   # log level
 
 All data is stored locally in `~/.frozenink/`:
 
-```
+```text
 ~/.frozenink/
   config.json                # app configuration
   context.yml                # collection registry + deployment metadata

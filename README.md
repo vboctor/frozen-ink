@@ -34,7 +34,7 @@ publishing to the cloud.
 
 ## Architecture
 
-```
+```text
 Data Sources (GitHub API, Obsidian Vault, Git Repo, MantisBT, ...)
         |
         v
@@ -125,11 +125,13 @@ fink init
 ### Adding collections
 
 **Obsidian vault** — syncs all markdown notes and attachments:
+
 ```bash
 bun run fink -- add obsidian --name my-vault --path ~/Documents/MyVault
 ```
 
 **Git repository** — syncs commits, branches, and tags:
+
 ```bash
 bun run fink -- add git --name my-repo --path ~/projects/my-repo
 
@@ -138,6 +140,7 @@ bun run fink -- add git --name my-repo --path ~/projects/my-repo --include-diffs
 ```
 
 **GitHub repository** — syncs issues and pull requests via the GitHub API:
+
 ```bash
 bun run fink -- add github --name my-gh \
   --token ghp_yourPersonalAccessToken \
@@ -177,6 +180,7 @@ bun run fink -- serve --mcp-only
 ```
 
 > **Optional: install `fink` globally** to drop the `bun run fink --` prefix:
+>
 > ```bash
 > cd packages/cli && bun link && cd ../..
 > fink sync "*"   # works from anywhere
@@ -399,7 +403,7 @@ See the [Desktop App](#desktop-app) section above.
 
 ## Project Structure
 
-```
+```text
 packages/
   core/           Shared types, DB schemas, sync engine, search, config, compat layer, export
   crawlers/       GitHub, Obsidian, Git, and MantisBT crawlers + markdown generators

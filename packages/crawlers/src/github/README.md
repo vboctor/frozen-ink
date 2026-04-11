@@ -183,7 +183,7 @@ This is efficient for repos where you only care about active work. Open items ar
 
 The crawler uses a phase-based approach to handle pagination across multiple endpoints:
 
-```
+```text
 issues (page 1, 2, ...) → pulls (page 1, 2, ...) → users → done
 ```
 
