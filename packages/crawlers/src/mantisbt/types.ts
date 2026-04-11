@@ -19,6 +19,7 @@ export interface MantisBTProject {
 export interface MantisBTConfig {
   baseUrl: string;
   projectId?: number;
+  projectName?: string;
   maxEntities?: number;
 }
 
@@ -46,8 +47,8 @@ export interface MantisBTIssue {
   severity: { id: number; name: string; label: string };
   reproducibility?: { id: number; name: string; label: string };
   tags?: Array<{ id: number; name: string }>;
-  /** Issue-level file attachments. */
-  files?: Array<{
+  /** Issue-level file attachments (returned as "attachments" by the REST API). */
+  attachments?: Array<{
     id: number;
     filename: string;
     content_type: string;

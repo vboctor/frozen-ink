@@ -222,8 +222,8 @@ function renderConfigFields(
     case "mantisbt":
       return (
         <>
-          {field("url", "MantisBT URL", "https://mantis.example.com")}
-          {field("projectId", "Project ID", "1", "number")}
+          {field("baseUrl", "MantisBT URL", "https://mantis.example.com")}
+          {field("projectName", "Project Name", "My Project")}
         </>
       );
     default:

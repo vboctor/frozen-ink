@@ -15,7 +15,7 @@ function sampleIssue(overrides: Partial<MantisBTIssue> = {}): MantisBTIssue {
     resolution: { id: 10, name: "open", label: "open" },
     priority: { id: 30, name: "normal", label: "normal" },
     severity: { id: 50, name: "minor", label: "minor" },
-    files: [],
+    attachments: [],
     notes: [],
     relationships: [],
     ...overrides,
@@ -27,6 +27,37 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/** Match /api/rest/issues/{id} (single issue fetch, no query string). */
+const SINGLE_ISSUE_RE = /\/api\/rest\/issues\/(\d+)$/;
+
+/**
+ * Wrap a list-level fetch mock so that individual issue fetches
+ * (GET /api/rest/issues/{id}) return the matching issue from the
+ * most recently returned list page.
+ */
+function routingFetch(
+  listFn: (url: string) => Promise<Response>,
+): (input: string | URL | Request) => Promise<Response> {
+  let lastPage: MantisBTIssue[] = [];
+  return async (input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const singleMatch = url.match(SINGLE_ISSUE_RE);
+    if (singleMatch) {
+      const id = parseInt(singleMatch[1], 10);
+      const issue = lastPage.find((i) => i.id === id) ?? sampleIssue({ id });
+      return jsonResponse({ issues: [issue] });
+    }
+    const res = await listFn(url);
+    // Clone and peek at the body to track the last page
+    const cloned = res.clone();
+    try {
+      const data = (await cloned.json()) as { issues?: MantisBTIssue[] };
+      lastPage = data.issues ?? [];
+    } catch { /* ignore */ }
+    return res;
+  };
 }
 
 describe("MantisBTCrawler", () => {
@@ -42,7 +73,7 @@ describe("MantisBTCrawler", () => {
 
   it("stores updatedSince cursor and filters incremental updates", async () => {
     let call = 0;
-    crawler.setFetch(async () => {
+    crawler.setFetch(routingFetch(async () => {
       call += 1;
       if (call === 1) {
         return jsonResponse({
@@ -56,7 +87,7 @@ describe("MantisBTCrawler", () => {
           sampleIssue({ id: 3, updated_at: "2024-01-01T00:00:00Z" }),
         ],
       });
-    });
+    }));
 
     // Issues phase: syncs 1 issue, then transitions to users phase.
     const first = await crawler.sync(null);
@@ -84,11 +115,11 @@ describe("MantisBTCrawler", () => {
   });
 
   it("includes entities with updated_at equal to updatedSince", async () => {
-    crawler.setFetch(async () =>
+    crawler.setFetch(routingFetch(async () =>
       jsonResponse({
         issues: [sampleIssue({ id: 9, updated_at: "2024-02-01T12:00:00Z" })],
       }),
-    );
+    ));
 
     const result = await crawler.sync({ updatedSince: "2024-02-01T12:00:00Z" });
     expect(result.entities).toHaveLength(1);
@@ -107,14 +138,14 @@ describe("MantisBTCrawler", () => {
   });
 
   it("stops paginating when the API repeats the same page", async () => {
-    const repeatedPage = Array.from({ length: 50 }, (_, i) =>
+    const repeatedPage = Array.from({ length: 25 }, (_, i) =>
       sampleIssue({
         id: i + 1,
         updated_at: "2024-02-01T00:00:00Z",
       }),
     );
 
-    crawler.setFetch(async () => jsonResponse({ issues: repeatedPage }));
+    crawler.setFetch(routingFetch(async () => jsonResponse({ issues: repeatedPage })));
 
     const first = await crawler.sync({ updatedSince: "2024-01-01T00:00:00Z" });
     expect(first.hasMore).toBe(true);
@@ -133,26 +164,25 @@ describe("MantisBTCrawler", () => {
   });
 
   it("advances to page 2 with in-run cursor state", async () => {
-    const requestedUrls: string[] = [];
-    const repeatedPage = Array.from({ length: 50 }, (_, i) =>
+    const listUrls: string[] = [];
+    const repeatedPage = Array.from({ length: 25 }, (_, i) =>
       sampleIssue({
         id: i + 1,
         updated_at: "2024-03-01T00:00:00Z",
       }),
     );
 
-    crawler.setFetch(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input.toString();
-      requestedUrls.push(url);
+    crawler.setFetch(routingFetch(async (url: string) => {
+      listUrls.push(url);
       return jsonResponse({ issues: repeatedPage });
-    });
+    }));
 
     const first = await crawler.sync(null);
     expect(first.hasMore).toBe(true);
     expect(first.nextCursor).toBeTruthy();
 
     await crawler.sync(first.nextCursor);
-    expect(requestedUrls[0]).toContain("page=1");
-    expect(requestedUrls[1]).toContain("page=2");
+    expect(listUrls[0]).toContain("page=1");
+    expect(listUrls[1]).toContain("page=2");
   });
 });

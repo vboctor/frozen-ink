@@ -299,7 +299,7 @@ export class MantisBTTheme implements Theme {
     }
 
     // Issue-level attachments
-    const files = d.files as Array<{ filename: string; storagePath?: string; size: number }> | undefined;
+    const files = d.attachments as Array<{ filename: string; storagePath?: string; size: number }> | undefined;
     if (files?.length) {
       parts.push(`<h3 class="mt-subsection-title">Attachments</h3>`);
       parts.push(`<div class="mt-attachments">`);
@@ -604,12 +604,13 @@ export class MantisBTTheme implements Theme {
     rows.push(tableRow("Created", formatDate(d.createdAt as string)));
     rows.push(tableRow("Updated", formatDate(d.updatedAt as string)));
 
-    // Issue-level attachments
-    const files = d.files as Array<{ filename: string; storagePath?: string }>;
+    // Issue-level attachments — standard markdown images with relative paths
+    // from markdown/<type>/<file>.md up to the collection root, then into attachments/
+    const files = d.attachments as Array<{ filename: string; storagePath?: string }>;
     if (files?.length) {
       const embeds = files
         .filter((f) => f.storagePath)
-        .map((f) => `![[${f.storagePath!.replace(/^attachments\//, "")}]]`);
+        .map((f) => `![${f.filename}](../../${f.storagePath})`);
       if (embeds.length) {
         sections.push("### Attachments\n\n" + embeds.join("\n\n"));
       }
@@ -673,10 +674,10 @@ export class MantisBTTheme implements Theme {
 
         const body = linkifyIssueRefs(note.text, lookup);
 
-        // Embed note attachments using stored paths
+        // Embed note attachments using stored paths (relative from markdown/<type>/)
         const embeds = (note.attachments ?? [])
           .filter((att) => att.storagePath)
-          .map((att) => `![[${att.storagePath!.replace(/^attachments\//, "")}]]`);
+          .map((att) => `![${att.filename}](../../${att.storagePath})`);
 
         return [header, body, ...embeds].filter(Boolean).join("\n\n");
       });
