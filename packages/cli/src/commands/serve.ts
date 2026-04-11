@@ -148,7 +148,7 @@ export function createApiServer(
   const uiDistDir = resolveUiDistDir();
   const themeEngine = createThemeEngine();
 
-  function handleRequest(req: Request): Response {
+  async function handleRequest(req: Request): Promise<Response> {
       const url = new URL(req.url);
       const path = url.pathname;
 
@@ -589,6 +589,30 @@ export function createApiServer(
 
         results.sort((a, b) => a.title.localeCompare(b.title));
         return jsonResponse(results);
+      }
+
+      // GET /api/collections/:name/textpack/*path — download page as TextPack (zipped TextBundle)
+      const textpackMatch = path.match(
+        /^\/api\/collections\/([^/]+)\/textpack\/(.+)$/,
+      );
+      if (textpackMatch && req.method === "GET") {
+        const name = decodeURIComponent(textpackMatch[1]);
+        const filePath = decodeURIComponent(textpackMatch[2]);
+        const col = getCollection(name);
+        if (!col) return errorResponse("Collection not found", 404);
+
+        const { buildTextPack } = await import("@frozenink/core/export");
+        const result = buildTextPack(name, filePath);
+        if (!result) return errorResponse("File not found", 404);
+
+        const zipData = Uint8Array.from(result.data);
+        return new Response(zipData, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/zip",
+            "Content-Disposition": `attachment; filename="${result.filename}"`,
+          },
+        });
       }
 
       // GET /api/attachments/:collection/*path

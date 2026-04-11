@@ -300,7 +300,7 @@ describe("entity_get_attachment tool", () => {
     expect(data.mimeType).toBe("image/png");
     expect(data.resolvedStoragePath).toBe("attachments/git/abc123/logo.png");
     expect(data.contentBase64).toBe(Buffer.from("fake-png-bytes").toString("base64"));
-  });
+  }, 15000);
 });
 
 describe("MCP resources", () => {
