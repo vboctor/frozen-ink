@@ -7,74 +7,18 @@ on:
     branches: [main]
 
 jobs:
-  typecheck:
-    name: Type Check
+  ci:
+    name: CI
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-
-  test-core:
-    name: Test Core
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
       - run: bun test packages/core/src/
-
-  test-crawlers:
-    name: Test Crawlers
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
       - run: bun test packages/crawlers/src/
-
-  test-mcp:
-    name: Test MCP
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
       - run: bun test packages/mcp/src/
-
-  test-cli:
-    name: Test CLI
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
       - run: bun test packages/cli/src/
-
-  test-ui:
-    name: Test UI
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
       - run: cd packages/ui && npx vitest run
-
-  build-ui:
-    name: Build UI
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
       - run: bun run build:ui
-
-  build-worker:
-    name: Build Worker
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
       - run: cd packages/worker && bun run build
