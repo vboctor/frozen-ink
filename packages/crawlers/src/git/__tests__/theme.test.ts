@@ -134,9 +134,10 @@ describe("GitTheme", () => {
     expect(md).toContain("**Hash:** `abc1234`");
   });
 
-  it("renders parent wikilinks", () => {
+  it("renders parent wikilinks with same-directory relative path", () => {
     const md = theme.render(commitContext());
-    expect(md).toContain("[[commits/def5678-add-auth-module|def5678]]");
+    // commit → commit is same directory, so no commits/ prefix needed
+    expect(md).toContain("[def5678](def5678-add-auth-module.md)");
   });
 
   it("renders file changes callout", () => {
@@ -183,7 +184,7 @@ describe("GitTheme", () => {
       ],
     });
     const md = theme.render(ctx);
-    expect(md).toContain("![[git/abc1234/logo.png]]");
+    expect(md).toContain("![logo](../../attachments/git/abc1234/logo.png)");
   });
 
   // --- Branch rendering ---
@@ -193,9 +194,10 @@ describe("GitTheme", () => {
     expect(md).toContain("# main");
   });
 
-  it("renders branch tip wikilink", () => {
+  it("renders branch tip wikilink with relative path", () => {
     const md = theme.render(branchContext());
-    expect(md).toContain("[[commits/abc1234-fix-login-bug|abc1234]]");
+    // branches/main.md → ../commits/abc1234-fix-login-bug.md (cross-directory)
+    expect(md).toContain("[abc1234](../commits/abc1234-fix-login-bug.md)");
   });
 
   it("renders branch recent commits as list", () => {
@@ -220,9 +222,10 @@ describe("GitTheme", () => {
     expect(md).toContain("# v1.0.0");
   });
 
-  it("renders tag target wikilink", () => {
+  it("renders tag target wikilink with relative path", () => {
     const md = theme.render(tagContext());
-    expect(md).toContain("[[commits/abc1234-fix-login-bug|abc1234]]");
+    // tags/v1-0-0.md → ../commits/abc1234-fix-login-bug.md (cross-directory)
+    expect(md).toContain("[abc1234](../commits/abc1234-fix-login-bug.md)");
   });
 
   it("renders tag type and tagger", () => {

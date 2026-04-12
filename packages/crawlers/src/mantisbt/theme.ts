@@ -302,27 +302,29 @@ function replaceInlineRefs(
   return text;
 }
 
-/** Render a username as a wikilink to the user entity in markdown, prefixed with @. */
+/** Render a username as a link to the user entity in markdown, prefixed with @. */
 function mdUserRef(
   username: string,
   lookup: (externalId: string) => string | undefined,
+  sourcePath?: string,
 ): string {
   const path = lookup(`user:${username}`);
   if (path) {
-    return `[[${path}|@${username}]]`;
+    return wikilink(path, `@${username}`, sourcePath);
   }
   return `@${username}`;
 }
 
-/** Render a user's full name as a wikilink to the user entity in markdown (no @ prefix). */
+/** Render a user's full name as a link to the user entity in markdown (no @ prefix). */
 function mdUserRefFull(
   username: string,
   fullName: string,
   lookup: (externalId: string) => string | undefined,
+  sourcePath?: string,
 ): string {
   const path = lookup(`user:${username}`);
   if (path) {
-    return `[[${path}|${fullName}]]`;
+    return wikilink(path, fullName, sourcePath);
   }
   return fullName;
 }
@@ -690,6 +692,7 @@ export class MantisBTTheme implements Theme {
 
   private renderPageMd(context: ThemeRenderContext): string {
     const d = context.entity.data;
+    const source = this.getFilePath(context);
     const lookup = context.lookupEntityPath ?? (() => undefined);
     const projectId = (d.project as { id: number } | null)?.id;
     const projectNameToId = d._projectNameToId as Record<string, number> | undefined;
@@ -736,14 +739,14 @@ export class MantisBTTheme implements Theme {
     const rows: string[] = ["| | |", "|---|---|"];
     if (createdBy?.name) {
       const ref = createdBy.real_name
-        ? mdUserRefFull(createdBy.name, createdBy.real_name, lookup)
-        : mdUserRef(createdBy.name, lookup);
+        ? mdUserRefFull(createdBy.name, createdBy.real_name, lookup, source)
+        : mdUserRef(createdBy.name, lookup, source);
       rows.push(tableRow("Created By", ref));
     }
     if (updatedBy?.name) {
       const ref = updatedBy.real_name
-        ? mdUserRefFull(updatedBy.name, updatedBy.real_name, lookup)
-        : mdUserRef(updatedBy.name, lookup);
+        ? mdUserRefFull(updatedBy.name, updatedBy.real_name, lookup, source)
+        : mdUserRef(updatedBy.name, lookup, source);
       rows.push(tableRow("Updated By", ref));
     }
     if (d.createdAt) rows.push(tableRow("Created", formatDate(d.createdAt as string)));
@@ -841,6 +844,7 @@ export class MantisBTTheme implements Theme {
 
   private renderIssue(context: ThemeRenderContext): string {
     const d = context.entity.data;
+    const source = this.getFilePath(context);
     const sections: string[] = [];
 
     const status = d.status as { name: string; label: string };
@@ -893,8 +897,8 @@ export class MantisBTTheme implements Theme {
       tableRow("Priority", priority.label),
       tableRow("Severity", severity.label),
     ];
-    if (reporter?.name) rows.push(tableRow("Reporter", mdUserRef(reporter.name, lookup)));
-    if (handler?.name) rows.push(tableRow("Assigned To", mdUserRef(handler.name, lookup)));
+    if (reporter?.name) rows.push(tableRow("Reporter", mdUserRef(reporter.name, lookup, source)));
+    if (handler?.name) rows.push(tableRow("Assigned To", mdUserRef(handler.name, lookup, source)));
     if (reproducibility) rows.push(tableRow("Reproducibility", reproducibility.label));
     rows.push(tableRow("Created", formatDate(d.createdAt as string)));
     rows.push(tableRow("Updated", formatDate(d.updatedAt as string)));
@@ -945,7 +949,7 @@ export class MantisBTTheme implements Theme {
         const label = rel.issue.summary
           ? `${padId(rel.issue.id)} ${rel.issue.summary}`
           : padId(rel.issue.id);
-        return `- **${rel.type.label ?? rel.type.name}:** ${wikilink(targetPath, label)}`;
+        return `- **${rel.type.label ?? rel.type.name}:** ${wikilink(targetPath, label, source)}`;
       });
       sections.push("### Relationships\n\n" + relLines.join("\n"));
     }
@@ -962,7 +966,7 @@ export class MantisBTTheme implements Theme {
     if (notes?.length) {
       const noteBlocks = notes.map((note) => {
         const authorName = note.reporter?.name ?? "Unknown";
-        const authorRef = authorName !== "Unknown" ? mdUserRef(authorName, lookup) : authorName;
+        const authorRef = authorName !== "Unknown" ? mdUserRef(authorName, lookup, source) : authorName;
         const isPrivate = note.view_state?.name === "private";
         const headerParts = [authorRef, formatDate(note.created_at)];
         if (isPrivate) headerParts.push("private");

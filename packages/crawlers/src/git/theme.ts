@@ -1,5 +1,5 @@
 import type { Theme, ThemeRenderContext } from "@frozenink/core/theme";
-import { frontmatter, wikilink, callout } from "@frozenink/core/theme";
+import { frontmatter, wikilink, callout, embed } from "@frozenink/core/theme";
 
 function slugify(text: string): string {
   return text
@@ -64,6 +64,7 @@ export class GitTheme implements Theme {
 
   private renderCommit(context: ThemeRenderContext): string {
     const d = context.entity.data;
+    const source = this.getFilePath(context);
     const sections: string[] = [];
 
     // Frontmatter
@@ -97,7 +98,7 @@ export class GitTheme implements Theme {
     }> | undefined;
     if (parentDetails?.length) {
       const parentLinks = parentDetails.map((p) =>
-        wikilink(commitFilePath(p.shortHash, p.subject), p.shortHash),
+        wikilink(commitFilePath(p.shortHash, p.subject), p.shortHash, source),
       );
       meta.push(`**Parents:** ${parentLinks.join(", ")}`);
     }
@@ -128,7 +129,7 @@ export class GitTheme implements Theme {
           if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"].includes(ext) && f.status !== "D") {
             const shortHash = d.shortHash as string;
             const filename = f.path.split("/").pop() ?? f.path;
-            line += `\n![[git/${shortHash}/${filename}]]`;
+            line += `\n${embed(`git/${shortHash}/${filename}`, source)}`;
           }
         } else {
           const parts: string[] = [];
@@ -151,6 +152,7 @@ export class GitTheme implements Theme {
 
   private renderBranch(context: ThemeRenderContext): string {
     const d = context.entity.data;
+    const source = this.getFilePath(context);
     const sections: string[] = [];
 
     // Frontmatter
@@ -170,7 +172,7 @@ export class GitTheme implements Theme {
 
     if (recentCommits?.[0]) {
       const tip = recentCommits[0];
-      meta.push(`**Tip:** ${wikilink(commitFilePath(tip.shortHash, tip.subject), tip.shortHash)}`);
+      meta.push(`**Tip:** ${wikilink(commitFilePath(tip.shortHash, tip.subject), tip.shortHash, source)}`);
     }
     meta.push(`**Type:** ${d.isRemote ? "Remote" : "Local"}`);
     sections.push(callout("info", "Branch Info", meta.join("\n")));
@@ -178,7 +180,7 @@ export class GitTheme implements Theme {
     // Recent commits
     if (recentCommits?.length) {
       const lines = recentCommits.map((c) => {
-        const link = wikilink(commitFilePath(c.shortHash, c.subject), c.shortHash);
+        const link = wikilink(commitFilePath(c.shortHash, c.subject), c.shortHash, source);
         return `- ${link} ${c.subject}`;
       });
       sections.push("## Recent Commits\n\n" + lines.join("\n"));
@@ -189,6 +191,7 @@ export class GitTheme implements Theme {
 
   private renderTag(context: ThemeRenderContext): string {
     const d = context.entity.data;
+    const source = this.getFilePath(context);
     const sections: string[] = [];
 
     // Frontmatter
@@ -209,7 +212,7 @@ export class GitTheme implements Theme {
       d.targetShortHash as string,
       d.targetSubject as string,
     );
-    meta.push(`**Target:** ${wikilink(targetPath, d.targetShortHash as string)}`);
+    meta.push(`**Target:** ${wikilink(targetPath, d.targetShortHash as string, source)}`);
     meta.push(`**Type:** ${d.annotated ? "Annotated" : "Lightweight"}`);
     if (d.tagger) meta.push(`**Tagger:** ${d.tagger}`);
     if (d.date) meta.push(`**Date:** ${d.date}`);

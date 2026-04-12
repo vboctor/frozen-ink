@@ -11,6 +11,7 @@
     "serve": "bun run build:ui && bun run packages/cli/src/index.ts serve --ui-only",
     "typecheck": "tsc --build",
     "lint:md": "markdownlint-cli2",
+    "ci": "bun run lint:md && bun run typecheck && bun test packages/core/src/ && bun test packages/crawlers/src/ && bun test packages/mcp/src/ && (cd packages/ui && npx vitest run) && bun run build:ui && (cd packages/worker && bun run build)",
     "clean": "rm -rf packages/*/dist"
   },
   "devDependencies": {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { eq } from "drizzle-orm";
-import { SyncEngine } from "../sync-engine";
+import { SyncEngine, extractWikilinks } from "../sync-engine";
 import { getCollectionDb } from "../../db/client";
 import {
   entities,
@@ -1008,6 +1008,37 @@ describe("SyncEngine", () => {
     expect(linkerLinks).toHaveLength(2);
     const targetIds = linkerLinks.map((l) => l.targetEntityId).sort();
     expect(targetIds).toEqual([otherEntity.id, anotherEntity.id].sort());
+  });
+
+  it("extracts standard markdown links and resolves relative paths", () => {
+    // Same-directory link from commits/abc.md
+    const md1 = "See [def](def.md) for the parent commit.";
+    expect(extractWikilinks(md1, "commits/abc.md")).toEqual(["commits/def"]);
+
+    // Cross-directory link from branches/main.md → commits/abc
+    const md2 = "Tip: [abc](../commits/abc.md)";
+    expect(extractWikilinks(md2, "branches/main.md")).toEqual(["commits/abc"]);
+
+    // Multiple links including same-dir and cross-dir
+    const md3 = "[a](a.md) and [b](../issues/b.md)";
+    expect(extractWikilinks(md3, "commits/x.md").sort()).toEqual(["commits/a", "issues/b"]);
+  });
+
+  it("excludes image links and external URLs from extraction", () => {
+    const md = "![img](../../attachments/pic.md) and [ext](https://example.com/page.md) and [local](sibling.md)";
+    expect(extractWikilinks(md, "issues/42.md")).toEqual(["issues/sibling"]);
+  });
+
+  it("extracts legacy Obsidian wikilinks alongside standard links", () => {
+    const md = "[[legacy/target]] and [standard](../standard/link.md)";
+    const targets = extractWikilinks(md, "issues/42.md");
+    expect(targets).toContain("legacy/target");
+    expect(targets).toContain("standard/link");
+  });
+
+  it("handles extractWikilinks without sourceFilePath (root-relative)", () => {
+    const md = "[label](commits/abc.md)";
+    expect(extractWikilinks(md)).toEqual(["commits/abc"]);
   });
 
   it("cleans up links when an entity is deleted", async () => {

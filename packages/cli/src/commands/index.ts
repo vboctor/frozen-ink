@@ -97,7 +97,10 @@ export const indexCommand = new Command("index")
         indexed++;
 
         // Rebuild links
-        const targets = extractWikilinks(markdown);
+        const sourceFile = entity.markdownPath?.startsWith(markdownBasePath + "/")
+          ? entity.markdownPath.slice(markdownBasePath.length + 1)
+          : undefined;
+        const targets = extractWikilinks(markdown, sourceFile);
         for (const target of targets) {
           const targetPath = `${markdownBasePath}/${target}.md`;
           const [targetEntity] = colDb

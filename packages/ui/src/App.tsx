@@ -971,6 +971,7 @@ export default function App() {
             <MarkdownView
               content={fileContent}
               collection={selectedCollection || ""}
+              filePath={selectedFile || undefined}
               allFiles={allFiles}
               onWikilinkClick={handleWikilinkNavigate}
             />

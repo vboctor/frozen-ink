@@ -120,6 +120,84 @@ describe("MarkdownView", () => {
     expect(img).toHaveAttribute("src", "/api/attachments/my-repo/screenshot.png");
   });
 
+  it("renders standard internal links as clickable wikilinks", async () => {
+    const user = userEvent.setup();
+    const onWikilinkClick = vi.fn();
+    render(
+      <MarkdownView
+        content="See [#42](issues/42.md) for details."
+        collection="test"
+        allFiles={["issues/42.md"]}
+        onWikilinkClick={onWikilinkClick}
+      />,
+    );
+
+    const link = screen.getByText("#42");
+    expect(link).toBeInTheDocument();
+    expect(link.tagName).toBe("A");
+    expect(link).toHaveClass("wikilink");
+
+    await user.click(link);
+    expect(onWikilinkClick).toHaveBeenCalledWith("issues/42", false);
+  });
+
+  it("renders standard attachment images via API", () => {
+    render(
+      <MarkdownView
+        content="![logo](../../attachments/git/abc/logo.png)"
+        collection="my-repo"
+        allFiles={[]}
+        onWikilinkClick={() => {}}
+      />,
+    );
+    const img = screen.getByRole("img");
+    expect(img).toHaveAttribute("src", "/api/attachments/my-repo/git/abc/logo.png");
+  });
+
+  it("resolves cross-directory relative links with filePath", async () => {
+    const user = userEvent.setup();
+    const onWikilinkClick = vi.fn();
+    render(
+      <MarkdownView
+        content="See [abc](../commits/abc.md) for the commit."
+        collection="test"
+        filePath="branches/main.md"
+        allFiles={["commits/abc.md"]}
+        onWikilinkClick={onWikilinkClick}
+      />,
+    );
+
+    const link = screen.getByText("abc");
+    expect(link).toBeInTheDocument();
+    expect(link.tagName).toBe("A");
+    expect(link).toHaveClass("wikilink");
+
+    await user.click(link);
+    // Should resolve ../commits/abc to commits/abc (root-relative)
+    expect(onWikilinkClick).toHaveBeenCalledWith("commits/abc", false);
+  });
+
+  it("resolves same-directory relative links with filePath", async () => {
+    const user = userEvent.setup();
+    const onWikilinkClick = vi.fn();
+    render(
+      <MarkdownView
+        content="Related: [def](def.md)"
+        collection="test"
+        filePath="commits/abc.md"
+        allFiles={["commits/def.md"]}
+        onWikilinkClick={onWikilinkClick}
+      />,
+    );
+
+    const link = screen.getByText("def");
+    expect(link).toHaveClass("wikilink");
+
+    await user.click(link);
+    // Should resolve def → commits/def (root-relative)
+    expect(onWikilinkClick).toHaveBeenCalledWith("commits/def", false);
+  });
+
   it("renders external links with target blank", () => {
     render(
       <MarkdownView

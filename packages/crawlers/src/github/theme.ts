@@ -414,6 +414,7 @@ export class GitHubTheme implements Theme {
   private renderIssue(context: ThemeRenderContext): string {
     const { entity } = context;
     const d = entity.data;
+    const source = this.getFilePath(context);
     const user = d.user as MappedUser | null;
     const sections: string[] = [];
 
@@ -469,7 +470,7 @@ export class GitHubTheme implements Theme {
     if (relatedNumbers.length > 0) {
       const links = relatedNumbers.map((num) => {
         const resolved = context.lookupEntityPath?.(`issue-${num}`);
-        return wikilink(resolved ?? `issues/${num}`, `#${num}`);
+        return wikilink(resolved ?? `issues/${num}`, `#${num}`, source);
       });
       sections.push(
         callout("link", "Related Issues", links.join("\n")),
@@ -488,6 +489,7 @@ export class GitHubTheme implements Theme {
   private renderPullRequest(context: ThemeRenderContext): string {
     const { entity } = context;
     const d = entity.data;
+    const source = this.getFilePath(context);
     const user = d.user as MappedUser | null;
     const sections: string[] = [];
 
@@ -569,7 +571,7 @@ export class GitHubTheme implements Theme {
     if (relatedNumbers.length > 0) {
       const links = relatedNumbers.map((num) => {
         const resolved = context.lookupEntityPath?.(`issue-${num}`);
-        return wikilink(resolved ?? `issues/${num}`, `#${num}`);
+        return wikilink(resolved ?? `issues/${num}`, `#${num}`, source);
       });
       sections.push(
         callout("link", "Linked Issues", links.join("\n")),

@@ -158,6 +158,21 @@ describe("ObsidianCrawler", () => {
     expect(secondResult.deletedExternalIds).toContain("delete-me.md");
   });
 
+  it("stores imageRefMap mapping image references to resolved vault paths", async () => {
+    const imgContent = Buffer.from("image-bytes");
+    writeVaultBinary("assets/diagram.png", imgContent);
+    writeVaultFile("note.md", "# Note\n\n![[diagram.png]]");
+
+    await crawler.initialize({ vaultPath: vaultDir }, { vaultPath: vaultDir });
+    const result = await crawler.sync(null);
+
+    const entity = result.entities[0];
+    const imageRefMap = entity.data.imageRefMap as Record<string, string>;
+    expect(imageRefMap).toBeDefined();
+    // Short-form "diagram.png" resolves to "assets/diagram.png"
+    expect(imageRefMap["diagram.png"]).toBe("assets/diagram.png");
+  });
+
   it("includes image attachments referenced via wiki embeds", async () => {
     const imgContent = Buffer.from("fake-png-data");
     writeVaultBinary("images/photo.png", imgContent);

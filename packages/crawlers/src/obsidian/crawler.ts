@@ -220,13 +220,16 @@ export class ObsidianCrawler implements Crawler {
     const tags = this.extractTags(frontmatter, body);
     const imageRefs = this.extractImageRefs(content);
 
-    // Build attachments from image references
+    // Build attachments from image references and track resolved paths
     const attachments: CrawlerEntityData["attachments"] = [];
     const seenPaths = new Set<string>();
+    const imageRefMap: Record<string, string> = {};
 
     for (const ref of imageRefs) {
       const attFile = attachmentLookup.get(ref);
-      if (!attFile || seenPaths.has(attFile.relativePath)) continue;
+      if (!attFile) continue;
+      imageRefMap[ref] = attFile.relativePath;
+      if (seenPaths.has(attFile.relativePath)) continue;
       seenPaths.add(attFile.relativePath);
 
       const ext = extname(attFile.relativePath).toLowerCase();
@@ -262,6 +265,7 @@ export class ObsidianCrawler implements Crawler {
         content,
         frontmatter,
         relativePath: file.relativePath,
+        imageRefMap,
         mtime: file.mtime,
         size: file.size,
       },
