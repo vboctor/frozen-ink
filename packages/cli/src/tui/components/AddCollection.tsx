@@ -361,8 +361,8 @@ export function AddCollection({
           <Box flexDirection="column">
             <Text bold>Summary</Text>
             <Text>  Crawler: <Text color="cyan">{data.crawlerType}</Text></Text>
-            {data.crawlerType === "mantisbt" && data.config.url && (
-              <Text>  URL:     <Text color="cyan">{data.config.url as string}</Text></Text>
+            {data.crawlerType === "mantisbt" && !!data.config.url && (
+              <Text>  URL:     <Text color="cyan">{String(data.config.url)}</Text></Text>
             )}
             <Text>  Name:    <Text color="cyan">{data.name}</Text></Text>
             {data.title && <Text>  Title:   <Text color="cyan">{data.title}</Text></Text>}

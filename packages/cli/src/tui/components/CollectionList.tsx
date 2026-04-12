@@ -407,7 +407,7 @@ export function CollectionList({
           .groupBy(entities.entityType)
           .orderBy(sql`count(*) desc`)
           .all();
-        entityTypeCounts = typeCounts.map((r) => ({ type: r.type, count: r.count }));
+        entityTypeCounts = typeCounts.map((r: any) => ({ type: r.type, count: r.count }));
 
         // Collection directory size
         const home = getFrozenInkHome();
