@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import {
-  contextExists,
+  ensureInitialized,
   listCollections,
   ThemeEngine,
 } from "@frozenink/core";
@@ -34,9 +34,7 @@ export function ExportView({
   const [progress, setProgress] = useState<string[]>([]);
   const [error, setError] = useState("");
 
-  if (!contextExists()) {
-    return <Text color="yellow">Not initialized.</Text>;
-  }
+  ensureInitialized();
 
   const collections = listCollections()
     .filter((c: { enabled: boolean }) => c.enabled)

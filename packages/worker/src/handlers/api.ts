@@ -193,13 +193,15 @@ api.get("/api/search", async (c) => {
   return c.json(enriched);
 });
 
-// GET /api/collections/:name/backlinks/*
-api.get("/api/collections/:name/backlinks/*", async (c) => {
+// GET /api/collections/:name/backlinks/:externalId
+api.get("/api/collections/:name/backlinks/:externalId", async (c) => {
   const name = c.req.param("name");
-  const targetFile = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/backlinks/`, "");
-  const decoded = decodeURIComponent(targetFile);
+  const externalId = decodeURIComponent(c.req.param("externalId"));
 
-  const links = await getBacklinks(c.env.DB, name, decoded);
+  const targetEntity = await getEntityByExternalId(c.env.DB, name, externalId);
+  if (!targetEntity) return c.json({ error: "Entity not found" }, 404);
+
+  const links = await getBacklinks(c.env.DB, name, targetEntity.id);
 
   const results = links.map(({ entity }) => {
     const relPath = entity.markdown_path?.replace(/^markdown\//, "");
@@ -218,13 +220,15 @@ api.get("/api/collections/:name/backlinks/*", async (c) => {
   return c.json(results);
 });
 
-// GET /api/collections/:name/outgoing-links/*
-api.get("/api/collections/:name/outgoing-links/*", async (c) => {
+// GET /api/collections/:name/outgoing-links/:externalId
+api.get("/api/collections/:name/outgoing-links/:externalId", async (c) => {
   const name = c.req.param("name");
-  const sourceFile = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/outgoing-links/`, "");
-  const decoded = decodeURIComponent(sourceFile);
+  const externalId = decodeURIComponent(c.req.param("externalId"));
 
-  const links = await getOutgoingLinks(c.env.DB, name, decoded);
+  const sourceEntity = await getEntityByExternalId(c.env.DB, name, externalId);
+  if (!sourceEntity) return c.json({ error: "Entity not found" }, 404);
+
+  const links = await getOutgoingLinks(c.env.DB, name, sourceEntity.id);
 
   const results = links
     .filter(({ entity }) => entity !== null)

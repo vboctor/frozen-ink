@@ -21,6 +21,7 @@
     "@frozenink/crawlers": "workspace:*",
     "@frozenink/mcp": "workspace:*",
     "commander": "^13.0.0",
+    "js-yaml": "^4.1.0",
     "drizzle-orm": "^0.39.0",
     "ink": "^7.0.0",
     "react": "^19.2.5"

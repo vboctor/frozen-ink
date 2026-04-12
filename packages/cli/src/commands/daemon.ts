@@ -4,7 +4,7 @@ import { join } from "path";
 import { fileURLToPath } from "url";
 import {
   getFrozenInkHome,
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollectionDbPath,
   loadConfig,
@@ -32,7 +32,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
   const home = getFrozenInkHome();
 
   const doSync = async () => {
-    if (!contextExists()) return;
+    ensureInitialized();
 
     const collectionRows = listCollections().filter((c) => c.enabled);
 
@@ -64,7 +64,8 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
           collectionName: col.name,
           themeEngine,
           storage,
-          markdownBasePath: "markdown",
+          markdownBasePath: "content",
+          assetConfig: col.assets as { extensions?: string[]; maxSize?: number } | undefined,
         });
 
         await engine.run();
@@ -86,10 +87,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
 const startCommand = new Command("start")
   .description("Start the sync daemon in the background")
   .action(async () => {
-    if (!contextExists()) {
-      console.error("Frozen Ink not initialized. Run: fink init");
-      process.exit(1);
-    }
+    ensureInitialized();
 
     const home = getFrozenInkHome();
     const pidPath = getPidPath();

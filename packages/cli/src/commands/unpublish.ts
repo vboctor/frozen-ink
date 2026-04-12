@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import { createInterface } from "readline";
 import {
-  contextExists,
-  getDeployment,
-  removeDeployment,
-  type DeploymentEntry,
+  ensureInitialized,
+  getSite,
+  removeSite,
+  type SiteEntry,
 } from "@frozenink/core";
 import {
   checkWranglerAuth,
@@ -34,7 +34,7 @@ export type UnpublishProgressCallback = (step: string, detail: string) => void;
  * Callable from both CLI and management API.
  */
 export async function unpublishDeployment(
-  deployment: DeploymentEntry & { name: string },
+  deployment: SiteEntry & { name: string },
   onProgress: UnpublishProgressCallback = () => {},
 ): Promise<void> {
   await checkWranglerAuth();
@@ -48,14 +48,14 @@ export async function unpublishDeployment(
   }
 
   // 2. Try deleting R2 bucket (may fail if non-empty)
-  const r2BucketName = deployment.r2BucketName;
+  const r2BucketName = deployment.bucket.name;
   onProgress("r2", "Deleting R2 bucket...");
   try {
     await deleteR2Bucket(r2BucketName);
   } catch {
     // Bucket may need to be emptied first — try manifest-based cleanup
     onProgress("r2", "R2 bucket not empty, emptying via manifest...");
-    const d1Name = deployment.d1DatabaseName || `${deployment.name}-db`;
+    const d1Name = deployment.database.name || `${deployment.name}-db`;
     try {
       const manifestJson = await executeD1Command(d1Name, "SELECT key FROM r2_manifest");
       const parsed = JSON.parse(manifestJson);
@@ -73,7 +73,7 @@ export async function unpublishDeployment(
   }
 
   // 3. Delete D1 database
-  const d1Name = deployment.d1DatabaseName || `${deployment.name}-db`;
+  const d1Name = deployment.database.name || `${deployment.name}-db`;
   onProgress("d1", "Deleting D1 database...");
   try {
     await deleteD1(d1Name);
@@ -81,29 +81,26 @@ export async function unpublishDeployment(
     onProgress("d1", `Warning: could not delete D1 database: ${err}`);
   }
 
-  // 4. Remove from context.yml
-  removeDeployment(deployment.name);
-  onProgress("done", `Deployment "${deployment.name}" removed`);
+  // 4. Remove site directory
+  removeSite(deployment.name);
+  onProgress("done", `Site "${deployment.name}" removed`);
 }
 
 // --- CLI command ---
 
 export const unpublishCommand = new Command("unpublish")
   .description("Remove a published deployment from Cloudflare")
-  .argument("<name-or-url>", "Worker name or URL of the deployment")
+  .argument("<name-or-url>", "Worker name or URL of the site")
   .option("--force", "Skip confirmation")
   .action(async (nameOrUrl: string, opts: {
     force?: boolean;
   }) => {
     try {
-      if (!contextExists()) {
-        console.error("Frozen Ink not initialized. Run: fink init");
-        process.exit(1);
-      }
+      ensureInitialized();
 
-      const deployment = getDeployment(nameOrUrl);
+      const deployment = getSite(nameOrUrl);
       if (!deployment) {
-        console.error(`Deployment "${nameOrUrl}" not found`);
+        console.error(`Site "${nameOrUrl}" not found`);
         process.exit(1);
       }
 

@@ -37,16 +37,13 @@ export function createWorkspace(name: string, dirPath: string): void {
   // Ensure the workspace directory exists with proper structure
   mkdirSync(join(dirPath, "collections"), { recursive: true });
 
-  // Create initial context.yml if it doesn't exist
-  const contextPath = join(dirPath, "context.yml");
-  if (!existsSync(contextPath)) {
-    writeFileSync(contextPath, "collections: {}\ndeployments: {}\n", "utf-8");
-  }
+  // Collections directory is created above — no separate context file needed.
+  // Collection metadata is stored in per-collection .config files.
 
-  // Create initial config.json if it doesn't exist
-  const configPath = join(dirPath, "config.json");
+  // Create initial frozenink.yml if it doesn't exist
+  const configPath = join(dirPath, "frozenink.yml");
   if (!existsSync(configPath)) {
-    writeFileSync(configPath, "{}", "utf-8");
+    writeFileSync(configPath, "", "utf-8");
   }
 
   // Register in workspaces

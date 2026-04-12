@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, renameSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import yaml from "js-yaml";
 import { configSchema, type FrozenInkConfig } from "./schema";
 import { defaultConfig } from "./defaults";
 
@@ -33,29 +34,12 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
 }
 
 const ENV_MAPPING: Record<string, [keyof FrozenInkConfig, string]> = {
-  FROZENINK_DB_MODE: ["db", "mode"],
-  FROZENINK_DB_TURSO_URL: ["db", "tursoUrl"],
-  FROZENINK_DB_TURSO_TOKEN: ["db", "tursoToken"],
-  FROZENINK_STORAGE_MODE: ["storage", "mode"],
-  FROZENINK_STORAGE_S3_BUCKET: ["storage", "s3Bucket"],
-  FROZENINK_STORAGE_S3_REGION: ["storage", "s3Region"],
-  FROZENINK_STORAGE_S3_ENDPOINT: ["storage", "s3Endpoint"],
-  FROZENINK_STORAGE_S3_ACCESS_KEY_ID: ["storage", "s3AccessKeyId"],
-  FROZENINK_STORAGE_S3_SECRET_ACCESS_KEY: ["storage", "s3SecretAccessKey"],
   FROZENINK_SYNC_INTERVAL: ["sync", "interval"],
-  FROZENINK_SYNC_CONCURRENCY: ["sync", "concurrency"],
-  FROZENINK_SYNC_RETRIES: ["sync", "retries"],
   FROZENINK_UI_PORT: ["ui", "port"],
-  FROZENINK_MCP_TRANSPORT: ["mcp", "transport"],
-  FROZENINK_MCP_PORT: ["mcp", "port"],
-  FROZENINK_LOGGING_LEVEL: ["logging", "level"],
-  FROZENINK_LOGGING_FILE: ["logging", "file"],
 };
 
 const NUMERIC_FIELDS = new Set([
   "interval",
-  "concurrency",
-  "retries",
   "port",
 ]);
 
@@ -79,12 +63,25 @@ function applyEnvOverrides(config: Record<string, unknown>): Record<string, unkn
 
 export function loadConfig(): FrozenInkConfig {
   const home = getFrozenInkHome();
-  const configPath = join(home, "config.json");
+  const ymlPath = join(home, "frozenink.yml");
+  const legacyJsonPath = join(home, "config.json");
+
+  // Migrate legacy config.json → frozenink.yml
+  if (!existsSync(ymlPath) && existsSync(legacyJsonPath)) {
+    try {
+      const raw = readFileSync(legacyJsonPath, "utf-8");
+      const data = JSON.parse(raw);
+      const ymlContent = yaml.dump(data, { lineWidth: -1, noRefs: true, sortKeys: false });
+      const { writeFileSync } = require("fs");
+      writeFileSync(ymlPath, ymlContent, "utf-8");
+      try { renameSync(legacyJsonPath, `${legacyJsonPath}.bak`); } catch { /* ignore */ }
+    } catch { /* ignore migration errors */ }
+  }
 
   let fileConfig: Record<string, unknown> = {};
-  if (existsSync(configPath)) {
-    const raw = readFileSync(configPath, "utf-8");
-    fileConfig = JSON.parse(raw) as Record<string, unknown>;
+  if (existsSync(ymlPath)) {
+    const raw = readFileSync(ymlPath, "utf-8");
+    fileConfig = (yaml.load(raw) as Record<string, unknown>) ?? {};
   }
 
   const merged = deepMerge(

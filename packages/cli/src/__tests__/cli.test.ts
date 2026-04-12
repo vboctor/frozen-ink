@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe("CLI: init", () => {
-  it("creates directory structure with config.json and context.yml", async () => {
+  it("creates directory structure with frozenink.yml and collections/", async () => {
     const { initCommand } = await import("../commands/init");
 
     const logs: string[] = [];
@@ -35,18 +35,18 @@ describe("CLI: init", () => {
 
     console.log = origLog;
 
-    expect(existsSync(join(TEST_DIR, "config.json"))).toBe(true);
-    const config = JSON.parse(readFileSync(join(TEST_DIR, "config.json"), "utf-8"));
-    expect(config.db.mode).toBe("local");
+    expect(existsSync(join(TEST_DIR, "frozenink.yml"))).toBe(true);
+    const yaml = require("js-yaml");
+    const config = yaml.load(readFileSync(join(TEST_DIR, "frozenink.yml"), "utf-8"));
     expect(config.sync.interval).toBe(900);
+    expect(config.ui.port).toBe(3000);
 
-    expect(existsSync(join(TEST_DIR, "context.yml"))).toBe(true);
     expect(existsSync(join(TEST_DIR, "collections"))).toBe(true);
     expect(listCollections()).toHaveLength(0);
-    expect(logs.some((l) => l.includes("Initialized Frozen Ink"))).toBe(true);
+    expect(logs.some((l) => l.includes("initialized"))).toBe(true);
   });
 
-  it("skips if already initialized", async () => {
+  it("is idempotent — can be run multiple times", async () => {
     const { initCommand: initCmd1 } = await import("../commands/init");
 
     const logs: string[] = [];
@@ -60,7 +60,8 @@ describe("CLI: init", () => {
 
     console.log = origLog;
 
-    expect(logs.some((l) => l.includes("already initialized"))).toBe(true);
+    // Both calls should succeed
+    expect(logs.filter((l) => l.includes("initialized"))).toHaveLength(2);
   });
 });
 
@@ -72,7 +73,7 @@ describe("CLI: add", () => {
     await initCommand.parseAsync([], { from: "user" });
 
     const collectionDir = join(TEST_DIR, "collections", "test-gh");
-    const dbPath = join(collectionDir, "data.db");
+    const dbPath = join(collectionDir, "db", "data.db");
     mkdirSync(collectionDir, { recursive: true });
     mkdirSync(join(collectionDir, "markdown"), { recursive: true });
     getCollectionDb(dbPath);
@@ -149,7 +150,7 @@ describe("CLI: collections", () => {
     await initCommand.parseAsync([], { from: "user" });
 
     const collectionDir = join(TEST_DIR, "collections", "to-remove");
-    const dbPath = join(collectionDir, "data.db");
+    const dbPath = join(collectionDir, "db", "data.db");
     mkdirSync(collectionDir, { recursive: true });
     getCollectionDb(dbPath);
     addCollection("to-remove", { crawler: "github", config: {}, credentials: {} });
@@ -173,7 +174,7 @@ describe("CLI: status", () => {
     await initCommand.parseAsync([], { from: "user" });
 
     const collectionDir = join(TEST_DIR, "collections", "status-test");
-    const dbPath = join(collectionDir, "data.db");
+    const dbPath = join(collectionDir, "db", "data.db");
     mkdirSync(collectionDir, { recursive: true });
     const colDb = getCollectionDb(dbPath);
 
@@ -207,7 +208,7 @@ describe("CLI: search", () => {
     await initCommand.parseAsync([], { from: "user" });
 
     const collectionDir = join(TEST_DIR, "collections", "search-test");
-    const dbPath = join(collectionDir, "data.db");
+    const dbPath = join(collectionDir, "db", "data.db");
     mkdirSync(collectionDir, { recursive: true });
     const colDb = getCollectionDb(dbPath);
 
@@ -239,7 +240,7 @@ describe("CLI: search", () => {
     await initCommand.parseAsync([], { from: "user" });
 
     const collectionDir = join(TEST_DIR, "collections", "json-test");
-    const dbPath = join(collectionDir, "data.db");
+    const dbPath = join(collectionDir, "db", "data.db");
     mkdirSync(collectionDir, { recursive: true });
     getCollectionDb(dbPath);
 
@@ -283,7 +284,7 @@ describe("CLI: config", () => {
     expect(logs).toContain("900");
   });
 
-  it("set updates config.json", async () => {
+  it("set updates frozenink.yml", async () => {
     const { initCommand } = await import("../commands/init");
     const origLog = console.log;
     console.log = () => {};
@@ -293,7 +294,8 @@ describe("CLI: config", () => {
     const { configCommand: cc1 } = await import("../commands/config");
     await cc1.parseAsync(["set", "sync.interval", "1800"], { from: "user" });
 
-    const config = JSON.parse(readFileSync(join(TEST_DIR, "config.json"), "utf-8"));
+    const yamlLib = require("js-yaml");
+    const config = yamlLib.load(readFileSync(join(TEST_DIR, "frozenink.yml"), "utf-8"));
     expect(config.sync.interval).toBe(1800);
 
     const logs: string[] = [];
@@ -323,9 +325,8 @@ describe("CLI: config", () => {
     console.log = origLog;
 
     const parsed = JSON.parse(logs.join("\n"));
-    expect(parsed.db.mode).toBe("local");
     expect(parsed.sync.interval).toBe(900);
-    expect(parsed.logging.level).toBe("info");
+    expect(parsed.ui.port).toBe(3000);
   });
 });
 
@@ -338,7 +339,7 @@ describe("CLI: sync triggers crawler", () => {
     await initCommand.parseAsync([], { from: "user" });
 
     const collectionDir = join(TEST_DIR, "collections", "sync-test");
-    const dbPath = join(collectionDir, "data.db");
+    const dbPath = join(collectionDir, "db", "data.db");
     mkdirSync(collectionDir, { recursive: true });
     mkdirSync(join(collectionDir, "markdown"), { recursive: true });
     getCollectionDb(dbPath);

@@ -4,13 +4,14 @@ import { join } from "path";
 import {
   getFrozenInkHome,
   getCollectionDb,
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollection,
   getCollectionDbPath,
   entities,
   entityTags,
-  entityLinks,
+  tags,
+  links,
   ThemeEngine,
   LocalStorageBackend,
   SearchIndexer,
@@ -25,10 +26,7 @@ export const generateCommand = new Command("generate")
   )
   .argument("<collection>", 'Collection name or "*" for all collections')
   .action(async (collection: string) => {
-    if (!contextExists()) {
-      console.error("Frozen Ink not initialized. Run: fink init");
-      process.exit(1);
-    }
+    ensureInitialized();
 
     const home = getFrozenInkHome();
     let collectionRows = collection === "*"
@@ -92,19 +90,23 @@ export const generateCommand = new Command("generate")
 
       const indexer = new SearchIndexer(dbPath);
       indexer.clearIndex();
-      colDb.delete(entityLinks).run();
+      colDb.delete(links).run();
 
       const allEntities = colDb.select().from(entities).all();
       let generated = 0;
       let renamed = 0;
 
       for (const entity of allEntities) {
-        const tags = colDb
+        const entityTagNames = colDb
           .select()
           .from(entityTags)
           .where(eq(entityTags.entityId, entity.id))
           .all()
-          .map((t: any) => t.tag);
+          .map((t: any) => {
+            const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
+            return tagRow?.name ?? "";
+          })
+          .filter(Boolean);
 
         const renderCtx = {
           entity: {
@@ -113,7 +115,7 @@ export const generateCommand = new Command("generate")
             title: entity.title,
             data: entity.data as Record<string, unknown>,
             url: entity.url ?? undefined,
-            tags,
+            tags: entityTagNames,
           },
           collectionName: col.name,
           crawlerType: col.crawler,
@@ -155,20 +157,27 @@ export const generateCommand = new Command("generate")
           entityType: entity.entityType,
           title: entity.title,
           content: markdown,
-          tags,
+          tags: entityTagNames,
         });
 
         // Rebuild entity links
         const targets = extractWikilinks(markdown);
         for (const target of targets) {
-          colDb
-            .insert(entityLinks)
-            .values({
-              sourceEntityId: entity.id,
-              sourceMarkdownPath: newPath,
-              targetPath: `${markdownBasePath}/${target}.md`,
-            })
-            .run();
+          const targetPath = `${markdownBasePath}/${target}.md`;
+          const [targetEntity] = colDb
+            .select({ id: entities.id })
+            .from(entities)
+            .where(eq(entities.markdownPath, targetPath))
+            .all();
+          if (targetEntity) {
+            colDb
+              .insert(links)
+              .values({
+                sourceEntityId: entity.id,
+                targetEntityId: targetEntity.id,
+              })
+              .run();
+          }
         }
 
         generated++;

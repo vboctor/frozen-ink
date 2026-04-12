@@ -3,7 +3,7 @@ import { Box, Text, useInput } from "ink";
 import { mkdirSync } from "fs";
 import { join, resolve } from "path";
 import {
-  contextExists,
+  ensureInitialized,
   getFrozenInkHome,
   getCollectionDb,
   getCollectionDbPath,
@@ -14,6 +14,7 @@ import {
 import { createDefaultRegistry, MantisBTCrawler } from "@frozenink/crawlers";
 import { SelectInput, type SelectItem } from "./SelectInput.js";
 import { TextInput } from "./TextInput.js";
+import { MultiSelectInput } from "./MultiSelectInput.js";
 
 type Step =
   | "select-crawler"
@@ -29,10 +30,12 @@ type Step =
   | "git-include-diffs"
   | "mantisbt-url"
   | "mantisbt-token"
+  | "mantisbt-sync-entities"
   | "mantisbt-project-name"
   | "mantisbt-max"
   | "confirm"
   | "validating"
+  | "sync-prompt"
   | "done"
   | "error";
 
@@ -54,7 +57,7 @@ function getStepsForCrawler(type: string): Step[] {
     case "git":
       return [...base, "git-path", "git-include-diffs", "confirm"];
     case "mantisbt":
-      return [...base, "mantisbt-url", "mantisbt-token", "mantisbt-project-name", "mantisbt-max", "confirm"];
+      return [...base, "mantisbt-url", "mantisbt-token", "mantisbt-sync-entities", "mantisbt-project-name", "mantisbt-max", "confirm"];
     default:
       return [...base, "confirm"];
   }
@@ -62,8 +65,10 @@ function getStepsForCrawler(type: string): Step[] {
 
 export function AddCollection({
   onDone,
+  onSync,
 }: {
   onDone: () => void;
+  onSync?: (collectionName: string) => void;
 }): React.ReactElement {
   const [step, setStep] = useState<Step>("select-crawler");
   const [data, setData] = useState<FormData>({
@@ -128,7 +133,6 @@ export function AddCollection({
         setData((d) => ({
           ...d,
           config: { ...d.config, owner: parts[0], repo: parts[1] },
-          credentials: { ...d.credentials, owner: parts[0], repo: parts[1] },
         }));
         nextStep();
         break;
@@ -185,8 +189,8 @@ export function AddCollection({
         if (!val) { setError("URL is required"); return; }
         setData((d) => ({
           ...d,
-          config: { ...d.config, baseUrl: val },
-          credentials: { ...d.credentials, baseUrl: val },
+          config: { ...d.config, url: val },
+          credentials: { ...d.credentials, url: val, token: d.credentials.token ?? "" },
         }));
         nextStep();
         break;
@@ -196,7 +200,7 @@ export function AddCollection({
         break;
       case "mantisbt-project-name": {
         if (val) {
-          setData((d) => ({ ...d, config: { ...d.config, projectName: val } }));
+          setData((d) => ({ ...d, config: { ...d.config, project: { name: val } } }));
         }
         nextStep();
         break;
@@ -213,6 +217,16 @@ export function AddCollection({
     }
   }, [step, inputValue, nextStep]);
 
+  const isMantisHubUrl = (data.config.url as string || "").includes(".mantishub.");
+
+  const handleSyncEntitiesSubmit = useCallback(
+    (selected: string[]) => {
+      setData((d) => ({ ...d, config: { ...d.config, entities: selected } }));
+      nextStep();
+    },
+    [nextStep],
+  );
+
   const handleConfirm = useCallback(async () => {
     setStep("validating");
     try {
@@ -223,28 +237,35 @@ export function AddCollection({
       if (!valid) { setError("Credential validation failed"); setStep("error"); return; }
 
       // Resolve MantisBT project name → ID and persist both
-      if (data.crawlerType === "mantisbt" && data.config.projectName) {
+      const project = data.config.project as { id?: number; name?: string } | undefined;
+      if (data.crawlerType === "mantisbt" && project?.name) {
         await crawler.initialize(data.config, data.credentials);
-        const resolved = await (crawler as MantisBTCrawler).resolveProjectName(data.config.projectName as string);
-        data.config.projectId = resolved.id;
-        data.config.projectName = resolved.name;
+        const resolved = await (crawler as MantisBTCrawler).resolveProjectName(project.name);
+        data.config.project = { id: resolved.id, name: resolved.name };
       }
 
       const home = getFrozenInkHome();
       const dir = join(home, "collections", data.name);
       mkdirSync(dir, { recursive: true });
       getCollectionDb(getCollectionDbPath(data.name));
-      mkdirSync(join(dir, "markdown"), { recursive: true });
+      mkdirSync(join(dir, "content"), { recursive: true });
+
+      // For MantisBT, don't store url in credentials (it's already in config)
+      const creds = { ...data.credentials };
+      if (data.crawlerType === "mantisbt") {
+        delete creds.url;
+        delete creds.baseUrl;
+      }
 
       addCollection(data.name, {
         title: data.title || undefined,
         crawler: data.crawlerType,
         config: data.config,
-        credentials: data.credentials,
+        credentials: creds,
       });
 
       setMessage(`Collection "${data.name}" created!`);
-      setStep("done");
+      setStep("sync-prompt");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
       setStep("error");
@@ -255,6 +276,15 @@ export function AddCollection({
     if (step === "confirm") {
       if (input === "y") handleConfirm();
       if (input === "n" || key.escape) onDone();
+    }
+    if (step === "sync-prompt") {
+      if (input === "y") {
+        if (onSync) {
+          onSync(data.name);
+        }
+        onDone();
+      }
+      if (input === "n" || key.escape || key.return) onDone();
     }
     if (step === "done" || step === "error") {
       if (key.return || key.escape) onDone();
@@ -309,6 +339,17 @@ export function AddCollection({
         {step === "mantisbt-token" && (
           <TextInput label="API token (optional)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
         )}
+        {step === "mantisbt-sync-entities" && (
+          <MultiSelectInput
+            label="Entity types to sync"
+            items={[
+              { label: "Issues", value: "issues" },
+              { label: "Pages (wiki)", value: "pages", enabled: isMantisHubUrl },
+              { label: "Users", value: "users" },
+            ]}
+            onSubmit={handleSyncEntitiesSubmit}
+          />
+        )}
         {step === "mantisbt-project-name" && (
           <TextInput label="Project name (blank for all)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
         )}
@@ -320,8 +361,14 @@ export function AddCollection({
           <Box flexDirection="column">
             <Text bold>Summary</Text>
             <Text>  Crawler: <Text color="cyan">{data.crawlerType}</Text></Text>
+            {data.crawlerType === "mantisbt" && !!data.config.url && (
+              <Text>  URL:     <Text color="cyan">{String(data.config.url)}</Text></Text>
+            )}
             <Text>  Name:    <Text color="cyan">{data.name}</Text></Text>
             {data.title && <Text>  Title:   <Text color="cyan">{data.title}</Text></Text>}
+            {Array.isArray(data.config.entities) && (
+              <Text>  Sync:    <Text color="cyan">{(data.config.entities as string[]).join(", ")}</Text></Text>
+            )}
             <Box marginTop={1}>
               <Text>Create this collection? (y/n)</Text>
             </Box>
@@ -329,6 +376,14 @@ export function AddCollection({
         )}
 
         {step === "validating" && <Text color="yellow">Validating credentials...</Text>}
+        {step === "sync-prompt" && (
+          <Box flexDirection="column">
+            <Text color="green">{message}</Text>
+            <Box marginTop={1}>
+              <Text>Run initial sync now? (y/n)</Text>
+            </Box>
+          </Box>
+        )}
         {step === "done" && <Text color="green">{message} Press Enter to continue.</Text>}
         {step === "error" && <Text color="red">Error: {error}. Press Enter to go back.</Text>}
         {error && !["error", "done"].includes(step) && <Text color="red">{error}</Text>}

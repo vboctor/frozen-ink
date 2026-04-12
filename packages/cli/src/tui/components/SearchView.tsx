@@ -1,10 +1,10 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { existsSync } from "fs";
 import { join } from "path";
 import { exec } from "child_process";
 import {
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollectionDb,
   getCollectionDbPath,
@@ -12,8 +12,7 @@ import {
   SearchIndexer,
   entities,
 } from "@frozenink/core";
-import { eq } from "drizzle-orm";
-import { TextInput } from "./TextInput.js";
+import { desc, eq, sql } from "drizzle-orm";
 
 interface SearchResult {
   collection: string;
@@ -22,8 +21,6 @@ interface SearchResult {
   externalId: string;
   rank: number;
 }
-
-type Mode = "input" | "results";
 
 function openFile(filePath: string): void {
   const cmd =
@@ -52,6 +49,13 @@ function formatResultPrefix(entityType: string, externalId: string): string | nu
 
   if (entityType === "note") return null;
 
+  if (entityType === "page") {
+    // externalId is "page:{projectId}:{pageName}"
+    const parts = rawId.split(":");
+    const pageName = parts.length >= 2 ? parts.slice(1).join(":") : rawId;
+    return `[[${pageName}]]:`;
+  }
+
   return `${entityType}:`;
 }
 
@@ -74,6 +78,44 @@ function getMarkdownPath(result: SearchResult): string | null {
   return null;
 }
 
+/** Fetch all entities (most recently updated first) when query is empty. */
+function fetchAllEntities(collectionName?: string): SearchResult[] {
+  const collections = collectionName
+    ? [{ name: collectionName }]
+    : listCollections();
+  const allResults: SearchResult[] = [];
+
+  for (const col of collections) {
+    const dbPath = getCollectionDbPath(col.name);
+    if (!existsSync(dbPath)) continue;
+    try {
+      const colDb = getCollectionDb(dbPath);
+      const rows = colDb
+        .select({
+          externalId: entities.externalId,
+          entityType: entities.entityType,
+          title: entities.title,
+        })
+        .from(entities)
+        .orderBy(desc(entities.updatedAt))
+        .limit(100)
+        .all();
+      for (const r of rows) {
+        allResults.push({
+          collection: col.name,
+          entityType: r.entityType,
+          title: r.title,
+          externalId: r.externalId,
+          rank: 0,
+        });
+      }
+    } catch { /* ignore */ }
+  }
+  return allResults;
+}
+
+const PAGE_SIZE = 10;
+
 export function SearchView({
   collectionName,
   onDone,
@@ -81,17 +123,19 @@ export function SearchView({
   collectionName?: string;
   onDone?: () => void;
 }): React.ReactElement {
-  // All hooks before any conditional returns
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [searched, setSearched] = useState(false);
-  const [mode, setMode] = useState<Mode>("input");
   const [resultCursor, setResultCursor] = useState(0);
 
-  const initialized = contextExists();
+  ensureInitialized();
+  const initialized = true;
 
-  const doSearch = useCallback(() => {
-    if (!query.trim()) return;
+  const runSearch = useCallback((q: string) => {
+    if (!q.trim()) {
+      setResults(fetchAllEntities(collectionName));
+      setResultCursor(0);
+      return;
+    }
 
     const collections = collectionName
       ? [{ name: collectionName }]
@@ -104,7 +148,7 @@ export function SearchView({
 
       const indexer = new SearchIndexer(dbPath);
       try {
-        const hits = indexer.search(query.trim(), { collectionName: col.name });
+        const hits = indexer.search(q.trim(), { collectionName: col.name });
         for (const r of hits) {
           allResults.push({ ...r, collection: col.name });
         }
@@ -114,93 +158,118 @@ export function SearchView({
     }
 
     allResults.sort((a, b) => a.rank - b.rank);
-    setResults(allResults.slice(0, 30));
-    setSearched(true);
+    setResults(allResults.slice(0, 100));
     setResultCursor(0);
-    if (allResults.length > 0) {
-      setMode("results");
-    }
-  }, [query, collectionName]);
+  }, [collectionName]);
 
+  // Run initial search on mount
+  useEffect(() => {
+    if (initialized) runSearch("");
+  }, [initialized]);
+
+  // Handle all keyboard input in one place
   useInput((input, key) => {
-    if (mode === "results") {
-      if (key.upArrow) setResultCursor((c) => Math.max(0, c - 1));
-      if (key.downArrow) setResultCursor((c) => Math.min(results.length - 1, c + 1));
-      if (key.return && results[resultCursor]) {
+    if (key.escape || key.tab) {
+      if (onDone) { onDone(); return; }
+      return;
+    }
+
+    // Navigation keys work alongside typing
+    if (key.upArrow) {
+      setResultCursor((c) => Math.max(0, c - 1));
+      return;
+    }
+    if (key.downArrow) {
+      setResultCursor((c) => Math.min(results.length - 1, c + 1));
+      return;
+    }
+    if (key.leftArrow) {
+      setResultCursor((c) => {
+        const prevPageStart = Math.floor(c / PAGE_SIZE) * PAGE_SIZE - PAGE_SIZE;
+        return Math.max(0, prevPageStart);
+      });
+      return;
+    }
+    if (key.rightArrow) {
+      setResultCursor((c) => {
+        const nextPageStart = Math.floor(c / PAGE_SIZE) * PAGE_SIZE + PAGE_SIZE;
+        return Math.min(results.length - 1, nextPageStart);
+      });
+      return;
+    }
+
+    if (key.return) {
+      if (results[resultCursor]) {
         const mdPath = getMarkdownPath(results[resultCursor]);
         if (mdPath) openFile(mdPath);
       }
-      if (key.escape || key.tab) {
-        if (onDone) { onDone(); return; }
-        setMode("input");
-        setQuery("");
-        setSearched(false);
-      }
+      return;
+    }
+
+    // Text editing
+    if (key.backspace || key.delete) {
+      const next = query.slice(0, -1);
+      setQuery(next);
+      runSearch(next);
+      return;
+    }
+
+    if (!key.ctrl && !key.meta && input) {
+      const next = query + input;
+      setQuery(next);
+      runSearch(next);
     }
   });
 
-  // All hooks above — safe to do conditional returns now
-
-  if (!initialized) {
-    return <Text color="yellow">Not initialized.</Text>;
-  }
-
   const scoped = !!collectionName;
   const title = scoped ? `Search in "${collectionName}"` : "Search";
-  const description = scoped
-    ? `Search within "${collectionName}". Type a query and press Enter.`
-    : "Full-text search across all collections. Type a query and press Enter.";
-  const inputLabel = scoped ? `Search ${collectionName}` : "Search all";
+
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
+  const currentPage = Math.floor(resultCursor / PAGE_SIZE);
+  const pageStart = currentPage * PAGE_SIZE;
+  const pageResults = results.slice(pageStart, pageStart + PAGE_SIZE);
 
   return (
     <Box flexDirection="column" paddingY={1}>
       <Text bold>{title}</Text>
-      <Text dimColor>{description}</Text>
 
-      {mode === "input" && (
-        <Box marginTop={1}>
-          <TextInput
-            label={inputLabel}
-            value={query}
-            onChange={setQuery}
-            onSubmit={doSearch}
-            placeholder="Enter search terms..."
-          />
-        </Box>
-      )}
+      <Box marginTop={1}>
+        <Text color="cyan">? </Text>
+        <Text bold>Find: </Text>
+        <Text>{query}</Text>
+        <Text color="cyan">█</Text>
+      </Box>
 
-      {mode === "results" && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>
-            {results.length} result(s) for "{query}" — ↑↓ navigate, Enter to open, ESC back
-          </Text>
-          <Box flexDirection="column" marginTop={1}>
-            {results.length === 0 ? (
-              <Text dimColor>No results found.</Text>
-            ) : (
-              results.map((r, i) => {
+      <Box flexDirection="column" marginTop={1}>
+        {results.length === 0 ? (
+          <Text dimColor>{query ? "No results found." : "No entities yet."}</Text>
+        ) : (
+          <>
+            <Text dimColor>
+              {results.length} result(s){query ? ` for "${query}"` : ""}
+            </Text>
+            <Box flexDirection="column" marginTop={1}>
+              {pageResults.map((r, i) => {
+                const globalIdx = pageStart + i;
                 const prefix = formatResultPrefix(r.entityType, r.externalId);
                 return (
-                  <Box key={i} gap={1}>
-                    <Text color={i === resultCursor ? "cyan" : undefined}>
-                      {i === resultCursor ? "❯" : " "}
+                  <Box key={globalIdx} gap={1}>
+                    <Text color={globalIdx === resultCursor ? "cyan" : undefined}>
+                      {globalIdx === resultCursor ? ">" : " "}
                     </Text>
                     {!scoped && <Text dimColor>[{r.collection}]</Text>}
                     {prefix && <Text color="cyan">{prefix}</Text>}
-                    <Text bold={i === resultCursor}>{r.title}</Text>
+                    <Text bold={globalIdx === resultCursor}>{r.title}</Text>
                   </Box>
                 );
-              })
-            )}
-          </Box>
-        </Box>
-      )}
-
-      {mode === "input" && searched && results.length === 0 && (
-        <Box marginTop={1}>
-          <Text dimColor>No results found.</Text>
-        </Box>
-      )}
+              })}
+            </Box>
+            <Text dimColor>
+              Page {currentPage + 1} of {totalPages} — ↑↓ navigate, ←→ prev/next page, Enter open, ESC back
+            </Text>
+          </>
+        )}
+      </Box>
     </Box>
   );
 }

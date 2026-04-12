@@ -10,11 +10,11 @@ import { join } from "path";
 import {
   getCollectionDb,
   entities,
+  tags,
   entityTags,
-  attachments,
+  assets,
   SearchIndexer,
   addCollection,
-  saveContext,
 } from "@frozenink/core";
 
 const TEST_DIR = join(import.meta.dir, ".test-daemon-serve");
@@ -31,18 +31,11 @@ afterEach(() => {
 
 function initTestEnv() {
   writeFileSync(
-    join(TEST_DIR, "config.json"),
-    JSON.stringify({
-      db: { mode: "local" },
-      sync: { interval: 900, concurrency: 2, retries: 3 },
-      ui: { port: 3000 },
-      mcp: { transport: "stdio", port: 3001 },
-      logging: { level: "info" },
-    }),
+    join(TEST_DIR, "frozenink.yml"),
+    "sync:\n  interval: 900\nui:\n  port: 3000\n",
   );
 
-  // Create context.yml (required by contextExists() checks in daemon/serve commands)
-  saveContext({ collections: {}, deployments: {} });
+  // Create collections directory (required by contextExists() checks)
   mkdirSync(join(TEST_DIR, "collections"), { recursive: true });
 }
 
@@ -51,7 +44,7 @@ function addTestCollection(
   opts?: { addEntities?: boolean; addAttachment?: boolean; addFts?: boolean },
 ) {
   const collectionDir = join(TEST_DIR, "collections", name);
-  const dbPath = join(collectionDir, "data.db");
+  const dbPath = join(collectionDir, "db", "data.db");
   mkdirSync(collectionDir, { recursive: true });
   mkdirSync(join(collectionDir, "markdown"), { recursive: true });
 
@@ -89,8 +82,13 @@ function addTestCollection(
       .run();
 
     const entityRows = colDb.select().from(entities).all();
-    colDb.insert(entityTags).values({ entityId: entityRows[0].id, tag: "bug" }).run();
-    colDb.insert(entityTags).values({ entityId: entityRows[0].id, tag: "critical" }).run();
+    colDb.insert(tags).values({ name: "bug" }).run();
+    colDb.insert(tags).values({ name: "critical" }).run();
+    const allTags = colDb.select().from(tags).all();
+    const bugTag = allTags.find((t) => t.name === "bug")!;
+    const criticalTag = allTags.find((t) => t.name === "critical")!;
+    colDb.insert(entityTags).values({ entityId: entityRows[0].id, tagId: bugTag.id }).run();
+    colDb.insert(entityTags).values({ entityId: entityRows[0].id, tagId: criticalTag.id }).run();
 
     mkdirSync(join(collectionDir, "markdown", "issues"), { recursive: true });
     mkdirSync(join(collectionDir, "markdown", "pull-requests"), { recursive: true });
@@ -105,13 +103,12 @@ function addTestCollection(
     if (opts.addEntities) {
       const entityRows = colDb.select().from(entities).all();
       colDb
-        .insert(attachments)
+        .insert(assets)
         .values({
           entityId: entityRows[0].id,
           filename: "screenshot.png",
           mimeType: "image/png",
           storagePath: "attachments/issue-1/screenshot.png",
-          backend: "local",
         })
         .run();
     }

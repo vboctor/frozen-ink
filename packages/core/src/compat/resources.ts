@@ -79,7 +79,7 @@ const WRANGLER_INSTALL_URL = "https://developers.cloudflare.com/workers/wrangler
  * Resolve the wrangler binary path.
  *
  * Search order:
- * 1. User-configured path (from config.json "wranglerPath")
+ * 1. User-configured path (from frozenink.yml "wranglerPath")
  * 2. Monorepo dev: node_modules/.bin/wrangler
  * 3. System PATH: "wrangler" (via `which`)
  *
@@ -119,6 +119,6 @@ export async function resolveWrangler(moduleDir: string, configuredPath?: string
     `Wrangler CLI not found. Install it to publish to Cloudflare:\n` +
     `  npm install -g wrangler\n` +
     `Or visit: ${WRANGLER_INSTALL_URL}\n\n` +
-    `If wrangler is installed at a custom path, set "wranglerPath" in your workspace config.json.`
+    `If wrangler is installed at a custom path, set "wranglerPath" in your workspace frozenink.yml.`
   );
 }

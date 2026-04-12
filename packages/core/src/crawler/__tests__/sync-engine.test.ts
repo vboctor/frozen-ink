@@ -6,9 +6,10 @@ import { SyncEngine } from "../sync-engine";
 import { getCollectionDb } from "../../db/client";
 import {
   entities,
+  tags,
   entityTags,
-  attachments,
-  entityLinks,
+  assets,
+  links,
   syncState,
   syncRuns,
 } from "../../db/collection-schema";
@@ -389,16 +390,16 @@ describe("SyncEngine", () => {
     await engine.run();
 
     // Check attachment was stored
-    const storedContent = await storage.read("attachments/att-1/image.png");
+    const storedContent = await storage.read("content/doc/assets/image.png");
     expect(storedContent).toBe("fake-png-data");
 
     // Check attachment record in DB
     const db = getCollectionDb(dbPath);
-    const atts = db.select().from(attachments).all();
+    const atts = db.select().from(assets).all();
     expect(atts).toHaveLength(1);
     expect(atts[0].filename).toBe("image.png");
     expect(atts[0].mimeType).toBe("image/png");
-    expect(atts[0].storagePath).toBe("attachments/att-1/image.png");
+    expect(atts[0].storagePath).toBe("content/doc/assets/image.png");
   });
 
   it("updates sync_state with latest cursor", async () => {
@@ -548,9 +549,13 @@ describe("SyncEngine", () => {
     await engine.run();
 
     const db = getCollectionDb(dbPath);
-    const tags = db.select().from(entityTags).all();
-    expect(tags).toHaveLength(3);
-    expect(tags.map((t) => t.tag).sort()).toEqual(["bug", "critical", "frontend"]);
+    const entityTagRows = db.select().from(entityTags).all();
+    expect(entityTagRows).toHaveLength(3);
+    const tagRows = db.select().from(tags).all();
+    const tagNames = entityTagRows
+      .map((et) => tagRows.find((t) => t.id === et.tagId)!.name)
+      .sort();
+    expect(tagNames).toEqual(["bug", "critical", "frontend"]);
   });
 
   it("reconcile: deletes orphaned markdown files not in DB", async () => {
@@ -727,8 +732,8 @@ describe("SyncEngine", () => {
     await engine.run();
 
     // Manually create an orphaned attachment file
-    await storage.write("attachments/orphan/stale.png", Buffer.from("orphan-data"));
-    expect(await storage.exists("attachments/orphan/stale.png")).toBe(true);
+    await storage.write("content/doc/assets/stale.png", Buffer.from("orphan-data"));
+    expect(await storage.exists("content/doc/assets/stale.png")).toBe(true);
 
     // Run sync again — reconcile should clean up
     const crawler2 = createMockCrawler([
@@ -764,9 +769,9 @@ describe("SyncEngine", () => {
     await engine2.run();
 
     // Orphaned attachment should be gone
-    expect(await storage.exists("attachments/orphan/stale.png")).toBe(false);
+    expect(await storage.exists("content/doc/assets/stale.png")).toBe(false);
     // Legitimate attachment should still exist
-    expect(await storage.exists("attachments/att-keep/real.png")).toBe(true);
+    expect(await storage.exists("content/doc/assets/real.png")).toBe(true);
   });
 
   it("reconcile: cleans up attachment DB records for missing files", async () => {
@@ -806,10 +811,10 @@ describe("SyncEngine", () => {
     await engine.run();
 
     const db = getCollectionDb(dbPath);
-    expect(db.select().from(attachments).all()).toHaveLength(1);
+    expect(db.select().from(assets).all()).toHaveLength(1);
 
     // Manually delete the attachment file from disk
-    await storage.delete("attachments/att-clean/gone.png");
+    await storage.delete("content/doc/assets/gone.png");
 
     // Run sync again with no attachments (so DB record stays from first sync)
     const crawler2 = createMockCrawler([
@@ -838,7 +843,7 @@ describe("SyncEngine", () => {
     await engine2.run();
 
     // DB attachment record should be cleaned up since file is missing
-    expect(db.select().from(attachments).all()).toHaveLength(0);
+    expect(db.select().from(assets).all()).toHaveLength(0);
   });
 
   it("reconcile: restores user-modified markdown files to expected content", async () => {
@@ -928,17 +933,17 @@ describe("SyncEngine", () => {
 
     // Simulate tool-generated index files inside the output directory
     await storage.write("md/.obsidian/workspace.json", '{"main":true}');
-    await storage.write("attachments/.git/config", "[core]");
+    await storage.write("content/assets/.git/config", "[core]");
 
     await engine.run();
 
     // Tool files must not be touched
     expect(await storage.exists("md/.obsidian/workspace.json")).toBe(true);
-    expect(await storage.exists("attachments/.git/config")).toBe(true);
+    expect(await storage.exists("content/assets/.git/config")).toBe(true);
   });
 
-  it("extracts wikilinks from rendered markdown and stores them as entity_links", async () => {
-    // Create a theme that generates wikilinks
+  it("extracts wikilinks from rendered markdown and stores them as links", async () => {
+    // Create a theme that generates wikilinks to entities that exist
     const linkTheme: Theme = {
       crawlerType: "linktest",
       render(ctx: ThemeRenderContext): string {
@@ -960,6 +965,18 @@ describe("SyncEngine", () => {
             title: "Linker Note",
             data: { text: "links to others" },
           },
+          {
+            externalId: "other-note",
+            entityType: "note",
+            title: "Other Note",
+            data: { text: "target 1" },
+          },
+          {
+            externalId: "another",
+            entityType: "note",
+            title: "Another Note",
+            data: { text: "target 2" },
+          },
         ],
         nextCursor: null,
         hasMore: false,
@@ -979,18 +996,21 @@ describe("SyncEngine", () => {
     await engine.run();
 
     const db = getCollectionDb(dbPath);
-    const links = db.select().from(entityLinks).all();
+    const allEntities = db.select().from(entities).all();
+    const linkerEntity = allEntities.find((e) => e.externalId === "linker-1")!;
+    const otherEntity = allEntities.find((e) => e.externalId === "other-note")!;
+    const anotherEntity = allEntities.find((e) => e.externalId === "another")!;
 
-    // Should have 2 links: note/other-note and note/another
-    expect(links).toHaveLength(2);
-    const targets = links.map((l) => l.targetPath).sort();
-    expect(targets).toEqual(["md/note/another.md", "md/note/other-note.md"]);
+    const linkRows = db.select().from(links).all();
 
-    // Source path should be the entity's markdown path
-    expect(links[0].sourceMarkdownPath).toBe("md/note/linker-1.md");
+    // Should have 2 links from linker-1 to the two target entities
+    const linkerLinks = linkRows.filter((l) => l.sourceEntityId === linkerEntity.id);
+    expect(linkerLinks).toHaveLength(2);
+    const targetIds = linkerLinks.map((l) => l.targetEntityId).sort();
+    expect(targetIds).toEqual([otherEntity.id, anotherEntity.id].sort());
   });
 
-  it("cleans up entity_links when an entity is deleted", async () => {
+  it("cleans up links when an entity is deleted", async () => {
     const linkTheme: Theme = {
       crawlerType: "linktest",
       render(ctx: ThemeRenderContext): string {
@@ -1003,7 +1023,7 @@ describe("SyncEngine", () => {
     const linkEngine = new ThemeEngine();
     linkEngine.register(linkTheme);
 
-    // First sync: create entity with links
+    // First sync: create entity with links (including the target)
     const crawler1 = createMockCrawler([
       {
         entities: [
@@ -1011,6 +1031,12 @@ describe("SyncEngine", () => {
             externalId: "delme-1",
             entityType: "note",
             title: "Delete Me",
+            data: {},
+          },
+          {
+            externalId: "target",
+            entityType: "note",
+            title: "Target",
             data: {},
           },
         ],
@@ -1032,12 +1058,19 @@ describe("SyncEngine", () => {
     await engine1.run();
 
     const db = getCollectionDb(dbPath);
-    expect(db.select().from(entityLinks).all()).toHaveLength(1);
+    expect(db.select().from(links).all()).toHaveLength(1);
 
-    // Second sync: delete the entity
+    // Second sync: delete the source entity
     const crawler2 = createMockCrawler([
       {
-        entities: [],
+        entities: [
+          {
+            externalId: "target",
+            entityType: "note",
+            title: "Target",
+            data: {},
+          },
+        ],
         nextCursor: null,
         hasMore: false,
         deletedExternalIds: ["delme-1"],
@@ -1054,6 +1087,6 @@ describe("SyncEngine", () => {
     await engine2.run();
 
     // Links should be cleaned up
-    expect(db.select().from(entityLinks).all()).toHaveLength(0);
+    expect(db.select().from(links).all()).toHaveLength(0);
   });
 });

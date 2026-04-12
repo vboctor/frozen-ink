@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import {
-  contextExists,
+  ensureInitialized,
   getCollection,
   updateCollection,
 } from "@frozenink/core";
@@ -15,10 +15,7 @@ export const updateCommand = new Command("update")
   .option("--sync-comments [value]", "Sync comments (true/false)")
   .option("--sync-check-statuses [value]", "Sync check statuses (true/false)")
   .action(async (collection: string, opts: Record<string, unknown>) => {
-    if (!contextExists()) {
-      console.error("Frozen Ink not initialized. Run: fink init");
-      process.exit(1);
-    }
+    ensureInitialized();
 
     const col = getCollection(collection);
     if (!col) {

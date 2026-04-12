@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import {
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollectionDb,
   getCollectionDbPath,
@@ -13,10 +13,7 @@ import { desc } from "drizzle-orm";
 export const statusCommand = new Command("status")
   .description("Show sync status for all collections")
   .action(() => {
-    if (!contextExists()) {
-      console.error("Frozen Ink not initialized. Run: fink init");
-      process.exit(1);
-    }
+    ensureInitialized();
 
     const collectionRows = listCollections();
 

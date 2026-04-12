@@ -1,10 +1,11 @@
 import { Command } from "commander";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { getFrozenInkHome, loadConfig } from "@frozenink/core";
+import yaml from "js-yaml";
+import { getFrozenInkHome, ensureInitialized, loadConfig } from "@frozenink/core";
 
 function getConfigPath(): string {
-  return join(getFrozenInkHome(), "config.json");
+  return join(getFrozenInkHome(), "frozenink.yml");
 }
 
 function readConfigFile(): Record<string, unknown> {
@@ -12,14 +13,11 @@ function readConfigFile(): Record<string, unknown> {
   if (!existsSync(configPath)) {
     return {};
   }
-  return JSON.parse(readFileSync(configPath, "utf-8")) as Record<
-    string,
-    unknown
-  >;
+  return (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {};
 }
 
 function writeConfigFile(config: Record<string, unknown>): void {
-  writeFileSync(getConfigPath(), JSON.stringify(config, null, 2));
+  writeFileSync(getConfigPath(), yaml.dump(config, { lineWidth: -1, noRefs: true, sortKeys: false }));
 }
 
 function getNestedValue(
@@ -84,12 +82,7 @@ const setCommand = new Command("set")
   .argument("<key>", "Config key (e.g., sync.interval)")
   .argument("<value>", "Config value")
   .action((key: string, value: string) => {
-    const configPath = getConfigPath();
-    if (!existsSync(configPath)) {
-      console.error("Frozen Ink not initialized. Run: fink init");
-      process.exit(1);
-    }
-
+    ensureInitialized();
     const fileConfig = readConfigFile();
     setNestedValue(fileConfig, key, parseValue(value));
     writeConfigFile(fileConfig);

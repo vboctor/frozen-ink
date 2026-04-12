@@ -4,13 +4,14 @@ import { join } from "path";
 import {
   getFrozenInkHome,
   getCollectionDb,
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollection,
   getCollectionDbPath,
   entities,
   entityTags,
-  entityLinks,
+  tags,
+  links,
   SearchIndexer,
   extractWikilinks,
 } from "@frozenink/core";
@@ -22,10 +23,7 @@ export const indexCommand = new Command("index")
   )
   .argument("<collection>", 'Collection name or "*" for all collections')
   .action(async (collection: string) => {
-    if (!contextExists()) {
-      console.error("Frozen Ink not initialized. Run: fink init");
-      process.exit(1);
-    }
+    ensureInitialized();
 
     const home = getFrozenInkHome();
     let collectionRows = collection === "*"
@@ -62,7 +60,7 @@ export const indexCommand = new Command("index")
       // Clear existing search index and links
       const indexer = new SearchIndexer(dbPath);
       indexer.clearIndex();
-      colDb.delete(entityLinks).run();
+      colDb.delete(links).run();
 
       const allEntities = colDb.select().from(entities).all();
       let indexed = 0;
@@ -77,12 +75,16 @@ export const indexCommand = new Command("index")
         const markdown = readFileSync(filePath, "utf-8");
 
         // Rebuild FTS index
-        const tags = colDb
+        const entityTagNames = colDb
           .select()
           .from(entityTags)
           .where(eq(entityTags.entityId, entity.id))
           .all()
-          .map((t: any) => t.tag);
+          .map((t: any) => {
+            const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
+            return tagRow?.name ?? "";
+          })
+          .filter(Boolean);
 
         indexer.updateIndex({
           id: entity.id,
@@ -90,22 +92,29 @@ export const indexCommand = new Command("index")
           entityType: entity.entityType,
           title: entity.title,
           content: markdown,
-          tags,
+          tags: entityTagNames,
         });
         indexed++;
 
         // Rebuild links
         const targets = extractWikilinks(markdown);
         for (const target of targets) {
-          colDb
-            .insert(entityLinks)
-            .values({
-              sourceEntityId: entity.id,
-              sourceMarkdownPath: entity.markdownPath,
-              targetPath: `${markdownBasePath}/${target}.md`,
-            })
-            .run();
-          linked++;
+          const targetPath = `${markdownBasePath}/${target}.md`;
+          const [targetEntity] = colDb
+            .select({ id: entities.id })
+            .from(entities)
+            .where(eq(entities.markdownPath, targetPath))
+            .all();
+          if (targetEntity) {
+            colDb
+              .insert(links)
+              .values({
+                sourceEntityId: entity.id,
+                targetEntityId: targetEntity.id,
+              })
+              .run();
+            linked++;
+          }
         }
       }
 

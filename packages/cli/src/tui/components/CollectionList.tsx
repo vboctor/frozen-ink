@@ -3,9 +3,9 @@ import { Box, Text, useInput } from "ink";
 import { existsSync, renameSync, rmSync } from "fs";
 import { join, basename } from "path";
 import {
-  contextExists,
+  ensureInitialized,
   listCollections,
-  listDeployments,
+  listSites,
   getCollection,
   getCollectionDb,
   getCollectionDbPath,
@@ -41,6 +41,7 @@ type Mode =
   | "export"
   | "search"
   | "confirm-delete"
+  | "confirm-full-sync"
   | "syncing";
 
 // Fixed-width columns
@@ -132,9 +133,15 @@ function getSourceDetails(crawler: string, config: Record<string, unknown>): Arr
       break;
     }
     case "mantisbt": {
-      const baseUrl = config.baseUrl as string | undefined;
-      if (baseUrl) details.push({ label: "URL", value: baseUrl });
-      if (config.projectId) details.push({ label: "Project ID", value: String(config.projectId) });
+      const url = (config.url ?? config.baseUrl) as string | undefined;
+      if (url) details.push({ label: "URL", value: url });
+      const project = config.project as { id?: number; name?: string } | undefined;
+      const projName = project?.name ?? (config.projectName as string | undefined);
+      const projId = project?.id ?? (config.projectId as number | undefined);
+      if (projName || projId) {
+        const value = projName && projId ? `${projName} (id: ${projId})` : projName ?? String(projId);
+        details.push({ label: "Project", value });
+      }
       if (config.maxEntities) details.push({ label: "Max entities", value: String(config.maxEntities) });
       break;
     }
@@ -350,7 +357,7 @@ export function CollectionList({
   const [inputValue, setInputValue] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [syncProgress, setSyncProgress] = useState<string[]>([]);
-  const [syncFetchedCount, setSyncFetchedCount] = useState(0);
+  const [syncFetchedCounts, setSyncFetchedCounts] = useState<Record<string, number>>({});
   const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
   const [syncElapsedMs, setSyncElapsedMs] = useState(0);
   const [editingCollection, setEditingCollection] = useState("");
@@ -365,13 +372,15 @@ export function CollectionList({
     return () => clearInterval(interval);
   }, [syncStartTime]);
 
-  const initialized = contextExists();
-  const collections = initialized ? listCollections() : [];
-  const allDeployments = initialized ? listDeployments() : [];
+  ensureInitialized();
+  const collections = listCollections();
+  const allSites = listSites();
   const current = collections[cursor] ?? null;
 
   // Detail stats for selected collection
   let entityCount = 0;
+  let entityTypeCounts: Array<{ type: string; count: number }> = [];
+  let collectionSize = "";
   let lastRun: {
     status: string;
     startedAt: string | null;
@@ -387,6 +396,30 @@ export function CollectionList({
         const colDb = getCollectionDb(dbPath);
         const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
         entityCount = total;
+
+        // Per-type breakdown
+        const typeCounts = colDb
+          .select({
+            type: entities.entityType,
+            count: sql<number>`count(*)`,
+          })
+          .from(entities)
+          .groupBy(entities.entityType)
+          .orderBy(sql`count(*) desc`)
+          .all();
+        entityTypeCounts = typeCounts.map((r: any) => ({ type: r.type, count: r.count }));
+
+        // Collection directory size
+        const home = getFrozenInkHome();
+        const colDir = join(home, "collections", current.name);
+        if (existsSync(colDir)) {
+          try {
+            const { execSync } = require("child_process");
+            const sizeStr = execSync(`du -sh "${colDir}" 2>/dev/null`, { encoding: "utf8" }).trim().split(/\s/)[0];
+            if (sizeStr) collectionSize = sizeStr;
+          } catch { /* ignore */ }
+        }
+
         const runs = colDb.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(1).all();
         if (runs.length > 0) {
           lastRun = runs[0];
@@ -399,19 +432,22 @@ export function CollectionList({
     }
   }
 
-  const relatedDeployments = current
-    ? allDeployments.filter((d: { collections: string[] }) => d.collections.includes(current.name))
+  const relatedSites = current
+    ? allSites.filter((d: { collections: string[] }) => d.collections.includes(current.name))
     : [];
 
   const sourceDetails = current
     ? getSourceDetails(current.crawler, current.config as Record<string, unknown>)
     : [];
 
-  const startSync = useCallback(async () => {
-    if (!current) return;
+  const startSync = useCallback(async (collectionName?: string, syncType?: "full" | "incremental") => {
+    const col = collectionName ? getCollection(collectionName) : current;
+    const name = collectionName ?? current?.name;
+    if (!col || !name) return;
     setMode("syncing");
-    setSyncProgress([`Syncing "${current.name}" (${current.crawler})...`]);
-    setSyncFetchedCount(0);
+    const syncLabel = syncType === "full" ? "Full sync" : "Syncing";
+    setSyncProgress([`${syncLabel} "${name}" (${col.crawler})...`]);
+    setSyncFetchedCounts({});
     const syncStart = Date.now();
     setSyncStartTime(syncStart);
     try {
@@ -421,30 +457,42 @@ export function CollectionList({
       themeEngine.register(obsidianTheme);
       themeEngine.register(gitTheme);
       themeEngine.register(mantisBTTheme);
-      const factory = registry.get(current.crawler);
-      if (!factory) { setSyncProgress((p) => [...p, `No crawler for ${current.crawler}`]); setSyncStartTime(null); setMode("list"); return; }
+      const factory = registry.get(col.crawler);
+      if (!factory) { setSyncProgress((p) => [...p, `No crawler for ${col.crawler}`]); setSyncStartTime(null); setMode("list"); return; }
       const crawler = factory();
-      await crawler.initialize(current.config as Record<string, unknown>, current.credentials as Record<string, unknown>);
+      await crawler.initialize(col.config as Record<string, unknown>, col.credentials as Record<string, unknown>);
       const home = getFrozenInkHome();
-      const dbPath = getCollectionDbPath(current.name);
-      const collectionDir = join(home, "collections", current.name);
+      const dbPath = getCollectionDbPath(name);
+      const collectionDir = join(home, "collections", name);
       const storage = new LocalStorageBackend(collectionDir);
       const engine = new SyncEngine({
-        crawler, dbPath, collectionName: current.name, themeEngine, storage, markdownBasePath: "markdown",
-        onBatchFetched: ({ externalIds }: { externalIds: string[] }) => {
-          if (externalIds.length > 0) setSyncFetchedCount((c) => c + externalIds.length);
+        crawler, dbPath, collectionName: name, themeEngine, storage, markdownBasePath: "content",
+        assetConfig: col.assets as { extensions?: string[]; maxSize?: number } | undefined,
+        onBatchFetched: ({ externalIds, entityTypes }: { externalIds: string[]; entityTypes: string[] }) => {
+          if (externalIds.length > 0) {
+            setSyncFetchedCounts((prev) => {
+              const next = { ...prev };
+              for (const t of entityTypes) {
+                next[t] = (next[t] ?? 0) + 1;
+              }
+              return next;
+            });
+          }
+        },
+        onVersionUpdate: (version: string) => {
+          updateCollection(name, { version });
         },
       });
-      const stats = await engine.run();
-      setSyncFetchedCount(0);
+      const stats = await engine.run({ syncType: syncType ?? "incremental" });
+      setSyncFetchedCounts({});
       const elapsed = formatElapsed(Date.now() - syncStart);
       const colDb = getCollectionDb(dbPath);
       const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
       setSyncProgress((p) => [...p, `+${stats.created} ~${stats.updated} -${stats.deleted} (${total} total) in ${elapsed}`]);
       await crawler.dispose();
-      setMessage(`Sync complete for "${current.name}"`);
+      setMessage(`Sync complete for "${name}"`);
     } catch (err) {
-      setSyncFetchedCount(0);
+      setSyncFetchedCounts({});
       setSyncProgress((p) => [...p, `Error: ${err instanceof Error ? err.message : String(err)}`]);
     }
     setSyncStartTime(null);
@@ -481,9 +529,28 @@ export function CollectionList({
       }
       if (input === "a") setMode("add");
       if (input === "x" && current) setMode("confirm-delete");
-      if (input === "s" && current) startSync();
+      if (input === "s" && current) {
+        const registry = createDefaultRegistry();
+        const factory = registry.get(current.crawler);
+        const crawlerVersion = factory ? factory().metadata.version ?? "1.0" : "1.0";
+        const collectionVersion = current.version ?? "1.0";
+        const compat = SyncEngine.checkVersionCompat(collectionVersion, crawlerVersion);
+        if (compat === "full-sync") {
+          setMessage(`Version mismatch (${collectionVersion} → ${crawlerVersion}). Full sync required.`);
+          setMode("confirm-full-sync");
+        } else {
+          startSync();
+        }
+      }
       if (input === "e" && current) { setEditingCollection(current.name); setMode("export"); }
       if (input === "f" && current) { setEditingCollection(current.name); setMode("search"); }
+    } else if (mode === "confirm-full-sync") {
+      if (input === "y" && current) {
+        startSync(undefined, "full");
+      } else {
+        setMessage("");
+        setMode("list");
+      }
     } else if (mode === "confirm-delete") {
       if (input === "y" && current) {
         const home = getFrozenInkHome();
@@ -503,12 +570,11 @@ export function CollectionList({
 
   // ── All hooks are above this line ──
 
-  if (!initialized) {
-    return <Text color="yellow">Not initialized. Run `fink init` first.</Text>;
-  }
-
   if (mode === "add") {
-    return <AddCollection onDone={() => { setMode("list"); refresh(); }} />;
+    return <AddCollection onDone={() => { setMode("list"); refresh(); }} onSync={(name) => {
+      refresh();
+      startSync(name);
+    }} />;
   }
 
   if (mode === "edit" && editingCollection) {
@@ -523,15 +589,29 @@ export function CollectionList({
     return <SearchView collectionName={editingCollection} onDone={() => { setMode("list"); }} />;
   }
 
+  if (mode === "confirm-full-sync") {
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        <Text color="yellow">{message}</Text>
+        <Text>Run full sync? This will re-download all data. (y/n)</Text>
+      </Box>
+    );
+  }
+
   if (mode === "syncing") {
     return (
       <Box flexDirection="column" paddingY={1}>
         <Text bold color="yellow">Syncing...</Text>
         <Box flexDirection="column" marginLeft={1} marginTop={1}>
           {syncProgress.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
-          {syncFetchedCount > 0 && (
-            <Text dimColor>  Fetched {syncFetchedCount} entities... ({formatElapsed(syncElapsedMs)})</Text>
-          )}
+          {Object.keys(syncFetchedCounts).length > 0 && (() => {
+            const total = Object.values(syncFetchedCounts).reduce((a, b) => a + b, 0);
+            const breakdown = Object.entries(syncFetchedCounts)
+              .sort(([, a], [, b]) => b - a)
+              .map(([type, count]) => `${count} ${type}${count !== 1 ? "s" : ""}`)
+              .join(", ");
+            return <Text dimColor>  Fetched {total} entities: {breakdown}. ({formatElapsed(syncElapsedMs)})</Text>;
+          })()}
         </Box>
       </Box>
     );
@@ -587,7 +667,6 @@ export function CollectionList({
           <Box gap={2}>
             <Text bold>{current.title || current.name}</Text>
             <Text dimColor>({current.crawler})</Text>
-            <Text>Entities: <Text bold>{entityCount}</Text></Text>
           </Box>
           {sourceDetails.length > 0 && (
             <Box flexDirection="column">
@@ -596,6 +675,15 @@ export function CollectionList({
               ))}
             </Box>
           )}
+          <Text>
+            <Text dimColor>Content: </Text>
+            <Text bold>{entityCount}</Text>
+            <Text> entities</Text>
+            {entityTypeCounts.length > 0 && (
+              <Text> - {entityTypeCounts.map((t) => `${t.count} ${t.type}${t.count !== 1 ? "s" : ""}`).join(", ")}</Text>
+            )}
+            {collectionSize ? <Text> - {collectionSize}</Text> : null}
+          </Text>
           {lastRun ? (
             <Box gap={2}>
               <Text>Last sync: <Text dimColor>{lastSyncTime}</Text> <Text color={lastRun.status === "completed" ? "green" : "red"}>({lastRun.status})</Text></Text>
@@ -604,15 +692,15 @@ export function CollectionList({
           ) : (
             <Text dimColor>No sync runs yet</Text>
           )}
-          {relatedDeployments.length > 0 && (
+          {relatedSites.length > 0 && (
             <Box flexDirection="column" marginTop={1}>
-              <Text dimColor bold>Deployments:</Text>
-              {relatedDeployments.map((dep: { name: string; url: string; passwordProtected: boolean }) => (
-                <Box key={dep.name} gap={1} marginLeft={1}>
-                  <Text>{dep.name}</Text>
+              <Text dimColor bold>Sites:</Text>
+              {relatedSites.map((site: { name: string; url: string; password?: { protected: boolean } }) => (
+                <Box key={site.name} gap={1} marginLeft={1}>
+                  <Text>{site.name}</Text>
                   <Text dimColor>→</Text>
-                  <Text color="blue">{dep.url}</Text>
-                  <Text color={dep.passwordProtected ? "green" : "yellow"}>[{dep.passwordProtected ? "protected" : "public"}]</Text>
+                  <Text color="blue">{site.url}</Text>
+                  <Text color={site.password?.protected ? "green" : "yellow"}>[{site.password?.protected ? "protected" : "public"}]</Text>
                 </Box>
               ))}
             </Box>

@@ -4,13 +4,15 @@ import { join, extname } from "path";
 import {
   getFrozenInkHome,
   getCollectionDb,
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollection,
   getCollectionDbPath,
   entities,
   entityTags,
-  entityLinks,
+  tags,
+  links,
+  assets,
   SearchIndexer,
   ThemeEngine,
   loadConfig,
@@ -25,7 +27,7 @@ import {
   mantisBTTheme,
 } from "@frozenink/crawlers";
 import { startStdioServer } from "@frozenink/mcp";
-import { eq, desc, like } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { handleManagementRequest, setAppMode } from "./management-api";
 
 const __moduleDir = getModuleDir(import.meta.url);
@@ -267,13 +269,17 @@ export function createApiServer(
 
         if (!entity) return errorResponse("Entity not found", 404);
 
-        // Get tags
-        const tags = colDb
+        // Get tags (join entityTags -> tags)
+        const entityTagNames = colDb
           .select()
           .from(entityTags)
           .where(eq(entityTags.entityId, entity.id))
           .all()
-          .map((t: any) => t.tag);
+          .map((t: any) => {
+            const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
+            return tagRow?.name ?? "";
+          })
+          .filter(Boolean);
 
         const data = typeof entity.data === "string"
           ? JSON.parse(entity.data)
@@ -288,7 +294,7 @@ export function createApiServer(
             .all();
           const mdPath = row?.markdownPath;
           if (!mdPath) return undefined;
-          const prefix = "markdown/";
+          const prefix = "content/";
           const relative = mdPath.startsWith(prefix) ? mdPath.slice(prefix.length) : mdPath;
           return relative.endsWith(".md") ? relative.slice(0, -3) : relative;
         };
@@ -300,7 +306,7 @@ export function createApiServer(
             title: entity.title,
             data,
             url: entity.url ?? undefined,
-            tags,
+            tags: entityTagNames,
           },
           collectionName: name,
           crawlerType: col.crawler,
@@ -355,21 +361,25 @@ export function createApiServer(
           .offset(offset)
           .all();
 
-        // Get tags for each entity
+        // Get tags for each entity (join entityTags -> tags)
         const result = rows.map((row: any) => {
-          const tags = colDb
+          const rowTags = colDb
             .select()
             .from(entityTags)
             .where(eq(entityTags.entityId, row.id))
             .all()
-            .map((t: any) => t.tag);
+            .map((t: any) => {
+              const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
+              return tagRow?.name ?? "";
+            })
+            .filter(Boolean);
           return {
             id: row.id,
             externalId: row.externalId,
             entityType: row.entityType,
             title: row.title,
             url: row.url,
-            tags,
+            tags: rowTags,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
           };
@@ -462,18 +472,28 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
 
+        // Find the target entity by markdown path variants
         const targetVariants = [targetFile, `markdown/${targetFile}`];
-
         if (!targetFile.endsWith(".md")) {
           targetVariants.push(`${targetFile}.md`, `markdown/${targetFile}.md`);
         }
-
         const filename = targetFile.includes("/") ? targetFile.split("/").pop()! : null;
         if (filename) {
           targetVariants.push(filename, `markdown/${filename}`);
           if (!filename.endsWith(".md")) {
             targetVariants.push(`${filename}.md`, `markdown/${filename}.md`);
           }
+        }
+
+        // Resolve target entity IDs from markdown path variants
+        const targetEntityIds = new Set<number>();
+        for (const variant of targetVariants) {
+          const rows = colDb
+            .select({ id: entities.id })
+            .from(entities)
+            .where(eq(entities.markdownPath, variant))
+            .all();
+          for (const row of rows) targetEntityIds.add(row.id);
         }
 
         const seen = new Set<number>();
@@ -485,11 +505,11 @@ export function createApiServer(
           markdownPath: string | null;
         }> = [];
 
-        for (const variant of targetVariants) {
+        for (const targetEntityId of targetEntityIds) {
           const linkRows = colDb
             .select()
-            .from(entityLinks)
-            .where(eq(entityLinks.targetPath, variant))
+            .from(links)
+            .where(eq(links.targetEntityId, targetEntityId))
             .all();
 
           for (const link of linkRows) {
@@ -538,44 +558,42 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
 
+        // Find source entity by markdown path variants
         const sourceVariants = [sourceFile, `markdown/${sourceFile}`];
 
-        const seen = new Set<string>();
+        // Resolve source entity IDs
+        const sourceEntityIds = new Set<number>();
+        for (const variant of sourceVariants) {
+          const rows = colDb
+            .select({ id: entities.id })
+            .from(entities)
+            .where(eq(entities.markdownPath, variant))
+            .all();
+          for (const row of rows) sourceEntityIds.add(row.id);
+        }
+
+        const seen = new Set<number>();
         const results: Array<{
           title: string;
           markdownPath: string | null;
         }> = [];
 
-        for (const variant of sourceVariants) {
+        for (const sourceEntityId of sourceEntityIds) {
           const linkRows = colDb
             .select()
-            .from(entityLinks)
-            .where(eq(entityLinks.sourceMarkdownPath, variant))
+            .from(links)
+            .where(eq(links.sourceEntityId, sourceEntityId))
             .all();
 
           for (const link of linkRows) {
-            if (seen.has(link.targetPath)) continue;
-            seen.add(link.targetPath);
+            if (seen.has(link.targetEntityId)) continue;
+            seen.add(link.targetEntityId);
 
-            let entity = null;
-            const [e1] = colDb
+            const [entity] = colDb
               .select()
               .from(entities)
-              .where(eq(entities.markdownPath, link.targetPath))
+              .where(eq(entities.id, link.targetEntityId))
               .all();
-            if (e1) { entity = e1; }
-
-            if (!entity) {
-              const filename = link.targetPath.split("/").pop();
-              if (filename) {
-                const [e2] = colDb
-                  .select()
-                  .from(entities)
-                  .where(like(entities.markdownPath, `%/${filename}`))
-                  .all();
-                if (e2) { entity = e2; }
-              }
-            }
 
             if (entity) {
               const relPath = entity.markdownPath
@@ -720,10 +738,7 @@ export const serveCommand = new Command("serve")
   .action(async (opts: { mcpOnly?: boolean; uiOnly?: boolean; port?: string }) => {
     const home = getFrozenInkHome();
 
-    if (!contextExists()) {
-      console.error("Frozen Ink not initialized. Run: fink init");
-      process.exit(1);
-    }
+    ensureInitialized();
 
     const config = loadConfig();
     const port = opts.port ? parseInt(opts.port, 10) : config.ui.port;

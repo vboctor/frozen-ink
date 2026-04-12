@@ -13,14 +13,15 @@ let cachedWranglerPath: string | null = null;
 async function resolveWranglerBin(): Promise<string> {
   if (cachedWranglerPath) return cachedWranglerPath;
 
-  // Check user-configured path in workspace config.json
+  // Check user-configured path in workspace frozenink.yml
   let configuredPath: string | undefined;
   try {
+    const yaml = require("js-yaml");
     const home = getFrozenInkHome();
-    const configPath = join(home, "config.json");
+    const configPath = join(home, "frozenink.yml");
     if (existsSync(configPath)) {
-      const config = JSON.parse(readFileSync(configPath, "utf-8"));
-      configuredPath = config.wranglerPath;
+      const config = (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {};
+      configuredPath = config.wranglerPath as string | undefined;
     }
   } catch {}
 

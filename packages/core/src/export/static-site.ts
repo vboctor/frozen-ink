@@ -3,7 +3,7 @@ import { join, relative, dirname, extname } from "path";
 import { getFrozenInkHome } from "../config/loader";
 import { getCollection, getCollectionDbPath } from "../config/context";
 import { getCollectionDb } from "../db/client";
-import { entities, entityTags } from "../db/collection-schema";
+import { entities, entityTags, tags } from "../db/collection-schema";
 import { eq } from "drizzle-orm";
 import { ThemeEngine } from "../theme/engine";
 
@@ -132,12 +132,13 @@ async function exportHtml(
     mkdirSync(outColDir, { recursive: true });
 
     for (const entity of allEntities) {
-      const tags = colDb
-        .select()
+      const entityTagNames = colDb
+        .select({ name: tags.name })
         .from(entityTags)
+        .innerJoin(tags, eq(entityTags.tagId, tags.id))
         .where(eq(entityTags.entityId, entity.id))
         .all()
-        .map((t: any) => t.tag);
+        .map((t: any) => t.name);
 
       const data = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
       let html = "";
@@ -151,7 +152,7 @@ async function exportHtml(
             title: entity.title,
             data,
             url: entity.url ?? undefined,
-            tags,
+            tags: entityTagNames,
           },
           collectionName: colName,
           crawlerType: col.crawler,

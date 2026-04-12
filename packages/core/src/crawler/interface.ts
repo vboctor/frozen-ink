@@ -35,6 +35,8 @@ export interface CrawlerMetadata {
   description: string;
   configSchema: Record<string, unknown>;
   credentialFields: string[];
+  /** Crawler schema version. Major bump = full re-sync required; minor bump = re-render markdown. Defaults to "1.0". */
+  version?: string;
 }
 
 export interface Crawler {

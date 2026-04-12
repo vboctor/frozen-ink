@@ -4,7 +4,7 @@ import { join } from "path";
 import {
   getFrozenInkHome,
   isValidCollectionKey,
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollection,
   removeCollection,
@@ -14,10 +14,7 @@ import {
 } from "@frozenink/core";
 
 function requireInit(): void {
-  if (!contextExists()) {
-    console.error("Frozen Ink not initialized. Run: fink init");
-    process.exit(1);
-  }
+  ensureInitialized();
 }
 
 function displayName(col: { name: string; title?: string }): string {

@@ -16,15 +16,47 @@ export interface MantisBTProject {
   status?: { id: number; name: string; label: string };
 }
 
+/** Entity types that can be synced for a MantisBT collection. */
+export type MantisBTEntityType = "issues" | "pages" | "users";
+
 export interface MantisBTConfig {
-  baseUrl: string;
-  projectId?: number;
-  projectName?: string;
+  url: string;
+  project?: { id?: number; name?: string };
   maxEntities?: number;
+  /**
+   * Entity types to synchronize. Defaults to all applicable types when omitted.
+   * "pages" is only available on MantisHub instances.
+   */
+  entities?: MantisBTEntityType[];
 }
 
 export interface MantisBTCredentials {
   token: string;
+}
+
+/** A wiki page from MantisHub Pages plugin (via ApiX update endpoint). */
+export interface MantisBTPage {
+  id: number;
+  name: string;
+  title: string;
+  project: { id: number; name: string };
+  issue_id: number;
+  created_by: { id: number; name: string; real_name?: string; email?: string; avatar?: string };
+  created_at: { timestamp: string };
+  updated_by: { id: number; name: string; real_name?: string; email?: string; avatar?: string };
+  updated_at: { timestamp: string };
+  content: string;
+}
+
+/** A file attachment on a MantisHub wiki page. */
+export interface MantisBTPageFile {
+  id: number;
+  page_id: number;
+  name: string;
+  size: number;
+  content_type: string;
+  created_at: { timestamp: string };
+  download_url: string;
 }
 
 export interface MantisBTIssue {

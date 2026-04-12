@@ -4,8 +4,9 @@ import { dirname, join } from "path";
 import {
   getCollectionDb,
   entities,
+  tags,
   entityTags,
-  attachments,
+  assets,
   syncRuns,
   SearchIndexer,
   addCollection as coreAddCollection,
@@ -36,7 +37,7 @@ function addCollection(
   opts?: { enabled?: boolean },
 ): { dbPath: string } {
   const collectionDir = join(TEST_DIR, "collections", name);
-  const dbPath = join(collectionDir, "data.db");
+  const dbPath = join(collectionDir, "db", "data.db");
 
   mkdirSync(collectionDir, { recursive: true });
   mkdirSync(join(collectionDir, "markdown"), { recursive: true });
@@ -87,7 +88,16 @@ function addEntity(
 
   if (data.tags?.length) {
     for (const tag of data.tags) {
-      colDb.insert(entityTags).values({ entityId, tag }).run();
+      // Insert tag if it doesn't exist, then link to entity
+      const existing = colDb.select().from(tags).all().find((t) => t.name === tag);
+      let tagId: number;
+      if (existing) {
+        tagId = existing.id;
+      } else {
+        colDb.insert(tags).values({ name: tag }).run();
+        tagId = colDb.select().from(tags).all().find((t) => t.name === tag)!.id;
+      }
+      colDb.insert(entityTags).values({ entityId, tagId }).run();
     }
   }
 
@@ -107,13 +117,12 @@ function addAttachment(
 ): void {
   const colDb = getCollectionDb(dbPath);
   colDb
-    .insert(attachments)
+    .insert(assets)
     .values({
       entityId: data.entityId,
       filename: data.filename,
       mimeType: data.mimeType,
       storagePath: data.storagePath,
-      backend: "local",
     })
     .run();
 

@@ -1,24 +1,18 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
-import { existsSync } from "fs";
+import { existsSync, rmSync } from "fs";
 import { join } from "path";
 import {
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollectionDb,
   getCollectionDbPath,
   getFrozenInkHome,
   entities,
-  entityTags,
-  entityLinks,
-  entityRelations,
-  attachments,
-  syncState,
   syncRuns,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
-  SearchIndexer,
 } from "@frozenink/core";
 import {
   createDefaultRegistry,
@@ -109,13 +103,11 @@ export function SyncView(): React.ReactElement {
     return () => clearInterval(interval);
   }, [syncStartTime]);
 
-  const initialized = contextExists();
-  const collections = initialized
-    ? listCollections().filter((c: { enabled: boolean }) => c.enabled)
-    : [];
+  ensureInitialized();
+  const collections = listCollections().filter((c: { enabled: boolean }) => c.enabled);
 
   // Initialize sync modes for new collections
-  if (initialized && syncModes.size === 0 && collections.length > 0) {
+  if (syncModes.size === 0 && collections.length > 0) {
     const initial = new Map<string, SyncMode>();
     for (const col of collections) initial.set(col.name, "skip");
     setSyncModes(initial);
@@ -189,22 +181,15 @@ export function SyncView(): React.ReactElement {
       );
 
       const dbPath = getCollectionDbPath(col.name);
+      const collectionDir = join(home, "collections", col.name);
 
       if (isFullSync) {
-        const colDb = getCollectionDb(dbPath);
-        colDb.delete(entityLinks).run();
-        colDb.delete(entityRelations).run();
-        colDb.delete(attachments).run();
-        colDb.delete(entityTags).run();
-        colDb.delete(entities).run();
-        colDb.delete(syncState).run();
-        const indexer = new SearchIndexer(dbPath);
-        indexer.clearIndex();
-        indexer.close();
+        const contentDir = join(collectionDir, "content");
+        const dbDir = join(collectionDir, "db");
+        if (existsSync(contentDir)) rmSync(contentDir, { recursive: true, force: true });
+        if (existsSync(dbDir)) rmSync(dbDir, { recursive: true, force: true });
         setProgress((p) => [...p, "  Cleared data for full re-sync"]);
       }
-
-      const collectionDir = join(home, "collections", col.name);
       const storage = new LocalStorageBackend(collectionDir);
 
       const engine = new SyncEngine({
@@ -213,7 +198,8 @@ export function SyncView(): React.ReactElement {
         collectionName: col.name,
         themeEngine,
         storage,
-        markdownBasePath: "markdown",
+        markdownBasePath: "content",
+        assetConfig: col.assets as { extensions?: string[]; maxSize?: number } | undefined,
         onBatchFetched: ({ externalIds }: { externalIds: string[] }) => {
           if (externalIds.length > 0) {
             setFetchedCount((c) => c + externalIds.length);
@@ -283,10 +269,6 @@ export function SyncView(): React.ReactElement {
       }
     }
   });
-
-  if (!initialized) {
-    return <Text color="yellow">Not initialized.</Text>;
-  }
 
   if (collections.length === 0) {
     return (
