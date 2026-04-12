@@ -1,3 +1,5 @@
+import { posix } from "path";
+
 function serializeYamlValue(value: unknown, indent: number = 0): string {
   if (value === null || value === undefined) {
     return "null";
@@ -55,11 +57,14 @@ export function frontmatter(fields: Record<string, unknown>): string {
   return lines.join("\n");
 }
 
-export function wikilink(target: string, label?: string): string {
-  if (label) {
-    return `[[${target}|${label}]]`;
+export function wikilink(target: string, label?: string, sourcePath?: string): string {
+  const targetFile = `${target}.md`;
+  if (sourcePath) {
+    const sourceDir = posix.dirname(sourcePath);
+    const relPath = posix.relative(sourceDir, targetFile);
+    return `[${label ?? target}](${relPath})`;
   }
-  return `[[${target}]]`;
+  return `[${label ?? target}](${targetFile})`;
 }
 
 export function callout(type: string, title: string, content: string): string {
@@ -70,6 +75,14 @@ export function callout(type: string, title: string, content: string): string {
   return lines.join("\n");
 }
 
-export function embed(path: string): string {
-  return `![[${path}]]`;
+export function embed(path: string, sourcePath?: string): string {
+  const filename = path.split("/").pop() ?? path;
+  const alt = filename.replace(/\.[^.]+$/, "");
+  if (sourcePath) {
+    // Source is under markdown/, attachments is a sibling directory
+    const sourceDir = posix.dirname(`markdown/${sourcePath}`);
+    const relPath = posix.relative(sourceDir, `attachments/${path}`);
+    return `![${alt}](${relPath})`;
+  }
+  return `![${alt}](../../attachments/${path})`;
 }

@@ -8,11 +8,24 @@ const WIKILINK_PREFIX = "#wikilink/";
 interface MarkdownViewProps {
   content: string;
   collection: string;
+  filePath?: string;
   allFiles: string[];
   onWikilinkClick: (target: string, openNewTab?: boolean) => void;
 }
 
-function preprocessMarkdown(raw: string, collection: string): string {
+/** Resolve a relative path against a source file path to get a root-relative path. */
+function resolveRelativePath(sourcePath: string, target: string): string {
+  const sourceDir = sourcePath.includes("/") ? sourcePath.slice(0, sourcePath.lastIndexOf("/")) : "";
+  const parts = (sourceDir ? `${sourceDir}/${target}` : target).split("/");
+  const resolved: string[] = [];
+  for (const p of parts) {
+    if (p === "..") resolved.pop();
+    else if (p !== "." && p !== "") resolved.push(p);
+  }
+  return resolved.join("/");
+}
+
+function preprocessMarkdown(raw: string, collection: string, filePath?: string): string {
   let content = raw;
 
   // Strip frontmatter
@@ -23,7 +36,8 @@ function preprocessMarkdown(raw: string, collection: string): string {
     }
   }
 
-  // Replace image embeds: ![[path]] → ![path](/api/attachments/collection/path)
+  // Replace Obsidian image embeds: ![[path]] → ![path](/api/attachments/collection/path)
+  // (backward compatibility for Obsidian vault content)
   content = content.replace(
     /!\[\[([^\]]+)\]\]/g,
     (_match, path: string) =>
@@ -38,9 +52,8 @@ function preprocessMarkdown(raw: string, collection: string): string {
       `![${alt}](/api/attachments/${encodeURIComponent(collection)}/${path})`,
   );
 
-  // Replace wikilinks: [[target|label]] → [label](#wikilink/encoded-target)
-  // and [[target]] → [target](#wikilink/encoded-target)
-  // encodeURIComponent ensures spaces and special chars survive the URL round-trip.
+  // Replace Obsidian wikilinks: [[target|label]] and [[target]]
+  // (backward compatibility for Obsidian vault content)
   content = content.replace(
     /\[\[([^\]|]+)\|([^\]]+)\]\]/g,
     (_match, target: string, label: string) =>
@@ -50,6 +63,20 @@ function preprocessMarkdown(raw: string, collection: string): string {
     /\[\[([^\]]+)\]\]/g,
     (_match, target: string) => {
       const label = target.includes("/") ? target.split("/").pop()! : target;
+      return `[${label}](${WIKILINK_PREFIX}${encodeURIComponent(target)})`;
+    },
+  );
+
+  // Rewrite standard internal links: [label](target.md) → [label](#wikilink/target)
+  // Resolves relative paths to root-relative targets for navigation.
+  // Excludes external URLs, anchors, and already-processed wikilinks.
+  content = content.replace(
+    /\[([^\]]+)\]\((?!https?:\/\/|mailto:|#)([^)]+)\.md(?:#[^)]*)?\)/g,
+    (_match, label: string, rawTarget: string) => {
+      let target = rawTarget;
+      if (filePath && (target.startsWith("../") || !target.includes("/"))) {
+        target = resolveRelativePath(filePath, target);
+      }
       return `[${label}](${WIKILINK_PREFIX}${encodeURIComponent(target)})`;
     },
   );
@@ -88,12 +115,13 @@ function resolveWikilink(target: string, allFiles: string[]): string | null {
 export default function MarkdownView({
   content,
   collection,
+  filePath,
   allFiles,
   onWikilinkClick,
 }: MarkdownViewProps) {
   const processed = useMemo(
-    () => preprocessMarkdown(content, collection),
-    [content, collection],
+    () => preprocessMarkdown(content, collection, filePath),
+    [content, collection, filePath],
   );
 
   const components: ComponentProps<typeof ReactMarkdown>["components"] = useMemo(

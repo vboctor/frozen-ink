@@ -53,16 +53,36 @@ describe("frontmatter", () => {
 });
 
 describe("wikilink", () => {
-  it("produces [[target]] syntax", () => {
-    expect(wikilink("My Page")).toBe("[[My Page]]");
+  it("produces root-relative link without sourcePath", () => {
+    expect(wikilink("My Page")).toBe("[My Page](My Page.md)");
   });
 
-  it("produces [[target|label]] syntax with label", () => {
-    expect(wikilink("My Page", "click here")).toBe("[[My Page|click here]]");
+  it("produces link with label without sourcePath", () => {
+    expect(wikilink("My Page", "click here")).toBe("[click here](My Page.md)");
   });
 
-  it("handles paths with slashes", () => {
-    expect(wikilink("folder/page")).toBe("[[folder/page]]");
+  it("handles paths with slashes without sourcePath", () => {
+    expect(wikilink("folder/page")).toBe("[folder/page](folder/page.md)");
+  });
+
+  it("produces same-directory relative link when source and target share a folder", () => {
+    // commits/abc.md → commits/def.md = just "def.md"
+    expect(wikilink("commits/def", "def", "commits/abc.md")).toBe("[def](def.md)");
+  });
+
+  it("produces cross-directory relative link", () => {
+    // branches/main.md → commits/abc.md = "../commits/abc.md"
+    expect(wikilink("commits/abc", "abc", "branches/main.md")).toBe("[abc](../commits/abc.md)");
+  });
+
+  it("handles deep source paths", () => {
+    // project/issues/42.md → users/john = "../../users/john.md"
+    expect(wikilink("users/john", "@john", "project/issues/42.md")).toBe("[@john](../../users/john.md)");
+  });
+
+  it("handles same-project cross-type paths", () => {
+    // project/issues/42.md → project/issues/100 = "100.md"
+    expect(wikilink("project/issues/100", "#100", "project/issues/42.md")).toBe("[#100](100.md)");
   });
 });
 
@@ -86,11 +106,21 @@ describe("callout", () => {
 });
 
 describe("embed", () => {
-  it("produces ![[path]] syntax", () => {
-    expect(embed("image.png")).toBe("![[image.png]]");
+  it("produces default relative attachment path without sourcePath", () => {
+    expect(embed("image.png")).toBe("![image](../../attachments/image.png)");
   });
 
-  it("handles paths with folders", () => {
-    expect(embed("attachments/photo.jpg")).toBe("![[attachments/photo.jpg]]");
+  it("handles paths with folders without sourcePath", () => {
+    expect(embed("git/abc1234/photo.jpg")).toBe("![photo](../../attachments/git/abc1234/photo.jpg)");
+  });
+
+  it("computes correct relative path from one-level-deep source", () => {
+    // markdown/commits/abc.md → attachments/git/abc/logo.png
+    expect(embed("git/abc/logo.png", "commits/abc.md")).toBe("![logo](../../attachments/git/abc/logo.png)");
+  });
+
+  it("computes correct relative path from two-level-deep source", () => {
+    // markdown/project/issues/42.md → attachments/files/img.png
+    expect(embed("files/img.png", "project/issues/42.md")).toBe("![img](../../../attachments/files/img.png)");
   });
 });

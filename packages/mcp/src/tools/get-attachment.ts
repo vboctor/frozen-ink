@@ -20,14 +20,19 @@ import {
 function extractReferencePath(reference: string): string {
   const raw = reference.trim();
 
+  // Obsidian-style: ![[path]] (backward compat)
   const wikiMatch = raw.match(/^!\[\[(.+?)\]\]$/);
   if (wikiMatch) {
     return wikiMatch[1].split("|")[0].trim();
   }
 
+  // Standard markdown: ![alt](path)
   const mdMatch = raw.match(/^!\[[^\]]*\]\((.+?)\)$/);
   if (mdMatch) {
-    return mdMatch[1].trim();
+    let path = mdMatch[1].trim();
+    // Strip relative attachment prefix (../../attachments/ or attachments/)
+    path = path.replace(/^(?:\.\.\/)*attachments\//, "");
+    return path;
   }
 
   return raw;
@@ -94,7 +99,7 @@ export function registerGetAttachment(
         collection: z.string().describe("Collection name"),
         reference: z
           .string()
-          .describe("Attachment reference from markdown, e.g. ![[git/abc/logo.png]] or assets/git/abc/logo.png"),
+          .describe("Attachment reference from markdown, e.g. ![logo](../../attachments/git/abc/logo.png) or assets/git/abc/logo.png"),
         externalId: z
           .string()
           .optional()

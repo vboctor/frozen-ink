@@ -157,16 +157,18 @@ export function buildTextPack(
   let markdown = readFileSync(mdFullPath, "utf-8");
   const attachmentsDir = join(home, "collections", collection, "attachments");
 
-  // Find all Obsidian-style image embeds: ![[path]]
+  // Find image embeds referencing attachments in all supported formats.
   const imageRefs: Array<{ match: string; path: string }> = [];
-  const embedRegex = /!\[\[([^\]]+)\]\]/g;
   let m: RegExpExecArray | null;
+
+  // Obsidian-style embeds: ![[path]] (backward compat for vault content)
+  const embedRegex = /!\[\[([^\]]+)\]\]/g;
   while ((m = embedRegex.exec(markdown)) !== null) {
     imageRefs.push({ match: m[0], path: m[1] });
   }
 
-  // Also find standard markdown images referencing attachments: ![alt](attachments/path)
-  const mdImageRegex = /!\[([^\]]*)\]\((attachments\/[^)]+)\)/g;
+  // Standard markdown images: ![alt](../../attachments/path) or ![alt](attachments/path)
+  const mdImageRegex = /!\[([^\]]*)\]\((?:\.\.\/\.\.\/)?attachments\/([^)]+)\)/g;
   while ((m = mdImageRegex.exec(markdown)) !== null) {
     imageRefs.push({ match: m[0], path: m[2] });
   }

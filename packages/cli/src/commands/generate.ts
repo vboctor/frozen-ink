@@ -88,6 +88,33 @@ export const generateCommand = new Command("generate")
         return relative.endsWith(".md") ? relative.slice(0, -3) : relative;
       };
 
+      // Build stem-matching wikilink resolver (for Obsidian [[bare name]] links)
+      const allEntityRows = colDb
+        .select({ externalId: entities.externalId, markdownPath: entities.markdownPath })
+        .from(entities)
+        .all();
+      const byExtId = new Map<string, string>();
+      const byStem = new Map<string, string>();
+      const base = `${markdownBasePath}/`;
+      for (const r of allEntityRows) {
+        if (!r.markdownPath) continue;
+        const rel = r.markdownPath.startsWith(base) ? r.markdownPath.slice(base.length) : r.markdownPath;
+        const noExt = rel.endsWith(".md") ? rel.slice(0, -3) : rel;
+        byExtId.set(r.externalId, noExt);
+        const stem = r.externalId.replace(/\.md$/, "");
+        const stemName = stem.includes("/") ? stem.split("/").pop()! : stem;
+        if (!byStem.has(stemName)) byStem.set(stemName, noExt);
+      }
+      const resolveWikilink = (target: string): string | undefined => {
+        const clean = target.replace(/[#^].*$/, "").trim();
+        if (!clean) return undefined;
+        const withMd = clean.endsWith(".md") ? clean : `${clean}.md`;
+        if (byExtId.has(withMd)) return byExtId.get(withMd);
+        if (byExtId.has(clean)) return byExtId.get(clean);
+        const stemName = clean.includes("/") ? clean.split("/").pop()! : clean;
+        return byStem.get(stemName);
+      };
+
       const indexer = new SearchIndexer(dbPath);
       indexer.clearIndex();
       colDb.delete(links).run();
@@ -120,6 +147,7 @@ export const generateCommand = new Command("generate")
           collectionName: col.name,
           crawlerType: col.crawler,
           lookupEntityPath: entityPathLookup,
+          resolveWikilink,
         };
 
         const newPath = `${markdownBasePath}/${themeEngine.getFilePath(renderCtx)}`;
@@ -161,7 +189,10 @@ export const generateCommand = new Command("generate")
         });
 
         // Rebuild entity links
-        const targets = extractWikilinks(markdown);
+        const sourceFile = newPath.startsWith(markdownBasePath + "/")
+          ? newPath.slice(markdownBasePath.length + 1)
+          : undefined;
+        const targets = extractWikilinks(markdown, sourceFile);
         for (const target of targets) {
           const targetPath = `${markdownBasePath}/${target}.md`;
           const [targetEntity] = colDb

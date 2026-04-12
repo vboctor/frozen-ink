@@ -15,6 +15,12 @@ export interface ThemeRenderContext {
    * Used by themes to generate correct cross-reference wikilinks.
    */
   lookupEntityPath?: (externalId: string) => string | undefined;
+  /**
+   * Resolve an Obsidian-style wikilink target (bare name or path) to a markdown
+   * file path (relative to markdown root, without .md extension).
+   * Supports stem matching: "Topic" matches "subfolder/Topic.md".
+   */
+  resolveWikilink?: (target: string) => string | undefined;
 }
 
 export interface Theme {

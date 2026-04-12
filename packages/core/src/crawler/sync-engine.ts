@@ -29,17 +29,45 @@ function statMatches(
   return stored.markdownMtime === current.mtimeMs && stored.markdownSize === current.size;
 }
 
-/** Extract wikilink targets from rendered markdown. Returns unique target strings. */
-export function extractWikilinks(markdown: string): string[] {
+/**
+ * Extract internal link targets from rendered markdown.
+ * Returns unique target strings as root-relative paths (without .md extension).
+ *
+ * @param markdown  The markdown content to extract links from.
+ * @param sourceFilePath  The markdown file's path relative to the markdown root
+ *   (e.g. "commits/abc.md"). When provided, relative links are resolved to
+ *   root-relative paths. When omitted, relative prefixes are stripped as a best-effort.
+ */
+export function extractWikilinks(markdown: string, sourceFilePath?: string): string[] {
   const targets = new Set<string>();
-  // Negative lookbehind excludes ![[embeds]] (images / transclusions).
-  // Capture group strips [[target#section]] and [[target^blockref]] anchors.
-  const regex = /(?<!!)\[\[([^\]|]+?)(?:[#^][^\]|]*)?(?:\|[^\]]+?)?\]\]/g;
+
+  // Standard markdown links: [label](target.md) — exclude images, external URLs, and anchors.
+  const mdLinkRegex = /(?<!!)\[([^\]]*)\]\((?!https?:\/\/|mailto:|#)([^)]+\.md)(?:#[^)]*)?\)/g;
   let match;
-  while ((match = regex.exec(markdown)) !== null) {
+  while ((match = mdLinkRegex.exec(markdown)) !== null) {
+    let target = match[2].replace(/\.md$/, "").trim();
+    if (!target) continue;
+    // Resolve relative path to root-relative
+    if (sourceFilePath && (target.startsWith("../") || !target.includes("/"))) {
+      const sourceDir = sourceFilePath.replace(/\/[^/]+$/, "");
+      const parts = (sourceDir ? `${sourceDir}/${target}` : target).split("/");
+      const resolved: string[] = [];
+      for (const p of parts) {
+        if (p === "..") resolved.pop();
+        else if (p !== "." && p !== "") resolved.push(p);
+      }
+      target = resolved.join("/");
+    }
+    if (target) targets.add(target);
+  }
+
+  // Legacy Obsidian wikilinks: [[target|label]] — for backward compatibility with vault content.
+  const wikiRegex = /(?<!!)\[\[([^\]|]+?)(?:[#^][^\]|]*)?(?:\|[^\]]+?)?\]\]/g;
+  while ((match = wikiRegex.exec(markdown)) !== null) {
     const target = match[1].trim();
     if (target) targets.add(target);
   }
+
   return Array.from(targets);
 }
 
@@ -188,7 +216,7 @@ export class SyncEngine {
         });
 
         // Process entities (links are deferred until all entities exist)
-        const deferredLinks: Array<{ entityId: number; markdown: string }> = [];
+        const deferredLinks: Array<{ entityId: number; markdown: string; markdownPath?: string }> = [];
         for (const entityData of result.entities) {
           const counts = await this.upsertEntity(entityData, crawlerType, deferredLinks);
           created += counts.created;
@@ -202,8 +230,8 @@ export class SyncEngine {
         }
 
         // Sync links now that all entities in the batch exist
-        for (const { entityId, markdown } of deferredLinks) {
-          this.syncLinks(entityId, markdown);
+        for (const { entityId, markdown, markdownPath } of deferredLinks) {
+          this.syncLinks(entityId, markdown, markdownPath);
         }
 
         // Handle deletions
@@ -286,7 +314,7 @@ export class SyncEngine {
   private async upsertEntity(
     entityData: CrawlerEntityData,
     crawlerType: string,
-    deferredLinks?: Array<{ entityId: number; markdown: string }>,
+    deferredLinks?: Array<{ entityId: number; markdown: string; markdownPath?: string }>,
   ): Promise<{ created: number; updated: number }> {
     const contentHash = entityData.contentHash ?? computeHash(entityData.data);
 
@@ -343,9 +371,9 @@ export class SyncEngine {
 
       // Defer link syncing until all entities in the batch exist
       if (deferredLinks) {
-        deferredLinks.push({ entityId: existing.id, markdown });
+        deferredLinks.push({ entityId: existing.id, markdown, markdownPath: filePath });
       } else {
-        this.syncLinks(existing.id, markdown);
+        this.syncLinks(existing.id, markdown, filePath);
       }
 
       // Update search index
@@ -397,9 +425,9 @@ export class SyncEngine {
 
     // Defer link syncing until all entities in the batch exist
     if (deferredLinks) {
-      deferredLinks.push({ entityId: inserted.id, markdown });
+      deferredLinks.push({ entityId: inserted.id, markdown, markdownPath: filePath });
     } else {
-      this.syncLinks(inserted.id, markdown);
+      this.syncLinks(inserted.id, markdown, filePath);
     }
 
     // Add to search index
@@ -495,9 +523,14 @@ export class SyncEngine {
   private syncLinks(
     entityId: number,
     markdown: string,
+    markdownPath?: string,
   ): void {
     // Extract wikilink targets and resolve them to entity IDs
-    const wikiTargets = extractWikilinks(markdown);
+    // Strip the base path prefix to get the file-relative path for resolution
+    const sourceFile = markdownPath?.startsWith(this.markdownBasePath + "/")
+      ? markdownPath.slice(this.markdownBasePath.length + 1)
+      : markdownPath;
+    const wikiTargets = extractWikilinks(markdown, sourceFile);
     const newTargetIds = new Set<number>();
     for (const target of wikiTargets) {
       const targetPath = `${this.markdownBasePath}/${target}.md`;
@@ -562,6 +595,52 @@ export class SyncEngine {
     };
   }
 
+  /**
+   * Build a wikilink resolver that supports Obsidian-style stem matching.
+   * "Topic" matches an entity whose externalId ends with "/Topic.md" or is "Topic.md".
+   */
+  private makeResolveWikilink(): (target: string) => string | undefined {
+    const allRows = this.db
+      .select({ externalId: entities.externalId, markdownPath: entities.markdownPath })
+      .from(entities)
+      .all();
+
+    const byExternalId = new Map<string, string>();
+    const byStem = new Map<string, string>();
+    const base = `${this.markdownBasePath}/`;
+
+    for (const row of allRows) {
+      if (!row.markdownPath) continue;
+      const relative = row.markdownPath.startsWith(base)
+        ? row.markdownPath.slice(base.length)
+        : row.markdownPath;
+      const withoutExt = relative.endsWith(".md") ? relative.slice(0, -3) : relative;
+
+      byExternalId.set(row.externalId, withoutExt);
+
+      // Stem key: filename without path and extension
+      const idWithoutExt = row.externalId.replace(/\.md$/, "");
+      const stemName = idWithoutExt.includes("/") ? idWithoutExt.split("/").pop()! : idWithoutExt;
+      if (!byStem.has(stemName)) {
+        byStem.set(stemName, withoutExt);
+      }
+    }
+
+    return (target: string) => {
+      const clean = target.replace(/[#^].*$/, "").trim();
+      if (!clean) return undefined;
+
+      // Try exact externalId match (with and without .md)
+      const withMd = clean.endsWith(".md") ? clean : `${clean}.md`;
+      if (byExternalId.has(withMd)) return byExternalId.get(withMd);
+      if (byExternalId.has(clean)) return byExternalId.get(clean);
+
+      // Stem match: bare filename without path
+      const stemName = clean.includes("/") ? clean.split("/").pop()! : clean;
+      return byStem.get(stemName);
+    };
+  }
+
   private renderMarkdown(
     entityData: CrawlerEntityData,
     crawlerType: string,
@@ -578,6 +657,7 @@ export class SyncEngine {
       collectionName: this.collectionName,
       crawlerType,
       lookupEntityPath: this.makeLookupEntityPath(),
+      resolveWikilink: this.makeResolveWikilink(),
     });
   }
 
@@ -638,7 +718,7 @@ export class SyncEngine {
         .run();
 
       // Re-sync wikilinks
-      this.syncLinks(row.id, markdown);
+      this.syncLinks(row.id, markdown, filePath);
 
       // Update search index
       this.searchIndexer.updateIndex({
@@ -677,6 +757,7 @@ export class SyncEngine {
         collectionName: this.collectionName,
         crawlerType,
         lookupEntityPath: this.makeLookupEntityPath(),
+        resolveWikilink: this.makeResolveWikilink(),
       });
       await this.storage.write(entity.markdownPath, expected);
       const writtenStat = await this.storage.stat(entity.markdownPath);

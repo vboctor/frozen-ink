@@ -139,8 +139,8 @@ describe("GitHubTheme", () => {
     it("renders wikilinks for related issues", () => {
       const md = theme.render(makeIssueContext());
       expect(md).toContain("> [!link] Related Issues");
-      expect(md).toContain("[[issues/100|#100]]");
-      expect(md).toContain("[[issues/200|#200]]");
+      expect(md).toContain("[#100](100.md)");
+      expect(md).toContain("[#200](200.md)");
     });
 
     it("omits related issues section when no refs in body", () => {
@@ -256,8 +256,8 @@ describe("GitHubTheme", () => {
     it("renders linked issues as wikilinks", () => {
       const md = theme.render(makePRContext());
       expect(md).toContain("> [!link] Linked Issues");
-      expect(md).toContain("[[issues/50|#50]]");
-      expect(md).toContain("[[issues/51|#51]]");
+      expect(md).toContain("[#50](../issues/50.md)");
+      expect(md).toContain("[#51](../issues/51.md)");
     });
 
     it("shows merged review status when PR is merged", () => {
