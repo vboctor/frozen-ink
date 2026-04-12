@@ -74,7 +74,7 @@ async function runSearch(
           .where(eq(entities.id, r.entityId))
           .all();
         const rawPath = entity?.markdownPath ?? null;
-        const filename = rawPath ? rawPath.replace(/^markdown\//, "") : null;
+        const filename = rawPath ? rawPath.replace(/^content\//, "") : null;
         allResults.push({ ...r, collection: col.name, filename });
       }
     } finally {

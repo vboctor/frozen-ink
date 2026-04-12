@@ -55,7 +55,7 @@ export const indexCommand = new Command("index")
 
       const colDb = getCollectionDb(dbPath);
       const collectionDir = join(home, "collections", col.name);
-      const markdownBasePath = "markdown";
+      const markdownBasePath = "content";
 
       // Clear existing search index and links
       const indexer = new SearchIndexer(dbPath);

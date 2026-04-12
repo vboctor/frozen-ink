@@ -382,6 +382,27 @@ export class MantisBTTheme implements Theme {
     return this.renderIssueHtml(context);
   }
 
+  getTitle(context: ThemeRenderContext): string | undefined {
+    const d = context.entity.data;
+    switch (context.entity.entityType) {
+      case "issue":
+        return d.id != null && d.summary != null
+          ? `${padId(d.id as number)}: ${d.summary as string}`
+          : undefined;
+      case "page":
+        return ((d.title || d.name) as string) || undefined;
+      case "user": {
+        const realName = d.realName as string | null;
+        const name = d.name as string;
+        return realName ? `${realName} (@${name})` : name;
+      }
+      case "project":
+        return (d.name as string) || undefined;
+      default:
+        return undefined;
+    }
+  }
+
   private renderIssueHtml(context: ThemeRenderContext): string {
     const d = context.entity.data;
     const lookup = context.lookupEntityPath;
@@ -863,7 +884,7 @@ export class MantisBTTheme implements Theme {
 
     // Frontmatter
     const fm: Record<string, unknown> = {
-      title: d.summary,
+      title: `${padId(d.id as number)}: ${d.summary}`,
       type: "issue",
       id: d.id,
       status: status.name,

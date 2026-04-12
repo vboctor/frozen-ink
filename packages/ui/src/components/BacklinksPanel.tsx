@@ -39,7 +39,7 @@ export default function BacklinksPanel({ backlinks, open, onNavigate }: Backlink
                 className="backlink-item"
                 onClick={() => {
                   if (bl.markdownPath) {
-                    const path = bl.markdownPath.replace(/^markdown\//, "");
+                    const path = bl.markdownPath.replace(/^content\//, "");
                     onNavigate(path);
                   }
                 }}

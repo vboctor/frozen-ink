@@ -46,7 +46,7 @@ function addTestCollection(
   const collectionDir = join(TEST_DIR, "collections", name);
   const dbPath = join(collectionDir, "db", "data.db");
   mkdirSync(collectionDir, { recursive: true });
-  mkdirSync(join(collectionDir, "markdown"), { recursive: true });
+  mkdirSync(join(collectionDir, "content"), { recursive: true });
 
   const colDb = getCollectionDb(dbPath);
 
@@ -65,7 +65,7 @@ function addTestCollection(
         title: "Test Issue One",
         data: { number: 1, body: "First test issue body" },
         url: "https://github.com/test/repo/issues/1",
-        markdownPath: "markdown/issues/issue-1.md",
+        markdownPath: "content/issues/issue-1.md",
       })
       .run();
 
@@ -77,7 +77,7 @@ function addTestCollection(
         title: "Test Pull Request",
         data: { number: 2, body: "PR description" },
         url: "https://github.com/test/repo/pull/2",
-        markdownPath: "markdown/pull-requests/pr-2.md",
+        markdownPath: "content/pull-requests/pr-2.md",
       })
       .run();
 
@@ -90,10 +90,10 @@ function addTestCollection(
     colDb.insert(entityTags).values({ entityId: entityRows[0].id, tagId: bugTag.id }).run();
     colDb.insert(entityTags).values({ entityId: entityRows[0].id, tagId: criticalTag.id }).run();
 
-    mkdirSync(join(collectionDir, "markdown", "issues"), { recursive: true });
-    mkdirSync(join(collectionDir, "markdown", "pull-requests"), { recursive: true });
-    writeFileSync(join(collectionDir, "markdown", "issues", "issue-1.md"), "# Test Issue One\nFirst test issue body");
-    writeFileSync(join(collectionDir, "markdown", "pull-requests", "pr-2.md"), "# Test Pull Request\nPR description");
+    mkdirSync(join(collectionDir, "content", "issues"), { recursive: true });
+    mkdirSync(join(collectionDir, "content", "pull-requests"), { recursive: true });
+    writeFileSync(join(collectionDir, "content", "issues", "issue-1.md"), "# Test Issue One\nFirst test issue body");
+    writeFileSync(join(collectionDir, "content", "pull-requests", "pr-2.md"), "# Test Pull Request\nPR description");
   }
 
   if (opts?.addAttachment) {

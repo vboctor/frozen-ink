@@ -165,6 +165,12 @@ export class SyncEngine {
     const startedAt = new Date().toISOString().replace("T", " ").replace("Z", "");
     const syncType = options?.syncType ?? "incremental";
 
+    // Pass asset filter to the crawler so it can skip downloads pre-emptively
+    this.crawler.setAssetFilter?.({
+      maxSizeBytes: this.maxAssetSizeBytes,
+      allowedExtensions: this.allowedExtensions,
+    });
+
     // Create sync_run record
     this.db
       .insert(syncRuns)
@@ -328,6 +334,19 @@ export class SyncEngine {
     if (existing) {
       // Compare hash — skip re-render if unchanged
       if (existing.contentHash === contentHash) {
+        // Still update title/url — cheap metadata that can change without content changing
+        // (e.g. title format updates, URL changes).
+        if (existing.title !== entityData.title || existing.url !== (entityData.url ?? null)) {
+          this.db
+            .update(entities)
+            .set({
+              title: entityData.title,
+              url: entityData.url ?? null,
+              updatedAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
+            })
+            .where(eq(entities.id, existing.id))
+            .run();
+        }
         return { created: 0, updated: 0 };
       }
 
@@ -690,10 +709,24 @@ export class SyncEngine {
   private async reRenderAllEntities(crawlerType: string): Promise<void> {
     const allEntities = this.db.select().from(entities).all();
     for (const row of allEntities) {
+      // Re-derive title from stored data via the theme (no API call needed).
+      const derivedTitle = this.themeEngine.getTitle({
+        entity: {
+          externalId: row.externalId,
+          entityType: row.entityType,
+          title: row.title,
+          data: row.data as Record<string, unknown>,
+          url: row.url ?? undefined,
+        },
+        collectionName: this.collectionName,
+        crawlerType,
+      });
+      const title = derivedTitle ?? row.title;
+
       const entityData: CrawlerEntityData = {
         externalId: row.externalId,
         entityType: row.entityType,
-        title: row.title,
+        title,
         data: row.data,
         url: row.url ?? undefined,
       };
@@ -710,6 +743,7 @@ export class SyncEngine {
       this.db
         .update(entities)
         .set({
+          title,
           markdownPath: filePath,
           markdownMtime: stat?.mtimeMs ?? null,
           markdownSize: stat?.size ?? null,
@@ -725,7 +759,7 @@ export class SyncEngine {
         id: row.id,
         externalId: row.externalId,
         entityType: row.entityType,
-        title: row.title,
+        title,
         content: markdown,
         tags: [],
       });

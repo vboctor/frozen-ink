@@ -90,7 +90,7 @@ export default function LinksPanel({ backlinks, outgoingLinks, open, onNavigate 
     .sort((a, b) => a.title.localeCompare(b.title))
     .map((bl) => ({
       title: bl.title,
-      markdownPath: bl.markdownPath ? bl.markdownPath.replace(/^markdown\//, "") : null,
+      markdownPath: bl.markdownPath ? bl.markdownPath.replace(/^content\//, "") : null,
     }));
 
   return (

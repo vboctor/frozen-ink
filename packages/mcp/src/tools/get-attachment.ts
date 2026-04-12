@@ -90,7 +90,7 @@ function buildCandidates(refPath: string, markdownPath: string | null): string[]
       candidates.add(`assets/${relResolved}`);
     }
 
-    const relResolvedNoMd = posix.normalize(posix.join(markdownDir.replace(/^markdown\/?/, ""), clean));
+    const relResolvedNoMd = posix.normalize(posix.join(markdownDir.replace(/^content\/?/, ""), clean));
     candidates.add(relResolvedNoMd);
     if (!relResolvedNoMd.startsWith("assets/")) {
       candidates.add(`assets/${relResolvedNoMd}`);

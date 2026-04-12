@@ -4,6 +4,7 @@ import type {
   CrawlerEntityData,
   SyncCursor,
   SyncResult,
+  AssetFilter,
 } from "@frozenink/core";
 import { createCryptoHasher } from "@frozenink/core";
 import type {
@@ -93,7 +94,7 @@ export class MantisBTCrawler implements Crawler {
     displayName: "MantisBT Issue Tracker",
     description:
       "Crawls a MantisBT instance via its REST API, syncing issues from newest to oldest",
-    version: "3.1",
+    version: "3.2",
     configSchema: {
       url: {
         type: "string",
@@ -121,6 +122,19 @@ export class MantisBTCrawler implements Crawler {
   private mantisHubMode = false;
   private syncEntities?: MantisBTEntityType[];
   private fetchFn: typeof fetch = globalThis.fetch;
+  private assetFilter: AssetFilter | null = null;
+
+  setAssetFilter(filter: AssetFilter): void {
+    this.assetFilter = filter;
+  }
+
+  /** Returns true if the attachment should be downloaded based on extension and size. */
+  private shouldDownloadAttachment(filename: string, sizeBytes: number): boolean {
+    if (!this.assetFilter) return true;
+    const dot = filename.lastIndexOf(".");
+    const ext = dot === -1 ? "" : filename.slice(dot).toLowerCase();
+    return this.assetFilter.allowedExtensions.has(ext) && sizeBytes <= this.assetFilter.maxSizeBytes;
+  }
 
   /** Accept both new field names and legacy field names for backward compat. */
   private static resolveConfig(config: Record<string, unknown>): MantisBTConfig {
@@ -753,6 +767,8 @@ export class MantisBTCrawler implements Crawler {
       const storedName = assetFilename(file.id, file.name);
       const storagePath = `${assetPrefix}/${storedName}`;
 
+      if (!this.shouldDownloadAttachment(file.name, file.size)) continue;
+
       // The download_url from Pages is relative; make it absolute.
       let downloadUrl = file.download_url;
       if (downloadUrl && !downloadUrl.startsWith("http")) {
@@ -933,31 +949,40 @@ export class MantisBTCrawler implements Crawler {
     }
 
     // Download attachments; track storage paths that were successfully saved.
-    // Uses core MantisBT REST API first. On MantisHub instances, if the core
-    // API fails, falls back to the ApiX IssueViewPage for signed download URLs.
+    // On MantisHub instances, signed URLs (via ApiX IssueViewPage) are fetched
+    // upfront and used as the primary download method — more efficient than the
+    // MantisBT REST API which may not serve cloud-stored files. On plain MantisBT
+    // the REST API is used directly.
     const entityAttachments: CrawlerEntityData["attachments"] = [];
     const savedPaths = new Set<string>();
-    let mantisHubUrls: Map<number, AttachmentUrlInfo> | null = null;
     const assetPrefix = this.assetDir("issues", issue.project?.name);
+
+    // For MantisHub: eagerly fetch all signed URLs once for this issue.
+    const mantisHubUrls: Map<number, AttachmentUrlInfo> = this.mantisHubMode
+      ? await this.fetchMantisHubAttachmentUrls(issue.id)
+      : new Map();
 
     for (const file of issue.attachments ?? []) {
       const storedName = assetFilename(file.id, file.filename);
       const storagePath = `${assetPrefix}/${storedName}`;
-      let content = await this.downloadAttachment(
-        issue.id, file.id, file.download_url,
-        `issue ${issue.id} file "${file.filename}"`,
-      );
 
-      // MantisHub fallback: fetch signed URLs if core API failed
-      if (!content && this.mantisHubMode) {
-        if (!mantisHubUrls) {
-          mantisHubUrls = await this.fetchMantisHubAttachmentUrls(issue.id);
-        }
+      if (!this.shouldDownloadAttachment(file.filename, file.size)) continue;
+
+      let content: Buffer | null = null;
+      const label = `issue ${issue.id} file "${file.filename}"`;
+
+      if (this.mantisHubMode) {
+        // MantisHub: use signed URL first, fall back to REST API
         const urlInfo = mantisHubUrls.get(file.id);
         const signedUrl = urlInfo?.signedUrl ?? urlInfo?.url;
         if (signedUrl) {
-          content = await this.downloadBinary(signedUrl, `issue ${issue.id} file "${file.filename}" (MantisHub)`);
+          content = await this.downloadBinary(signedUrl, `${label} (MantisHub)`);
         }
+        if (!content) {
+          content = await this.downloadAttachment(issue.id, file.id, file.download_url, label);
+        }
+      } else {
+        content = await this.downloadAttachment(issue.id, file.id, file.download_url, label);
       }
 
       if (content) {
@@ -975,21 +1000,24 @@ export class MantisBTCrawler implements Crawler {
       for (const att of note.attachments ?? []) {
         const storedName = assetFilename(att.id, att.filename);
         const storagePath = `${assetPrefix}/${storedName}`;
-        let content = await this.downloadAttachment(
-          issue.id, att.id, att.download_url,
-          `issue ${issue.id} note ${note.id} file "${att.filename}"`,
-        );
 
-        // MantisHub fallback: fetch signed URLs if core API failed
-        if (!content && this.mantisHubMode) {
-          if (!mantisHubUrls) {
-            mantisHubUrls = await this.fetchMantisHubAttachmentUrls(issue.id);
-          }
+        if (!this.shouldDownloadAttachment(att.filename, att.size)) continue;
+
+        let content: Buffer | null = null;
+        const label = `issue ${issue.id} note ${note.id} file "${att.filename}"`;
+
+        if (this.mantisHubMode) {
+          // MantisHub: use signed URL first, fall back to REST API
           const urlInfo = mantisHubUrls.get(att.id);
           const signedUrl = urlInfo?.signedUrl ?? urlInfo?.url;
           if (signedUrl) {
-            content = await this.downloadBinary(signedUrl, `issue ${issue.id} note ${note.id} file "${att.filename}" (MantisHub)`);
+            content = await this.downloadBinary(signedUrl, `${label} (MantisHub)`);
           }
+          if (!content) {
+            content = await this.downloadAttachment(issue.id, att.id, att.download_url, label);
+          }
+        } else {
+          content = await this.downloadAttachment(issue.id, att.id, att.download_url, label);
         }
 
         if (content) {
@@ -1007,7 +1035,7 @@ export class MantisBTCrawler implements Crawler {
     return {
       externalId: `issue:${issue.id}`,
       entityType: "issue",
-      title: issue.summary,
+      title: `${padId(issue.id)}: ${issue.summary}`,
       contentHash,
       url: `${this.baseUrl}/view.php?id=${issue.id}`,
       data: {
