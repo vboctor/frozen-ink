@@ -10,6 +10,11 @@ import {
   type SearchResult,
 } from "@frozenink/core";
 import type { McpServerOptions } from "../server";
+import {
+  buildCollectionDeniedError,
+  filterAllowedCollections,
+  isCollectionAllowed,
+} from "../collection-scope";
 
 export function registerSearch(
   server: McpServer,
@@ -53,12 +58,28 @@ export function registerSearch(
         };
       }
 
-      let collectionRows = args.collection
+      const collectionRows = args.collection
         ? (() => {
+            if (!isCollectionAllowed(options, args.collection)) {
+              return [];
+            }
             const col = getCollection(args.collection);
             return col ? [col] : [];
           })()
-        : listCollections();
+        : filterAllowedCollections(options, listCollections());
+
+      if (args.collection && !isCollectionAllowed(options, args.collection)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: buildCollectionDeniedError(args.collection),
+              }),
+            },
+          ],
+        };
+      }
 
       const allResults: Array<SearchResult & { collection: string }> = [];
 

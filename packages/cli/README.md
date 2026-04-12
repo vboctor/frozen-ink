@@ -116,6 +116,10 @@ All commands are also available in headless mode for scripting and CI:
 | `fink index <name\|"*">` | Rebuild search index |
 | `fink serve` | Start API server + web UI |
 | `fink serve --mcp-only` | Start MCP server only |
+| `fink mcp add --tool <tool> <collection...>` | Register collection-scoped MCP links in a client tool |
+| `fink mcp remove --tool <tool> <collection...>` | Remove collection-scoped MCP links from a client tool |
+| `fink mcp list [--tool <tool>]` | Show MCP link status by collection |
+| `fink mcp serve --collection <name>` | MCP stdio entrypoint used by client tools |
 | `fink daemon start\|stop\|status` | Background sync daemon |
 | `fink publish <collections...>` | Publish to Cloudflare |
 | `fink unpublish <name>` | Remove a deployment |
@@ -150,14 +154,38 @@ Published sites include:
 Frozen Ink includes an MCP server for AI tools (Claude, etc.):
 
 ```bash
-# Local MCP server (STDIO transport)
-fink serve --mcp-only
+# Link one or more collections to Claude Code
+fink mcp add --tool claude-code my-repo
+fink mcp add --tool claude-code my-notes
+
+# Or add both in one command
+fink mcp add --tool claude-code my-repo my-notes
+
+# List link status
+fink mcp list --tool claude-code
+
+# Remove a single collection link
+fink mcp remove --tool claude-code my-repo
+
+# MCP stdio command used by clients
+fink mcp serve --collection my-notes
 
 # Or use the published MCP endpoint
 claude mcp add frozenink --transport streamable-http \
   --url https://my-site.workers.dev/mcp \
   --header "Authorization: Bearer <password>"
 ```
+
+Behavior notes:
+
+- Installed-user flow uses `fink mcp serve --collection <name>` and does not require Bun.
+- MCP clients launch the stdio command on demand; you do not run a background MCP server manually.
+- One MCP connection is created per `(tool, collection)`:
+  - Add `my-repo` then `my-notes` => 2 connections
+  - Add `my-repo my-notes` together => also 2 connections
+- Codex tool support is best-effort and shown only when `codex mcp` commands are detected.
+
+TUI path: open `fink` -> `Collections` -> select a collection -> press `[m]` for MCP actions.
 
 **Tools:** `collection_list`, `entity_search`, `entity_get_data`, `entity_get_markdown`, `entity_get_attachment`
 

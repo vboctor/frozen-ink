@@ -3,4 +3,5 @@ export interface Env {
   BUCKET: R2Bucket;
   PASSWORD_HASH: string;
   WORKER_NAME: string;
+  TOOL_DESCRIPTION?: string;
 }

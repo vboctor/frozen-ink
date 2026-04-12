@@ -12,6 +12,10 @@ import {
 } from "@frozenink/core";
 import { and, eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
+import {
+  buildCollectionDeniedError,
+  isCollectionAllowed,
+} from "../collection-scope";
 
 function extractReferencePath(reference: string): string {
   const raw = reference.trim();
@@ -105,6 +109,19 @@ export function registerGetAttachment(
             {
               type: "text" as const,
               text: JSON.stringify({ error: "Frozen Ink not initialized" }),
+            },
+          ],
+        };
+      }
+
+      if (!isCollectionAllowed(options, args.collection)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: buildCollectionDeniedError(args.collection),
+              }),
             },
           ],
         };

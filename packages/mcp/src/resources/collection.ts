@@ -12,6 +12,11 @@ import {
 } from "@frozenink/core";
 import { desc } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
+import {
+  buildCollectionDeniedError,
+  filterAllowedCollections,
+  isCollectionAllowed,
+} from "../collection-scope";
 
 export function registerCollectionResources(
   server: McpServer,
@@ -38,7 +43,7 @@ export function registerCollectionResources(
         };
       }
 
-      const rows = listCollections();
+      const rows = filterAllowedCollections(options, listCollections());
       const result = rows.map((col) => ({
         name: col.name,
         crawlerType: col.crawler,
@@ -64,7 +69,7 @@ export function registerCollectionResources(
       list: async () => {
         if (!contextExists()) return { resources: [] };
 
-        const rows = listCollections();
+        const rows = filterAllowedCollections(options, listCollections());
 
         return {
           resources: rows.map((col) => ({
@@ -101,6 +106,17 @@ export function registerCollectionResources(
       }
 
       const col = getCollection(name);
+      if (!isCollectionAllowed(options, name)) {
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "application/json",
+              text: JSON.stringify({ error: buildCollectionDeniedError(name) }),
+            },
+          ],
+        };
+      }
       if (!col) {
         return {
           contents: [

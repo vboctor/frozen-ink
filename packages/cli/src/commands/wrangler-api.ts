@@ -233,7 +233,12 @@ export function generateWranglerToml(config: {
   d1DatabaseId: string;
   r2BucketName: string;
   passwordHash: string;
+  toolDescription?: string;
 }): string {
+  const escapedToolDescription = (config.toolDescription ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+
   return `name = "${config.workerName}"
 main = "${config.mainScript}"
 compatibility_date = "2024-01-01"
@@ -241,6 +246,7 @@ compatibility_date = "2024-01-01"
 [vars]
 PASSWORD_HASH = "${config.passwordHash}"
 WORKER_NAME = "${config.workerName}"
+TOOL_DESCRIPTION = "${escapedToolDescription}"
 
 [[d1_databases]]
 binding = "DB"

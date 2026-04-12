@@ -15,6 +15,7 @@ import { publishCommand } from "./commands/publish";
 import { updateCommand } from "./commands/update";
 import { unpublishCommand } from "./commands/unpublish";
 import { tuiCommand } from "./commands/tui";
+import { mcpCommand } from "./commands/mcp";
 import { startTui } from "./tui/index";
 
 const program = new Command();
@@ -39,6 +40,7 @@ program.addCommand(daemonCommand);
 program.addCommand(publishCommand);
 program.addCommand(unpublishCommand);
 program.addCommand(tuiCommand);
+program.addCommand(mcpCommand);
 
 // If no arguments passed (just "fink"), launch TUI by default
 const args = process.argv.slice(2);

@@ -279,6 +279,10 @@ Running `fink` with no arguments launches the **interactive TUI** with keyboard-
 | `fink generate <name\|"*">` | Re-generate markdown without re-syncing |
 | `fink index <name\|"*">` | Rebuild search index and links |
 | `fink serve` | Start API server + MCP server |
+| `fink mcp add --tool <tool> <collection...>` | Register collection-scoped MCP links in a client tool |
+| `fink mcp remove --tool <tool> <collection...>` | Remove collection-scoped MCP links from a client tool |
+| `fink mcp list [--tool <tool>]` | Show MCP link status by collection |
+| `fink mcp serve --collection <name>` | MCP stdio entrypoint used by client tools |
 | `fink daemon start\|stop\|status` | Background sync daemon |
 | `fink publish <collections...>` | Publish to Cloudflare (see [docs/publish.md](docs/publish.md)) |
 | `fink unpublish <name>` | Remove a Cloudflare deployment |
@@ -316,6 +320,33 @@ Exposes 5 tools and 4 resources for AI assistants:
 **Tools:** `collection_list`, `entity_search`, `entity_get_data`, `entity_get_markdown`, `entity_get_attachment`
 
 **Resources:** `frozenink://collections`, `frozenink://collections/{name}`, `frozenink://entities/{collection}/{externalId}`, `frozenink://markdown/{collection}/{+path}`
+
+### Installed-user MCP flow (no Bun required)
+
+```bash
+# Link one collection
+fink mcp add --tool claude-code my-github
+
+# Link multiple collections (still one connection per collection)
+fink mcp add --tool claude-code my-github my-notes
+
+# Remove one collection link without affecting others
+fink mcp remove --tool claude-code my-github
+
+# Inspect links
+fink mcp list --tool claude-code
+```
+
+Client tools execute `fink mcp serve --collection <name>` on demand over stdio, so no manual MCP server process is required for local tool links.
+
+Connection count semantics:
+
+- Add `my-github` then `my-notes` => 2 MCP connections
+- Add `my-github my-notes` in one command => also 2 MCP connections
+
+TUI path: `fink` -> `Collections` -> select collection -> `[m]` MCP config.
+
+Codex MCP support is best-effort and available only when `codex mcp` CLI commands are detected.
 
 ## Development
 

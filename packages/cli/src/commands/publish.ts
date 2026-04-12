@@ -92,6 +92,7 @@ async function runConcurrent<T>(
 export interface PublishOptions {
   collectionNames: string[];
   workerName: string;
+  toolDescription?: string;
   password?: string;
   removePassword?: boolean;
   forcePublic?: boolean;
@@ -102,6 +103,7 @@ export interface PublishResult {
   workerName: string;
   workerUrl: string;
   mcpUrl: string;
+  toolDescription?: string;
   collections: string[];
   isUpdate: boolean;
   workerOnly: boolean;
@@ -119,6 +121,35 @@ async function hashPassword(password: string): Promise<string> {
   return `${salt}:${hashHex}`;
 }
 
+function deriveToolDescriptionFromCollections(collectionNames: string[]): string | undefined {
+  const descriptions = collectionNames
+    .map((name) => getCollection(name)?.mcpToolDescription?.trim())
+    .filter((value): value is string => !!value);
+
+  if (descriptions.length === 0) return undefined;
+  return descriptions.join(" | ");
+}
+
+async function promptToolDescription(
+  initialValue?: string,
+): Promise<string | undefined> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return initialValue;
+  }
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const label = initialValue
+    ? `MCP tool description [${initialValue}] (optional): `
+    : "MCP tool description (optional): ";
+  const answer = await new Promise<string>((resolve) => {
+    rl.question(label, (value) => resolve(value));
+  });
+  rl.close();
+
+  const trimmed = answer.trim();
+  return trimmed || initialValue;
+}
+
 /**
  * Core publish logic, callable from both CLI and desktop app.
  * Progress is reported via the onProgress callback instead of console.log.
@@ -130,6 +161,7 @@ export async function publishCollections(
   await checkWranglerAuth();
 
   const { workerName, workerOnly = false, removePassword = false, forcePublic = false } = options;
+  let toolDescription = options.toolDescription?.trim() || undefined;
   const password = options.password?.trim();
   if (password && removePassword) {
     throw new Error("Cannot use --password and --remove-password together.");
@@ -145,6 +177,9 @@ export async function publishCollections(
 
   if (workerOnly && existingSite) {
     collectionNames = existingSite.collections;
+    if (!toolDescription) {
+      toolDescription = existingSite.toolDescription;
+    }
   }
 
   const home = getFrozenInkHome();
@@ -221,6 +256,7 @@ export async function publishCollections(
     d1DatabaseId,
     r2BucketName,
     passwordHash,
+    toolDescription,
   });
   const tomlFile = writeTempFile(tomlContent, ".toml");
   let workerUrl = "";
@@ -486,6 +522,7 @@ export async function publishCollections(
   addSite(workerName, {
     url: workerUrl,
     mcpUrl,
+    toolDescription,
     collections: collectionNames,
     database: { type: "cloudflare-d1", id: d1DatabaseId, name: d1DatabaseName },
     bucket: { type: "cloudflare-r2", name: r2BucketName },
@@ -495,7 +532,15 @@ export async function publishCollections(
 
   onProgress("done", "Publish completed");
 
-  return { workerName, workerUrl, mcpUrl, collections: collectionNames, isUpdate, workerOnly };
+  return {
+    workerName,
+    workerUrl,
+    mcpUrl,
+    toolDescription,
+    collections: collectionNames,
+    isUpdate,
+    workerOnly,
+  };
 }
 
 // --- CLI command ---
@@ -506,12 +551,14 @@ export const publishCommand = new Command("publish")
   .option("--password <password>", "Password to protect access")
   .option("--remove-password", "Explicitly remove password protection")
   .option("--public", "Explicitly allow public access on initial publish (skip confirmation prompt)")
+  .option("--tool-description <description>", "Tool description advertised to MCP clients")
   .option("--name <name>", "Worker name (default: fink-<first-collection>-<random>)")
   .option("--worker-only", "Deploy worker code only (skip D1/R2 data upload); requires --name for an existing deployment")
   .action(async (collectionNamesArg: string[], opts: {
     password?: string;
     removePassword?: boolean;
     public?: boolean;
+    toolDescription?: string;
     name?: string;
     workerOnly?: boolean;
   }) => {
@@ -532,6 +579,7 @@ export const publishCommand = new Command("publish")
 
       const workerName = opts.name || `fink-${collectionNames[0]}-${randomSuffix()}`;
       let forcePublic = !!opts.public;
+      let toolDescription = opts.toolDescription?.trim() || undefined;
 
       if (!forcePublic && !opts.password && !workerOnly) {
         const existingSite = getSite(workerName);
@@ -552,10 +600,16 @@ export const publishCommand = new Command("publish")
         }
       }
 
+      if (!workerOnly && !toolDescription) {
+        const derived = deriveToolDescriptionFromCollections(collectionNames);
+        toolDescription = await promptToolDescription(derived);
+      }
+
       const result = await publishCollections(
         {
           collectionNames,
           workerName,
+          toolDescription,
           password: opts.password,
           removePassword: opts.removePassword,
           forcePublic,
