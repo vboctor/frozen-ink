@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "fs";
 import { basename, join, posix } from "path";
 import {
   contextExists,
+  listCollections,
   getCollection,
   getCollectionDb,
   getCollectionDbPath,
@@ -14,8 +15,15 @@ import { and, eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 import {
   buildCollectionDeniedError,
+  filterAllowedCollections,
   isCollectionAllowed,
 } from "../collection-scope";
+
+function textErr(message: string) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+  };
+}
 
 function extractReferencePath(reference: string): string {
   const raw = reference.trim();
@@ -57,8 +65,15 @@ function normalizePath(p: string): string {
 function buildCandidates(refPath: string, markdownPath: string | null): string[] {
   const candidates = new Set<string>();
 
-  const clean = normalizePath(refPath);
-  if (!clean || clean.startsWith("http://") || clean.startsWith("https://") || clean.startsWith("data:")) {
+  // Check the raw path for external URLs before normalization, since
+  // posix.normalize collapses "https://" → "https:/" which bypasses string checks.
+  const trimmed = refPath.trim();
+  if (!trimmed || trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:")) {
+    return [];
+  }
+
+  const clean = normalizePath(trimmed);
+  if (!clean) {
     return [];
   }
 
@@ -85,236 +100,202 @@ function buildCandidates(refPath: string, markdownPath: string | null): string[]
   return Array.from(candidates).filter((c) => !c.startsWith(".."));
 }
 
+/** Searches for an attachment within a single collection DB. Returns the row or undefined. */
+function findAttachmentInDb(
+  colDb: ReturnType<typeof getCollectionDb>,
+  candidates: string[],
+  extracted: string,
+  sourceEntityId: number | null,
+): { id: number; entityId: number; filename: string; mimeType: string; storagePath: string } | undefined {
+  for (const candidate of candidates) {
+    const rows = sourceEntityId
+      ? colDb
+          .select()
+          .from(assets)
+          .where(and(eq(assets.storagePath, candidate), eq(assets.entityId, sourceEntityId)))
+          .all()
+      : colDb.select().from(assets).where(eq(assets.storagePath, candidate)).all();
+
+    if (rows.length > 0) return rows[0];
+  }
+
+  // Fallback: match by filename alone
+  const fileName = basename(extracted);
+  const byFilename = sourceEntityId
+    ? colDb
+        .select()
+        .from(assets)
+        .where(and(eq(assets.filename, fileName), eq(assets.entityId, sourceEntityId)))
+        .all()
+    : colDb.select().from(assets).where(eq(assets.filename, fileName)).all();
+
+  return byFilename.length === 1 ? byFilename[0] : undefined;
+}
+
+async function handleGetAttachment(
+  collectionName: string | undefined,
+  reference: string,
+  externalId: string | undefined,
+  options: McpServerOptions,
+) {
+  if (!contextExists()) {
+    return textErr("Frozen Ink not initialized");
+  }
+
+  // Validate reference is local before any DB work.
+  const extracted = extractReferencePath(reference);
+  const candidates = buildCandidates(extracted, null); // no markdownPath yet — refined per collection below
+  if (candidates.length === 0) {
+    return textErr("Reference is not a local attachment path");
+  }
+
+  // Resolve which collections to search.
+  type ColRow = { name: string; dbPath: string };
+  let colRows: ColRow[];
+
+  if (collectionName) {
+    if (!isCollectionAllowed(options, collectionName)) {
+      return textErr(buildCollectionDeniedError(collectionName));
+    }
+    const col = getCollection(collectionName);
+    if (!col) return textErr(`Collection "${collectionName}" not found`);
+    const dbPath = getCollectionDbPath(collectionName);
+    if (!existsSync(dbPath)) return textErr("Collection database not found");
+    colRows = [{ name: collectionName, dbPath }];
+  } else {
+    colRows = filterAllowedCollections(options, listCollections())
+      .map((col) => ({ name: col.name, dbPath: getCollectionDbPath(col.name) }))
+      .filter((row) => existsSync(row.dbPath));
+  }
+
+  for (const { name: colName, dbPath } of colRows) {
+    const colDb = getCollectionDb(dbPath);
+
+    // Resolve source entity for relative-path candidate generation.
+    let sourceEntityId: number | null = null;
+    let sourceMarkdownPath: string | null = null;
+    if (externalId) {
+      const [sourceEntity] = colDb
+        .select()
+        .from(entities)
+        .where(eq(entities.externalId, externalId))
+        .all();
+
+      if (!sourceEntity) {
+        // Entity not found in this collection — skip when searching all,
+        // but surface the error when a specific collection was requested.
+        if (collectionName) {
+          return textErr(`Entity "${externalId}" not found in "${collectionName}"`);
+        }
+        continue;
+      }
+
+      sourceEntityId = sourceEntity.id;
+      sourceMarkdownPath = sourceEntity.markdownPath;
+    }
+
+    const effectiveCandidates = buildCandidates(extracted, sourceMarkdownPath);
+    const attachmentRow = findAttachmentInDb(colDb, effectiveCandidates, extracted, sourceEntityId);
+
+    if (!attachmentRow) continue;
+
+    const collectionDir = join(options.frozeninkHome, "collections", colName);
+    const fullPath = join(collectionDir, attachmentRow.storagePath);
+    const normalizedCollectionDir = join(collectionDir, "/");
+    if (!join(fullPath, "/").startsWith(normalizedCollectionDir)) {
+      return textErr("Resolved attachment path is outside collection directory");
+    }
+
+    if (!existsSync(fullPath)) {
+      return textErr(`Attachment file not found on disk: ${attachmentRow.storagePath}`);
+    }
+
+    const content = readFileSync(fullPath);
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            collection: colName,
+            reference,
+            resolvedStoragePath: attachmentRow.storagePath,
+            filename: attachmentRow.filename,
+            mimeType: attachmentRow.mimeType,
+            entityId: attachmentRow.entityId,
+            sizeBytes: content.length,
+            contentBase64: content.toString("base64"),
+          }),
+        },
+      ],
+    };
+  }
+
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({
+          error: "Attachment not found for reference",
+          reference,
+          candidates,
+        }),
+      },
+    ],
+  };
+}
+
 export function registerGetAttachment(
   server: McpServer,
   options: McpServerOptions,
 ): void {
-  server.registerTool(
-    "entity_get_attachment",
-    {
-      title: "Get Entity Attachment",
-      description:
-        "Returns base64 encoded attachment content from a markdown reference",
-      inputSchema: {
-        collection: z.string().describe("Collection name"),
-        reference: z
-          .string()
-          .describe("Attachment reference from markdown, e.g. ![logo](../../attachments/git/abc/logo.png) or assets/git/abc/logo.png"),
-        externalId: z
-          .string()
-          .optional()
-          .describe("Optional entity external ID for resolving relative references"),
+  const { singleCollectionName } = options;
+
+  if (singleCollectionName) {
+    server.registerTool(
+      "entity_get_attachment",
+      {
+        title: "Get Entity Attachment",
+        description:
+          "Returns base64 encoded attachment content from a markdown reference",
+        inputSchema: {
+          reference: z
+            .string()
+            .describe("Attachment reference from markdown, e.g. ![logo](../../attachments/git/abc/logo.png) or assets/git/abc/logo.png"),
+          externalId: z
+            .string()
+            .optional()
+            .describe("Optional entity external ID for resolving relative references"),
+        },
+        annotations: { readOnlyHint: true },
       },
-      annotations: { readOnlyHint: true },
-    },
-    async (args) => {
-      if (!contextExists()) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Frozen Ink not initialized" }),
-            },
-          ],
-        };
-      }
-
-      if (!isCollectionAllowed(options, args.collection)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: buildCollectionDeniedError(args.collection),
-              }),
-            },
-          ],
-        };
-      }
-
-      const col = getCollection(args.collection);
-      if (!col) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: `Collection "${args.collection}" not found`,
-              }),
-            },
-          ],
-        };
-      }
-
-      const dbPath = getCollectionDbPath(args.collection);
-      if (!existsSync(dbPath)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Collection database not found" }),
-            },
-          ],
-        };
-      }
-
-      const colDb = getCollectionDb(dbPath);
-
-      let sourceEntityId: number | null = null;
-      let sourceMarkdownPath: string | null = null;
-      if (args.externalId) {
-        const [sourceEntity] = colDb
-          .select()
-          .from(entities)
-          .where(eq(entities.externalId, args.externalId))
-          .all();
-
-        if (!sourceEntity) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  error: `Entity "${args.externalId}" not found in "${args.collection}"`,
-                }),
-              },
-            ],
-          };
-        }
-
-        sourceEntityId = sourceEntity.id;
-        sourceMarkdownPath = sourceEntity.markdownPath;
-      }
-
-      const extracted = extractReferencePath(args.reference);
-      const candidates = buildCandidates(extracted, sourceMarkdownPath);
-      if (candidates.length === 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: "Reference is not a local attachment path",
-              }),
-            },
-          ],
-        };
-      }
-
-      let attachmentRow:
-        | {
-            id: number;
-            entityId: number;
-            filename: string;
-            mimeType: string;
-            storagePath: string;
-          }
-        | undefined;
-
-      for (const candidate of candidates) {
-        const rows = sourceEntityId
-          ? colDb
-            .select()
-            .from(assets)
-            .where(
-              and(
-                eq(assets.storagePath, candidate),
-                eq(assets.entityId, sourceEntityId),
-              ),
-            )
-            .all()
-          : colDb
-            .select()
-            .from(assets)
-            .where(eq(assets.storagePath, candidate))
-            .all();
-
-        if (rows.length > 0) {
-          attachmentRow = rows[0];
-          break;
-        }
-      }
-
-      if (!attachmentRow) {
-        const fileName = basename(extracted);
-        const byFilename = sourceEntityId
-          ? colDb
-            .select()
-            .from(assets)
-            .where(and(eq(assets.filename, fileName), eq(assets.entityId, sourceEntityId)))
-            .all()
-          : colDb
-            .select()
-            .from(assets)
-            .where(eq(assets.filename, fileName))
-            .all();
-
-        if (byFilename.length === 1) {
-          attachmentRow = byFilename[0];
-        }
-      }
-
-      if (!attachmentRow) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: "Attachment not found for reference",
-                reference: args.reference,
-                candidates,
-              }),
-            },
-          ],
-        };
-      }
-
-      const collectionDir = join(options.frozeninkHome, "collections", args.collection);
-      const fullPath = join(collectionDir, attachmentRow.storagePath);
-      const normalizedCollectionDir = join(collectionDir, "/");
-      if (!join(fullPath, "/").startsWith(normalizedCollectionDir)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Resolved attachment path is outside collection directory" }),
-            },
-          ],
-        };
-      }
-
-      if (!existsSync(fullPath)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: `Attachment file not found on disk: ${attachmentRow.storagePath}`,
-              }),
-            },
-          ],
-        };
-      }
-
-      const content = readFileSync(fullPath);
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              collection: args.collection,
-              reference: args.reference,
-              resolvedStoragePath: attachmentRow.storagePath,
-              filename: attachmentRow.filename,
-              mimeType: attachmentRow.mimeType,
-              entityId: attachmentRow.entityId,
-              sizeBytes: content.length,
-              contentBase64: content.toString("base64"),
-            }),
-          },
-        ],
-      };
-    },
-  );
+      async (args) =>
+        handleGetAttachment(singleCollectionName, args.reference, args.externalId, options),
+    );
+  } else {
+    server.registerTool(
+      "entity_get_attachment",
+      {
+        title: "Get Entity Attachment",
+        description:
+          "Returns base64 encoded attachment content from a markdown reference. When collection is omitted all allowed collections are searched.",
+        inputSchema: {
+          reference: z
+            .string()
+            .describe("Attachment reference from markdown, e.g. ![logo](../../attachments/git/abc/logo.png) or assets/git/abc/logo.png"),
+          collection: z
+            .string()
+            .optional()
+            .describe("Collection to search in. Omit to search all allowed collections."),
+          externalId: z
+            .string()
+            .optional()
+            .describe("Optional entity external ID for resolving relative references"),
+        },
+        annotations: { readOnlyHint: true },
+      },
+      async (args) =>
+        handleGetAttachment(args.collection, args.reference, args.externalId, options),
+    );
+  }
 }
