@@ -31,6 +31,7 @@ const collectionEntrySchema = z.object({
 const siteConfigSchema = z.object({
   url: z.string(),
   mcpUrl: z.string(),
+  toolDescription: z.string().optional(),
   collections: z.array(z.string()),
   database: z.object({
     type: z.string(),
@@ -56,6 +57,7 @@ const siteStateSchema = z.object({
 const siteEntrySchema = z.object({
   url: z.string(),
   mcpUrl: z.string(),
+  toolDescription: z.string().optional(),
   collections: z.array(z.string()),
   database: z.object({
     type: z.string(),
@@ -204,6 +206,7 @@ export function migrateFromLegacyContext(): void {
       addSite(name, {
         url: dep.url,
         mcpUrl: dep.mcpUrl,
+        toolDescription: dep.toolDescription,
         collections: dep.collections,
         database: { type: "cloudflare-d1", id: dep.d1DatabaseId, name: dep.d1DatabaseName },
         bucket: { type: "cloudflare-r2", name: dep.r2BucketName },
@@ -241,6 +244,7 @@ function migrateLegacyPublishYml(): void {
       addSite(name, {
         url: dep.url,
         mcpUrl: dep.mcpUrl,
+        toolDescription: dep.toolDescription,
         collections: dep.collections,
         database: { type: "cloudflare-d1", id: dep.d1DatabaseId, name: dep.d1DatabaseName },
         bucket: { type: "cloudflare-r2", name: dep.r2BucketName },
