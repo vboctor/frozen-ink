@@ -16,6 +16,7 @@ const assetsConfigSchema = z.object({
 
 const collectionEntrySchema = z.object({
   title: z.string().optional(),
+  description: z.string().optional(),
   mcpToolDescription: z.string().optional(),
   crawler: z.string(),
   enabled: z.boolean().optional().default(true),

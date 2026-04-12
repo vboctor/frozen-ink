@@ -1,5 +1,7 @@
 import { claudeCodeAdapter } from "./claude-code";
+import { claudeDesktopAdapter } from "./claude-desktop";
 import { codexAdapter } from "./codex";
+import { anythingllmAdapter } from "./anythingllm";
 import {
   MCP_TOOL_NAMES,
   type McpToolAdapter,
@@ -8,7 +10,9 @@ import {
 
 const adapterMap: Record<McpToolName, McpToolAdapter> = {
   "claude-code": claudeCodeAdapter,
+  "claude-desktop": claudeDesktopAdapter,
   codex: codexAdapter,
+  anythingllm: anythingllmAdapter,
 };
 
 export { MCP_TOOL_NAMES };

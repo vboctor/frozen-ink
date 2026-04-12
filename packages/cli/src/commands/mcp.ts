@@ -50,6 +50,8 @@ mcpCommand
     await startStdioServer({
       frozeninkHome: getFrozenInkHome(),
       allowedCollections: [opts.collection],
+      collectionTitle: col.title,
+      collectionDescription: col.description,
     });
   });
 

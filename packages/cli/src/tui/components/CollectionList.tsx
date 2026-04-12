@@ -155,15 +155,23 @@ function getSourceDetails(crawler: string, config: Record<string, unknown>): Arr
 interface EditField {
   key: string;
   label: string;
-  type: "number" | "boolean";
+  type: "text" | "number" | "boolean";
   configKey: string;
 }
+
+const DESCRIPTION_FIELD: EditField = {
+  key: "description",
+  label: "Description (helps AI know when to use this collection)",
+  type: "text",
+  configKey: "",
+};
 
 function getEditableFields(crawler: string): EditField[] {
   switch (crawler) {
     case "github":
       return [
-        { key: "title", label: "Display title", type: "number" as const, configKey: "" },
+        { key: "title", label: "Display title", type: "text", configKey: "" },
+        DESCRIPTION_FIELD,
         { key: "openOnly", label: "Open issues/PRs only", type: "boolean", configKey: "openOnly" },
         { key: "maxIssues", label: "Max issues", type: "number", configKey: "maxIssues" },
         { key: "maxPrs", label: "Max pull requests", type: "number", configKey: "maxPullRequests" },
@@ -172,21 +180,25 @@ function getEditableFields(crawler: string): EditField[] {
       ];
     case "git":
       return [
-        { key: "title", label: "Display title", type: "number" as const, configKey: "" },
+        { key: "title", label: "Display title", type: "text", configKey: "" },
+        DESCRIPTION_FIELD,
         { key: "includeDiffs", label: "Include commit diffs", type: "boolean", configKey: "includeDiffs" },
       ];
     case "mantisbt":
       return [
-        { key: "title", label: "Display title", type: "number" as const, configKey: "" },
+        { key: "title", label: "Display title", type: "text", configKey: "" },
+        DESCRIPTION_FIELD,
         { key: "maxEntities", label: "Max entities", type: "number", configKey: "maxEntities" },
       ];
     case "obsidian":
       return [
-        { key: "title", label: "Display title", type: "number" as const, configKey: "" },
+        { key: "title", label: "Display title", type: "text", configKey: "" },
+        DESCRIPTION_FIELD,
       ];
     default:
       return [
-        { key: "title", label: "Display title", type: "number" as const, configKey: "" },
+        { key: "title", label: "Display title", type: "text", configKey: "" },
+        DESCRIPTION_FIELD,
       ];
   }
 }
@@ -215,6 +227,7 @@ function CollectionEdit({
   function getCurrentValue(field: EditField): string {
     if (!col) return "";
     if (field.key === "title") return col.title || "";
+    if (field.key === "description") return col.description || "";
     const val = config[field.configKey];
     if (val === undefined || val === null) return "";
     return String(val);
@@ -223,6 +236,10 @@ function CollectionEdit({
   function getCurrentDisplay(field: EditField): string {
     if (!col) return "";
     if (field.key === "title") return col.title || "(none)";
+    if (field.key === "description") {
+      if (!col.description) return "(none)";
+      return col.description.length > 50 ? col.description.slice(0, 50) + "…" : col.description;
+    }
     const val = config[field.configKey];
     if (field.type === "boolean") {
       if (val === true) return "yes";
@@ -234,7 +251,34 @@ function CollectionEdit({
   }
 
   useInput((input, key) => {
-    if (!col || editing) return;
+    if (!col) return;
+
+    // When editing description: Ctrl+S saves; ESC cancels; Enter inserts newline
+    if (editing && fields[editCursor]?.key === "description") {
+      if (key.escape) {
+        setEditing(false);
+        setInputValue("");
+        return;
+      }
+      if (key.ctrl && input === "s") {
+        handleEditSubmit();
+        return;
+      }
+      if (key.return) {
+        setInputValue((v) => v + "\n");
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setInputValue((v) => v.slice(0, -1));
+        return;
+      }
+      if (!key.ctrl && !key.meta && !key.escape && !key.upArrow && !key.downArrow && !key.tab && input) {
+        setInputValue((v) => v + input);
+      }
+      return;
+    }
+
+    if (editing) return;
 
     if (key.escape) {
       onDone();
@@ -244,7 +288,7 @@ function CollectionEdit({
     if (key.downArrow) setEditCursor((c) => Math.min(fields.length - 1, c + 1));
     if (key.return && fields[editCursor]) {
       const field = fields[editCursor];
-      if (field.type === "boolean" && field.key !== "title") {
+      if (field.type === "boolean") {
         const current = config[field.configKey];
         const newVal = current === true ? false : true;
         const newConfig = { ...config, [field.configKey]: newVal };
@@ -267,6 +311,8 @@ function CollectionEdit({
 
     if (field.key === "title") {
       updateCollection(collectionName, { title: val || undefined });
+    } else if (field.key === "description") {
+      updateCollection(collectionName, { description: val || undefined });
     } else if (field.type === "number") {
       const newConfig = { ...config };
       if (val === "") {
@@ -308,7 +354,71 @@ function CollectionEdit({
       <Box flexDirection="column" marginTop={1}>
         <Text bold dimColor>Settings</Text>
         {fields.map((field, i) => {
-          if (editing && i === editCursor) {
+          const isSelected = i === editCursor;
+
+          // Description field: full-width block with word-wrapped preview/editor
+          if (field.key === "description") {
+            if (editing && isSelected) {
+              // Full-width editing area for description
+              const lines = inputValue.split("\n");
+              return (
+                <Box key={field.key} flexDirection="column" marginTop={1} borderStyle="single" borderColor="cyan" paddingX={1}>
+                  <Text bold color="cyan">{field.label}</Text>
+                  <Text dimColor>Ctrl+S to save · ESC to cancel · Enter for new line</Text>
+                  <Box marginTop={1} flexDirection="column">
+                    {lines.map((line, li) => {
+                      const isLast = li === lines.length - 1;
+                      return (
+                        <Text key={li}>
+                          {line}
+                          {isLast && <Text color="cyan">█</Text>}
+                        </Text>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              );
+            }
+            // Description preview (not editing): show full wrapped text when selected
+            const desc = col?.description;
+            const descLines = desc ? desc.split("\n") : [];
+            return (
+              <Box key={field.key} flexDirection="column" marginTop={isSelected ? 1 : 0}>
+                <Box gap={1}>
+                  <Text color={isSelected ? "cyan" : undefined}>{isSelected ? "❯" : " "}</Text>
+                  <Text>{field.label}</Text>
+                </Box>
+                {isSelected && (
+                  <Box marginLeft={2} flexDirection="column">
+                    {descLines.length > 0 ? (
+                      descLines.map((line, li) => (
+                        <Text key={li} color="cyan">{line}</Text>
+                      ))
+                    ) : (
+                      <Text dimColor>(none)</Text>
+                    )}
+                  </Box>
+                )}
+                {!isSelected && (
+                  <Box marginLeft={2} flexDirection="column">
+                    {descLines.length > 0 ? (
+                      <>
+                        {descLines.slice(0, 3).map((line, li) => (
+                          <Text key={li} dimColor>{line.length > 80 ? line.slice(0, 79) + "…" : line}</Text>
+                        ))}
+                        {descLines.length > 3 && <Text dimColor>…</Text>}
+                      </>
+                    ) : (
+                      <Text dimColor>(none)</Text>
+                    )}
+                  </Box>
+                )}
+              </Box>
+            );
+          }
+
+          // All other fields: inline single-line edit
+          if (editing && isSelected) {
             return (
               <Box key={field.key}>
                 <TextInput
@@ -322,17 +432,17 @@ function CollectionEdit({
           }
 
           const display = getCurrentDisplay(field);
-          const isBool = field.type === "boolean" && field.key !== "title";
+          const isBool = field.type === "boolean";
           return (
             <Box key={field.key} gap={1}>
-              <Text color={i === editCursor ? "cyan" : undefined}>
-                {i === editCursor ? "❯" : " "}
+              <Text color={isSelected ? "cyan" : undefined}>
+                {isSelected ? "❯" : " "}
               </Text>
               <Text>{field.label}:</Text>
               <Text bold color={isBool ? (display === "yes" ? "green" : "gray") : "cyan"}>
                 {display}
               </Text>
-              {isBool && i === editCursor && <Text dimColor>(Enter to toggle)</Text>}
+              {isBool && isSelected && <Text dimColor>(Enter to toggle)</Text>}
             </Box>
           );
         })}
@@ -452,6 +562,13 @@ export function CollectionList({
     setSyncFetchedCounts({});
     const syncStart = Date.now();
     setSyncStartTime(syncStart);
+
+    // Route console.warn into the sync progress display so warnings are visible in the TUI.
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      setSyncProgress((p) => [...p, args.map(String).join(" ")]);
+    };
+
     try {
       const registry = createDefaultRegistry();
       const themeEngine = new ThemeEngine();
@@ -496,6 +613,8 @@ export function CollectionList({
     } catch (err) {
       setSyncFetchedCounts({});
       setSyncProgress((p) => [...p, `Error: ${err instanceof Error ? err.message : String(err)}`]);
+    } finally {
+      console.warn = origWarn;
     }
     setSyncStartTime(null);
     setMode("list");
@@ -519,6 +638,7 @@ export function CollectionList({
   useInput((input, key) => {
     // Only handle input in list/confirm-delete modes; sub-screens handle their own input
     if (mode === "list") {
+      if (key.escape) { onNavigate?.("home"); return; }
       if (key.upArrow) setCursor((c) => Math.max(0, c - 1));
       if (key.downArrow) setCursor((c) => Math.min(collections.length - 1, c + 1));
       if (input === " " && current) {

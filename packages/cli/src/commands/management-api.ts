@@ -174,6 +174,7 @@ export function handleManagementRequest(req: Request): Response | null {
       const config = (body.config ?? {}) as Record<string, unknown>;
       const credentials = (body.credentials ?? {}) as Record<string, unknown>;
       const title = (body.title as string) ?? name;
+      const description = (body.description as string) || undefined;
       const enabled = body.enabled !== false;
 
       // Resolve MantisBT project name → ID and persist both
@@ -190,7 +191,7 @@ export function handleManagementRequest(req: Request): Response | null {
         }
       }
 
-      addCollection(name, { title, crawler, enabled, config, credentials });
+      addCollection(name, { title, description, crawler, enabled, config, credentials });
 
       // Ensure collection directory exists
       const home = getFrozenInkHome();

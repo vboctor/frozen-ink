@@ -255,7 +255,7 @@ describe("entity_search tool", () => {
     const data = parseResult(result);
 
     expect(data).toHaveLength(1);
-    expect(data[0].externalId).toBe("issue-42");
+    expect(data[0].id).toBe("issue-42");
     expect(data[0].collection).toBe("search-col");
     expect(data[0].title).toBe("Authentication bug");
   });
@@ -402,10 +402,10 @@ describe("entity_get_data tool", () => {
     });
 
     await setupClient();
-    const result = await client.callTool({ name: "entity_get_data", arguments: { collection: "get-test", externalId: "issue-5" } });
+    const result = await client.callTool({ name: "entity_get_data", arguments: { collection: "get-test", id: "issue-5" } });
     const data = parseResult(result);
 
-    expect(data.externalId).toBe("issue-5");
+    expect(data.id).toBe("issue-5");
     expect(data.entityType).toBe("issue");
     expect(data.title).toBe("Important issue");
     expect(data.data.number).toBe(5);
@@ -432,7 +432,7 @@ describe("entity_get_data tool", () => {
     });
 
     await setupClient();
-    const result = await client.callTool({ name: "entity_get_data", arguments: { collection: "with-md", externalId: "issue-7" } });
+    const result = await client.callTool({ name: "entity_get_data", arguments: { collection: "with-md", id: "issue-7" } });
     const data = parseResult(result);
 
     expect(data.markdown).toBe(mdContent);
@@ -450,10 +450,10 @@ describe("entity_get_data tool", () => {
     });
 
     await setupClient();
-    const result = await client.callTool({ name: "entity_get_data", arguments: { collection: "missing-md", externalId: "issue-8" } });
+    const result = await client.callTool({ name: "entity_get_data", arguments: { collection: "missing-md", id: "issue-8" } });
     const data = parseResult(result);
 
-    expect(data.externalId).toBe("issue-8");
+    expect(data.id).toBe("issue-8");
     expect(data.markdown).toBeNull();
   });
 
@@ -463,7 +463,7 @@ describe("entity_get_data tool", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_data",
-      arguments: { collection: "empty-col", externalId: "nonexistent" },
+      arguments: { collection: "empty-col", id: "nonexistent" },
     });
     const data = parseResult(result);
 
@@ -474,7 +474,7 @@ describe("entity_get_data tool", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_data",
-      arguments: { collection: "does-not-exist", externalId: "issue-1" },
+      arguments: { collection: "does-not-exist", id: "issue-1" },
     });
     const data = parseResult(result);
 
@@ -494,7 +494,7 @@ describe("entity_get_data tool", () => {
     await setupClient({ allowedCollections: ["other-col", "another-col"] });
     const result = await client.callTool({
       name: "entity_get_data",
-      arguments: { collection: "private-col", externalId: "issue-1" },
+      arguments: { collection: "private-col", id: "issue-1" },
     });
     const data = parseResult(result);
 
@@ -519,7 +519,7 @@ describe("entity_get_markdown tool", () => {
     addEntity(dbPath, { externalId: "issue-3", entityType: "issue", title: "Test issue", data: { number: 3 }, markdownPath: mdPath });
 
     await setupClient();
-    const result = await client.callTool({ name: "entity_get_markdown", arguments: { collection: "md-test", externalId: "issue-3" } });
+    const result = await client.callTool({ name: "entity_get_markdown", arguments: { collection: "md-test", id: "issue-3" } });
     const data = parseResult(result);
 
     expect(data.markdown).toBe(mdContent);
@@ -533,7 +533,7 @@ describe("entity_get_markdown tool", () => {
     await setupClient({ allowedCollections: ["other-col", "another-col"] });
     const result = await client.callTool({
       name: "entity_get_markdown",
-      arguments: { collection: "locked-col", externalId: "issue-1" },
+      arguments: { collection: "locked-col", id: "issue-1" },
     });
     const data = parseResult(result);
 
@@ -546,7 +546,7 @@ describe("entity_get_markdown tool", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_markdown",
-      arguments: { collection: "md-empty", externalId: "nonexistent" },
+      arguments: { collection: "md-empty", id: "nonexistent" },
     });
     const data = parseResult(result);
 
@@ -560,7 +560,7 @@ describe("entity_get_markdown tool", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_markdown",
-      arguments: { collection: "no-md-col", externalId: "issue-10" },
+      arguments: { collection: "no-md-col", id: "issue-10" },
     });
     const data = parseResult(result);
 
@@ -580,7 +580,7 @@ describe("entity_get_markdown tool", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_markdown",
-      arguments: { collection: "ghost-md-col", externalId: "issue-11" },
+      arguments: { collection: "ghost-md-col", id: "issue-11" },
     });
     const data = parseResult(result);
 
@@ -614,7 +614,7 @@ describe("entity_get_attachment tool", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_attachment",
-      arguments: { collection: "attach-col", externalId: "commit-1", reference: "![[git/abc123/logo.png]]" },
+      arguments: { collection: "attach-col", id: "commit-1", reference: "![[git/abc123/logo.png]]" },
     });
     const data = parseResult(result);
 
@@ -647,7 +647,7 @@ describe("entity_get_attachment tool", () => {
       name: "entity_get_attachment",
       arguments: {
         collection: "md-attach-col",
-        externalId: "issue-20",
+        id: "issue-20",
         reference: "![diagram](../../attachments/git/def456/diagram.png)",
       },
     });
@@ -680,7 +680,7 @@ describe("entity_get_attachment tool", () => {
       name: "entity_get_attachment",
       arguments: {
         collection: "rel-attach-col",
-        externalId: "commit-rel",
+        id: "commit-rel",
         reference: "screenshot.png",
       },
     });
@@ -712,7 +712,7 @@ describe("entity_get_attachment tool", () => {
       name: "entity_get_attachment",
       arguments: {
         collection: "attach-missing-entity",
-        externalId: "nonexistent",
+        id: "nonexistent",
         reference: "![[some/file.png]]",
       },
     });
@@ -987,7 +987,7 @@ describe("single-collection mode (allowedCollections with one entry)", () => {
     const data = parseResult(result);
 
     expect(data).toHaveLength(1);
-    expect(data[0].externalId).toBe("issue-solo");
+    expect(data[0].id).toBe("issue-solo");
     expect(data[0].collection).toBe("solo-search-col");
   });
 
@@ -1004,11 +1004,11 @@ describe("single-collection mode (allowedCollections with one entry)", () => {
     await setupClient({ allowedCollections: ["solo-get-col"] });
     const result = await client.callTool({
       name: "entity_get_data",
-      arguments: { externalId: "issue-solo-get" },
+      arguments: { id: "issue-solo-get" },
     });
     const data = parseResult(result);
 
-    expect(data.externalId).toBe("issue-solo-get");
+    expect(data.id).toBe("issue-solo-get");
     expect(data.title).toBe("Solo entity");
     expect(data.tags).toEqual(["solo"]);
   });
@@ -1033,7 +1033,7 @@ describe("single-collection mode (allowedCollections with one entry)", () => {
     await setupClient({ allowedCollections: ["solo-md-col"] });
     const result = await client.callTool({
       name: "entity_get_markdown",
-      arguments: { externalId: "issue-solo-md" },
+      arguments: { id: "issue-solo-md" },
     });
     const data = parseResult(result);
 
@@ -1116,11 +1116,11 @@ describe("multi-collection mode: optional collection parameter", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_data",
-      arguments: { externalId: "shared-issue" },
+      arguments: { id: "shared-issue" },
     });
     const data = parseResult(result);
 
-    expect(data.externalId).toBe("shared-issue");
+    expect(data.id).toBe("shared-issue");
     expect(data.collection).toBe("multi-find-a");
     expect(data.title).toBe("In collection A");
   });
@@ -1132,7 +1132,7 @@ describe("multi-collection mode: optional collection parameter", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_data",
-      arguments: { externalId: "does-not-exist" },
+      arguments: { id: "does-not-exist" },
     });
     const data = parseResult(result);
 
@@ -1156,7 +1156,7 @@ describe("multi-collection mode: optional collection parameter", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_markdown",
-      arguments: { externalId: "cross-md-entity" },
+      arguments: { id: "cross-md-entity" },
     });
     const data = parseResult(result);
 
@@ -1198,7 +1198,7 @@ describe("multi-collection mode: optional collection parameter", () => {
     await setupClient();
     const result = await client.callTool({
       name: "entity_get_data",
-      arguments: { collection: "named-col", externalId: "issue-named" },
+      arguments: { collection: "named-col", id: "issue-named" },
     });
     const data = parseResult(result);
 

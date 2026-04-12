@@ -1,12 +1,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { existsSync } from "fs";
+import { eq } from "drizzle-orm";
 import {
   contextExists,
   listCollections,
   getCollection,
+  getCollectionDb,
   getCollectionDbPath,
   SearchIndexer,
+  entities,
   type SearchResult,
 } from "@frozenink/core";
 import type { McpServerOptions } from "../server";
@@ -54,17 +57,25 @@ async function runSearch(
       })()
     : filterAllowedCollections(options, listCollections());
 
-  const allResults: Array<SearchResult & { collection: string }> = [];
+  const allResults: Array<SearchResult & { collection: string; filename: string | null }> = [];
 
   for (const col of collectionRows) {
     const dbPath = getCollectionDbPath(col.name);
     if (!existsSync(dbPath)) continue;
 
+    const colDb = getCollectionDb(dbPath);
     const indexer = new SearchIndexer(dbPath);
     try {
       const results = indexer.search(query, { entityType });
       for (const r of results) {
-        allResults.push({ ...r, collection: col.name });
+        const [entity] = colDb
+          .select({ markdownPath: entities.markdownPath })
+          .from(entities)
+          .where(eq(entities.id, r.entityId))
+          .all();
+        const rawPath = entity?.markdownPath ?? null;
+        const filename = rawPath ? rawPath.replace(/^markdown\//, "") : null;
+        allResults.push({ ...r, collection: col.name, filename });
       }
     } finally {
       indexer.close();
@@ -72,7 +83,10 @@ async function runSearch(
   }
 
   allResults.sort((a, b) => a.rank - b.rank);
-  const limited = allResults.slice(0, limit);
+  const limited = allResults.slice(0, limit).map(({ externalId, entityId, rank, ...rest }) => ({
+    id: externalId,
+    ...rest,
+  }));
 
   return {
     content: [{ type: "text" as const, text: JSON.stringify(limited) }],
@@ -90,20 +104,20 @@ export function registerSearch(
       "entity_search",
       {
         title: "Search Entities",
-        description: `Performs FTS5 full-text search across synced entities`,
+        description: `Search this collection for notes, issues, commits, or documents matching a keyword or phrase. Use this to answer questions about the user's knowledge base. Results include an 'id' you can pass to entity_get_markdown, a 'snippet' with the matching excerpt, and a 'filename' with the document path.`,
         inputSchema: {
-          query: z.string().describe("Full-text search query"),
+          query: z.string().describe("Keyword or phrase to search for"),
           entityType: z
             .string()
             .optional()
-            .describe("Filter by entity type (e.g., issue, pull_request)"),
+            .describe("Filter by entity type (e.g., issue, pull_request, note, commit)"),
           limit: z
             .number()
             .int()
             .positive()
             .optional()
             .default(20)
-            .describe("Maximum number of results"),
+            .describe("Maximum number of results to return"),
         },
         annotations: { readOnlyHint: true },
       },
@@ -115,24 +129,24 @@ export function registerSearch(
       {
         title: "Search Entities",
         description:
-          "Performs FTS5 full-text search across synced entities with optional collection, type, and tag filters",
+          "Search across all Frozen Ink collections for notes, issues, commits, or documents matching a keyword or phrase. Use this to answer questions using the user's knowledge base. Optionally filter by collection or entity type. Results include an 'id' you can pass to entity_get_markdown, a 'snippet' with the matching excerpt, and a 'filename' with the document path.",
         inputSchema: {
-          query: z.string().describe("Full-text search query"),
+          query: z.string().describe("Keyword or phrase to search for"),
           collection: z
             .string()
             .optional()
-            .describe("Filter to a specific collection"),
+            .describe("Limit search to a specific collection name"),
           entityType: z
             .string()
             .optional()
-            .describe("Filter by entity type (e.g., issue, pull_request)"),
+            .describe("Filter by entity type (e.g., issue, pull_request, note, commit)"),
           limit: z
             .number()
             .int()
             .positive()
             .optional()
             .default(20)
-            .describe("Maximum number of results"),
+            .describe("Maximum number of results to return"),
         },
         annotations: { readOnlyHint: true },
       },
