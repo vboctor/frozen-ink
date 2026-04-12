@@ -34,12 +34,17 @@ export async function handleMcpRequest(
   const rpc = body as { jsonrpc: string; method: string; params?: unknown; id?: unknown };
 
   if (rpc.method === "initialize") {
+    const description = env.TOOL_DESCRIPTION?.trim();
+    const instructions = description
+      ? `Frozen Ink MCP server. ${description}`
+      : "Frozen Ink MCP server. Provides collection and entity retrieval tools over published collections.";
+
     return jsonRpcResult(
       {
         protocolVersion: "2025-03-26",
         capabilities: { tools: {} },
         serverInfo: { name: "frozenink", version: "0.1.0" },
-        instructions: "Frozen Ink MCP server. Provides collection and entity retrieval tools over published collections.",
+        instructions,
       },
       rpc.id,
     );

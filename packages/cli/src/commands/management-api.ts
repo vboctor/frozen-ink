@@ -91,6 +91,7 @@ type PublishCollectionsFn = (
   options: {
     collectionNames: string[];
     workerName: string;
+    toolDescription?: string;
     password?: string;
     removePassword?: boolean;
     forcePublic?: boolean;
@@ -619,12 +620,13 @@ async function triggerPublish(opts: Record<string, unknown>): Promise<void> {
       ?? (await import("./publish")).publishCollections;
     const collectionNames = (opts.collections as string[]) ?? [];
     const workerName = (opts.name as string) ?? "";
+    const toolDescription = opts.toolDescription as string | undefined;
     const password = opts.password as string | undefined;
     const removePassword = opts.removePassword as boolean | undefined;
     const forcePublic = opts.forcePublic as boolean | undefined;
 
     await publishCollections(
-      { collectionNames, workerName, password, removePassword, forcePublic },
+      { collectionNames, workerName, toolDescription, password, removePassword, forcePublic },
       (step, detail) => {
         publishProgress = { ...publishProgress, step, detail };
       },

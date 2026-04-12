@@ -10,6 +10,7 @@ import { registerEntityResources } from "./resources/entity";
 
 export interface McpServerOptions {
   frozeninkHome: string;
+  allowedCollections?: string[];
 }
 
 export function createMcpServer(options: McpServerOptions): McpServer {

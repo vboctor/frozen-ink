@@ -8,6 +8,7 @@ type HandleManagementRequest = (req: Request) => Response | null;
 type SetPublishOverride = (fn: ((options: {
   collectionNames: string[];
   workerName: string;
+  toolDescription?: string;
   password?: string;
   removePassword?: boolean;
   forcePublic?: boolean;
@@ -113,6 +114,7 @@ describe("management API publish security options", () => {
         body: JSON.stringify({
           collections: ["alpha"],
           name: "worker-alpha",
+          toolDescription: "Alpha collection helper",
           password: "secret123",
           removePassword: false,
           forcePublic: true,
@@ -126,6 +128,7 @@ describe("management API publish security options", () => {
     expect(captured).toBeTruthy();
     expect(captured?.collectionNames).toEqual(["alpha"]);
     expect(captured?.workerName).toBe("worker-alpha");
+    expect(captured?.toolDescription).toBe("Alpha collection helper");
     expect(captured?.password).toBe("secret123");
     expect(captured?.removePassword).toBe(false);
     expect(captured?.forcePublic).toBe(true);

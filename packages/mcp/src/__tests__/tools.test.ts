@@ -131,8 +131,8 @@ function addAttachment(
   writeFileSync(attachmentFile, data.content);
 }
 
-async function setupClient() {
-  const server = createMcpServer(options);
+async function setupClient(overrides?: Partial<McpServerOptions>) {
+  const server = createMcpServer({ ...options, ...overrides });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
   client = new Client({ name: "test-client", version: "1.0.0" });
@@ -180,6 +180,19 @@ describe("collection_list tool", () => {
     expect(data[0].entityCount).toBe(2);
     expect(data[0].lastSyncTime).toBe("2025-01-15 10:00:00");
     expect(data[0].lastSyncStatus).toBe("completed");
+  });
+
+  it("respects allowedCollections filter", async () => {
+    addCollection("allowed-col");
+    addCollection("blocked-col");
+
+    await setupClient({ allowedCollections: ["allowed-col"] });
+
+    const result = await client.callTool({ name: "collection_list" });
+    const data = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+
+    expect(data).toHaveLength(1);
+    expect(data[0].name).toBe("allowed-col");
   });
 });
 
@@ -256,6 +269,25 @@ describe("entity_get_data tool", () => {
     expect(data.data.state).toBe("open");
     expect(data.url).toBe("https://github.com/test/get-test/issues/5");
     expect(data.tags).toEqual(["bug", "critical"]);
+  });
+
+  it("denies access to disallowed collection", async () => {
+    const { dbPath } = addCollection("private-col");
+    addEntity(dbPath, {
+      externalId: "issue-1",
+      entityType: "issue",
+      title: "Hidden issue",
+      data: {},
+    });
+
+    await setupClient({ allowedCollections: ["other-col"] });
+    const result = await client.callTool({
+      name: "entity_get_data",
+      arguments: { collection: "private-col", externalId: "issue-1" },
+    });
+    const data = JSON.parse((result.content as Array<{ text: string }>)[0].text);
+
+    expect(data.error).toContain("not allowed");
   });
 });
 
@@ -373,5 +405,17 @@ describe("MCP resources", () => {
 
     expect(result.contents[0].text).toBe("# Test Issue\n\nBody content.");
     expect(result.contents[0].mimeType).toBe("text/markdown");
+  });
+
+  it("filters collection resources by allowlist", async () => {
+    addCollection("allow-one");
+    addCollection("allow-two");
+
+    await setupClient({ allowedCollections: ["allow-one"] });
+    const result = await client.readResource({ uri: "frozenink://collections" });
+    const data = JSON.parse(result.contents[0].text as string);
+
+    expect(data).toHaveLength(1);
+    expect(data[0].name).toBe("allow-one");
   });
 });

@@ -32,6 +32,7 @@ import { TextInput } from "./TextInput.js";
 import { AddCollection } from "./AddCollection.js";
 import { ExportView } from "./ExportView.js";
 import { SearchView } from "./SearchView.js";
+import { McpConfigView } from "./McpConfigView.js";
 import type { Screen } from "./App.js";
 
 type Mode =
@@ -40,6 +41,7 @@ type Mode =
   | "add"
   | "export"
   | "search"
+  | "mcp"
   | "confirm-delete"
   | "confirm-full-sync"
   | "syncing";
@@ -544,6 +546,7 @@ export function CollectionList({
       }
       if (input === "e" && current) { setEditingCollection(current.name); setMode("export"); }
       if (input === "f" && current) { setEditingCollection(current.name); setMode("search"); }
+      if (input === "m" && current) { setEditingCollection(current.name); setMode("mcp"); }
     } else if (mode === "confirm-full-sync") {
       if (input === "y" && current) {
         startSync(undefined, "full");
@@ -596,6 +599,10 @@ export function CollectionList({
         <Text>Run full sync? This will re-download all data. (y/n)</Text>
       </Box>
     );
+  }
+
+  if (mode === "mcp" && editingCollection) {
+    return <McpConfigView collectionName={editingCollection} onDone={() => { setMode("list"); refresh(); }} />;
   }
 
   if (mode === "syncing") {
@@ -721,6 +728,7 @@ export function CollectionList({
         <Text dimColor>[s] Sync</Text>
         <Text dimColor>[f] Search</Text>
         <Text dimColor>[e] Export</Text>
+        <Text dimColor>[m] MCP</Text>
         <Text dimColor>[Space] Toggle</Text>
         <Text dimColor>[a] Add</Text>
         <Text dimColor>[x] Delete</Text>

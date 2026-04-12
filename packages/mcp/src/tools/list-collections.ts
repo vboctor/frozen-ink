@@ -10,6 +10,7 @@ import {
 } from "@frozenink/core";
 import { desc } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
+import { filterAllowedCollections } from "../collection-scope";
 
 export function registerListCollections(
   server: McpServer,
@@ -35,7 +36,7 @@ export function registerListCollections(
         };
       }
 
-      const rows = listCollections();
+      const rows = filterAllowedCollections(options, listCollections());
 
       const result = rows.map((col) => {
         let entityCount = 0;

@@ -16,6 +16,7 @@ const assetsConfigSchema = z.object({
 
 const collectionEntrySchema = z.object({
   title: z.string().optional(),
+  mcpToolDescription: z.string().optional(),
   crawler: z.string(),
   enabled: z.boolean().optional().default(true),
   /** Crawler schema version the collection was last synced with. Defaults to "1.0". */
@@ -76,6 +77,7 @@ const siteEntrySchema = z.object({
 const legacyDeploymentEntrySchema = z.object({
   url: z.string(),
   mcpUrl: z.string(),
+  toolDescription: z.string().optional(),
   collections: z.array(z.string()),
   d1DatabaseId: z.string(),
   d1DatabaseName: z.string().optional(),

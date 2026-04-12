@@ -13,6 +13,10 @@ import {
 } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
+import {
+  buildCollectionDeniedError,
+  isCollectionAllowed,
+} from "../collection-scope";
 
 export function registerEntityResources(
   server: McpServer,
@@ -45,6 +49,20 @@ export function registerEntityResources(
               uri: uri.toString(),
               mimeType: "application/json",
               text: JSON.stringify({ error: "Frozen Ink not initialized" }),
+            },
+          ],
+        };
+      }
+
+      if (!isCollectionAllowed(options, collectionName)) {
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "application/json",
+              text: JSON.stringify({
+                error: buildCollectionDeniedError(collectionName),
+              }),
             },
           ],
         };
@@ -144,6 +162,18 @@ export function registerEntityResources(
               uri: uri.toString(),
               mimeType: "text/plain",
               text: "Frozen Ink not initialized",
+            },
+          ],
+        };
+      }
+
+      if (!isCollectionAllowed(options, collectionName)) {
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "text/plain",
+              text: buildCollectionDeniedError(collectionName),
             },
           ],
         };
