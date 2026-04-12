@@ -70,7 +70,7 @@ export const generateCommand = new Command("generate")
       const colDb = getCollectionDb(dbPath);
       const collectionDir = join(home, "collections", col.name);
       const storage = new LocalStorageBackend(collectionDir);
-      const markdownBasePath = "markdown";
+      const markdownBasePath = "content";
 
       // Build a lookup function for cross-entity wikilinks (used by some themes)
       const entityPathLookup = (externalId: string): string | undefined => {
@@ -135,7 +135,8 @@ export const generateCommand = new Command("generate")
           })
           .filter(Boolean);
 
-        const renderCtx = {
+        // Re-derive title from stored data (no API call needed).
+        const baseCtx = {
           entity: {
             externalId: entity.externalId,
             entityType: entity.entityType,
@@ -149,6 +150,10 @@ export const generateCommand = new Command("generate")
           lookupEntityPath: entityPathLookup,
           resolveWikilink,
         };
+        const derivedTitle = themeEngine.getTitle(baseCtx);
+        const title = derivedTitle ?? entity.title;
+
+        const renderCtx = derivedTitle ? { ...baseCtx, entity: { ...baseCtx.entity, title } } : baseCtx;
 
         const newPath = `${markdownBasePath}/${themeEngine.getFilePath(renderCtx)}`;
         const markdown = themeEngine.render(renderCtx);
@@ -167,10 +172,11 @@ export const generateCommand = new Command("generate")
         await storage.write(newPath, markdown);
         const fileStat = await storage.stat(newPath);
 
-        // Update entity record with new path and mtime
+        // Update entity record with new path, mtime, and re-derived title
         colDb
           .update(entities)
           .set({
+            title,
             markdownPath: newPath,
             markdownMtime: fileStat?.mtimeMs ?? null,
             markdownSize: fileStat?.size ?? null,
@@ -183,7 +189,7 @@ export const generateCommand = new Command("generate")
           id: entity.id,
           externalId: entity.externalId,
           entityType: entity.entityType,
-          title: entity.title,
+          title,
           content: markdown,
           tags: entityTagNames,
         });

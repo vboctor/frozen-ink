@@ -2,6 +2,13 @@ export interface SyncCursor {
   [key: string]: unknown;
 }
 
+export interface AssetFilter {
+  /** Maximum allowed file size in bytes. */
+  maxSizeBytes: number;
+  /** Allowed file extensions (lowercase, with dot, e.g. ".png"). */
+  allowedExtensions: Set<string>;
+}
+
 export interface CrawlerEntityData {
   externalId: string;
   entityType: string;
@@ -50,4 +57,10 @@ export interface Crawler {
     credentials: Record<string, unknown>,
   ): Promise<boolean>;
   dispose(): Promise<void>;
+  /**
+   * Optional: set the asset download filter before sync runs.
+   * Crawlers that support it will skip downloading attachments that don't
+   * match the filter, avoiding unnecessary network requests and errors.
+   */
+  setAssetFilter?(filter: AssetFilter): void;
 }

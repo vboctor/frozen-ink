@@ -72,7 +72,7 @@ api.get("/api/collections/:name/html/*", async (c) => {
   const entityPathMap = new Map<string, string>();
   for (const row of allEntities) {
     if (!row.markdown_path) continue;
-    const prefix = "markdown/";
+    const prefix = "content/";
     const rel = row.markdown_path.startsWith(prefix) ? row.markdown_path.slice(prefix.length) : row.markdown_path;
     entityPathMap.set(row.external_id, rel.endsWith(".md") ? rel.slice(0, -3) : rel);
   }
@@ -100,7 +100,7 @@ api.get("/api/collections/:name/html/*", async (c) => {
 // GET /api/collections/:name/tree
 api.get("/api/collections/:name/tree", async (c) => {
   const name = c.req.param("name");
-  const prefix = `${name}/markdown/`;
+  const prefix = `${name}/content/`;
 
   const listed = await c.env.BUCKET.list({ prefix });
   const paths = listed.objects.map((o) => o.key.slice(prefix.length)).filter((p) => p.endsWith(".md"));
@@ -111,7 +111,7 @@ api.get("/api/collections/:name/tree", async (c) => {
     const { results } = await c.env.DB.prepare(
       "SELECT markdown_path, title FROM entities WHERE collection_name = ? AND markdown_path IS NOT NULL AND title IS NOT NULL",
     ).bind(name).all<{ markdown_path: string; title: string }>();
-    const mdPrefix = "markdown/";
+    const mdPrefix = "content/";
     for (const row of results ?? []) {
       const rel = row.markdown_path.startsWith(mdPrefix)
         ? row.markdown_path.slice(mdPrefix.length)
@@ -132,7 +132,7 @@ api.get("/api/collections/:name/default-file", async (c) => {
   const name = c.req.param("name");
   const entities = await getEntities(c.env.DB, name, { limit: 1 });
   const first = entities[0];
-  const filePath = first?.markdown_path?.replace(/^markdown\//, "") ?? null;
+  const filePath = first?.markdown_path?.replace(/^content\//, "") ?? null;
   return c.json({ file: filePath });
 });
 
@@ -142,7 +142,7 @@ api.get("/api/collections/:name/markdown/*", async (c) => {
   const filePath = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/markdown/`, "");
   const decoded = decodeURIComponent(filePath);
 
-  const r2Key = `${name}/markdown/${decoded}`;
+  const r2Key = `${name}/content/${decoded}`;
   const obj = await getR2Object(c.env.BUCKET, r2Key);
   if (!obj) return c.text("File not found", 404);
 
@@ -202,8 +202,8 @@ api.get("/api/search", async (c) => {
     results.map(async (r) => {
       const entity = await getEntityByExternalId(c.env.DB, r.collectionName, r.externalId);
       const rawPath = entity?.markdown_path ?? null;
-      const markdownPath = rawPath ? rawPath.replace(/^markdown\//, "") : null;
-      return { ...r, collection: r.collectionName, markdownPath, snippet: r.snippet };
+      const markdownPath = rawPath ? rawPath.replace(/^content\//, "") : null;
+      return { ...r, title: entity?.title ?? r.title, collection: r.collectionName, markdownPath, snippet: r.snippet };
     }),
   );
 
@@ -221,7 +221,7 @@ api.get("/api/collections/:name/backlinks/:externalId", async (c) => {
   const links = await getBacklinks(c.env.DB, name, targetEntity.id);
 
   const results = links.map(({ entity }) => {
-    const relPath = entity.markdown_path?.replace(/^markdown\//, "");
+    const relPath = entity.markdown_path?.replace(/^content\//, "");
     const displayTitle = relPath
       ? relPath.replace(/\.md$/, "").split("/").pop()!
       : entity.title;
@@ -251,7 +251,7 @@ api.get("/api/collections/:name/outgoing-links/:externalId", async (c) => {
     .filter(({ entity }) => entity !== null)
     .map(({ entity }) => {
       const relPath = entity!.markdown_path
-        ? entity!.markdown_path.replace(/^markdown\//, "")
+        ? entity!.markdown_path.replace(/^content\//, "")
         : null;
       const displayTitle = relPath
         ? relPath.replace(/\.md$/, "").split("/").pop()!

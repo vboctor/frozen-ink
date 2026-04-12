@@ -186,9 +186,9 @@ export function createApiServer(
         const col = getCollection(name);
         if (!col) return errorResponse("Collection not found", 404);
 
-        const markdownDir = join(home, "collections", name, "markdown");
+        const contentDir = join(home, "collections", name, "content");
 
-        // Build a map from relative markdown path → entity title
+        // Build a map from relative content path → entity title
         const titleByPath = new Map<string, string>();
         const dbPath = getCollectionDbPath(name);
         if (existsSync(dbPath)) {
@@ -197,7 +197,7 @@ export function createApiServer(
             .select({ markdownPath: entities.markdownPath, title: entities.title })
             .from(entities)
             .all();
-          const prefix = "markdown/";
+          const prefix = "content/";
           for (const row of rows) {
             if (!row.markdownPath || !row.title) continue;
             const rel = row.markdownPath.startsWith(prefix)
@@ -207,7 +207,7 @@ export function createApiServer(
           }
         }
 
-        const tree = buildFileTree(markdownDir, titleByPath);
+        const tree = buildFileTree(contentDir, titleByPath);
         return jsonResponse(tree);
       }
 
@@ -232,7 +232,7 @@ export function createApiServer(
           .limit(1)
           .all();
 
-        const filePath = latest?.markdownPath?.replace(/^markdown\//, "") ?? null;
+        const filePath = latest?.markdownPath?.replace(/^content\//, "") ?? null;
         return jsonResponse({ file: filePath });
       }
 
@@ -244,7 +244,7 @@ export function createApiServer(
         const name = decodeURIComponent(markdownMatch[1]);
         const filePath = decodeURIComponent(markdownMatch[2]);
 
-        const fullPath = join(home, "collections", name, "markdown", filePath);
+        const fullPath = join(home, "collections", name, "content", filePath);
 
         // Prevent path traversal
         const collectionsBase = join(home, "collections", name);
@@ -283,8 +283,8 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
 
-        // Look up entity by markdown_path (try with and without markdown/ prefix)
-        const pathVariants = [`markdown/${filePath}`, filePath];
+        // Look up entity by markdown_path (try with and without content/ prefix)
+        const pathVariants = [`content/${filePath}`, filePath];
         let entity = null;
         for (const variant of pathVariants) {
           const [row] = colDb
@@ -461,14 +461,15 @@ export function createApiServer(
             });
             for (const r of results) {
               const [entity] = colDb
-                .select({ markdownPath: entities.markdownPath })
+                .select({ markdownPath: entities.markdownPath, title: entities.title })
                 .from(entities)
                 .where(eq(entities.id, r.entityId))
                 .all();
               const rawPath = entity?.markdownPath ?? null;
-              const markdownPath = rawPath ? rawPath.replace(/^markdown\//, "") : null;
+              const markdownPath = rawPath ? rawPath.replace(/^content\//, "") : null;
               allResults.push({
                 ...r,
+                title: entity?.title ?? r.title,
                 collection: col.name,
                 markdownPath,
                 snippet: r.snippet,
@@ -501,15 +502,15 @@ export function createApiServer(
         const colDb = getCollectionDb(dbPath);
 
         // Find the target entity by markdown path variants
-        const targetVariants = [targetFile, `markdown/${targetFile}`];
+        const targetVariants = [targetFile, `content/${targetFile}`];
         if (!targetFile.endsWith(".md")) {
-          targetVariants.push(`${targetFile}.md`, `markdown/${targetFile}.md`);
+          targetVariants.push(`${targetFile}.md`, `content/${targetFile}.md`);
         }
         const filename = targetFile.includes("/") ? targetFile.split("/").pop()! : null;
         if (filename) {
-          targetVariants.push(filename, `markdown/${filename}`);
+          targetVariants.push(filename, `content/${filename}`);
           if (!filename.endsWith(".md")) {
-            targetVariants.push(`${filename}.md`, `markdown/${filename}.md`);
+            targetVariants.push(`${filename}.md`, `content/${filename}.md`);
           }
         }
 
@@ -551,7 +552,7 @@ export function createApiServer(
               .all();
 
             if (entity) {
-              const relPath = entity.markdownPath?.replace(/^markdown\//, "");
+              const relPath = entity.markdownPath?.replace(/^content\//, "");
               const displayTitle = relPath
                 ? relPath.replace(/\.md$/, "").split("/").pop()!
                 : entity.title;
@@ -587,7 +588,7 @@ export function createApiServer(
         const colDb = getCollectionDb(dbPath);
 
         // Find source entity by markdown path variants
-        const sourceVariants = [sourceFile, `markdown/${sourceFile}`];
+        const sourceVariants = [sourceFile, `content/${sourceFile}`];
 
         // Resolve source entity IDs
         const sourceEntityIds = new Set<number>();
@@ -625,7 +626,7 @@ export function createApiServer(
 
             if (entity) {
               const relPath = entity.markdownPath
-                ? entity.markdownPath.replace(/^markdown\//, "")
+                ? entity.markdownPath.replace(/^content\//, "")
                 : null;
               const displayTitle = relPath
                 ? relPath.replace(/\.md$/, "").split("/").pop()!

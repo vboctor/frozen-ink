@@ -554,7 +554,7 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
         );
 
         const collectionDir = join(home, "collections", name);
-        mkdirSync(join(collectionDir, "markdown"), { recursive: true });
+        mkdirSync(join(collectionDir, "content"), { recursive: true });
         const storage = new LocalStorageBackend(collectionDir);
 
         // If full sync requested, reset cursor by deleting sync_state

@@ -34,4 +34,10 @@ export interface Theme {
    * Returns null/undefined if not supported for this entity.
    */
   renderHtml?(context: ThemeRenderContext): string | null;
+  /**
+   * Optional: derive the display title from stored entity data.
+   * Used during re-generation to update the title in the DB without re-fetching
+   * from the source API. Returns undefined if the theme cannot derive a title.
+   */
+  getTitle?(context: ThemeRenderContext): string | undefined;
 }

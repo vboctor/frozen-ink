@@ -27,6 +27,11 @@ export class ThemeEngine {
     return theme.getFilePath(context);
   }
 
+  getTitle(context: ThemeRenderContext): string | undefined {
+    const theme = this.themes.get(context.crawlerType);
+    return theme?.getTitle?.(context);
+  }
+
   hasHtmlRenderer(crawlerType: string): boolean {
     const theme = this.themes.get(crawlerType);
     return !!theme?.renderHtml;

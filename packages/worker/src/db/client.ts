@@ -65,8 +65,8 @@ export async function getEntityByMarkdownPath(
   collectionName: string,
   markdownPath: string,
 ): Promise<Entity | null> {
-  // Try with and without "markdown/" prefix
-  const variants = [`markdown/${markdownPath}`, markdownPath];
+  // Try with and without "content/" prefix
+  const variants = [`content/${markdownPath}`, markdownPath];
   for (const variant of variants) {
     const result = await db
       .prepare("SELECT * FROM entities WHERE collection_name = ? AND markdown_path = ?")
@@ -87,7 +87,7 @@ export async function getEntityMarkdownPathByExternalId(
     .bind(collectionName, externalId)
     .first<{ markdown_path: string | null }>();
   if (!result?.markdown_path) return null;
-  const prefix = "markdown/";
+  const prefix = "content/";
   const rel = result.markdown_path.startsWith(prefix)
     ? result.markdown_path.slice(prefix.length)
     : result.markdown_path;

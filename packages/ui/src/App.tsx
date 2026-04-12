@@ -4,7 +4,7 @@ import CollectionPicker from "./components/CollectionPicker";
 import FileTree from "./components/FileTree";
 import MarkdownView from "./components/MarkdownView";
 import HtmlView from "./components/HtmlView";
-import SearchBar from "./components/SearchBar";
+import SearchBar, { type FileEntry } from "./components/SearchBar";
 import FullTextSearch from "./components/FullTextSearch";
 import ThemeSwitcher, { type ThemeId } from "./components/ThemeSwitcher";
 import ViewModeToggle, { type ViewMode } from "./components/ViewModeToggle";
@@ -222,6 +222,21 @@ export default function App() {
         if (node.children) paths.push(...flatten(node.children));
       }
       return paths;
+    }
+    return flatten(fileTree);
+  }, [fileTree]);
+
+  // File entries with titles for Cmd+P search
+  const fileEntries = useMemo(() => {
+    function flatten(nodes: TreeNode[]): FileEntry[] {
+      const out: FileEntry[] = [];
+      for (const node of nodes) {
+        if (node.type === "file") {
+          out.push({ path: node.path, title: node.title ?? node.name.replace(/\.md$/, "") });
+        }
+        if (node.children) out.push(...flatten(node.children));
+      }
+      return out;
     }
     return flatten(fileTree);
   }, [fileTree]);
@@ -1094,7 +1109,7 @@ export default function App() {
       />
       {searchOpen && (
         <SearchBar
-          files={allFiles}
+          files={fileEntries}
           collection={selectedCollection ?? ""}
           onClose={() => setSearchOpen(false)}
           onNavigate={handleSearchNavigate}

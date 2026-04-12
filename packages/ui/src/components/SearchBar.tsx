@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 
+export interface FileEntry {
+  path: string;
+  title: string;
+}
+
 interface SearchBarProps {
-  files: string[];
+  files: FileEntry[];
   collection: string;
   onClose: () => void;
   onNavigate: (collection: string, markdownPath: string, openNewTab?: boolean) => void;
-}
-
-/** Title from a file path: strip folders and .md extension. */
-function titleFromPath(filePath: string): string {
-  return filePath.replace(/\.md$/, "").split("/").pop() ?? filePath;
 }
 
 interface FuzzyMatch {
@@ -110,10 +110,9 @@ export default function SearchBar({ files, collection, onClose, onNavigate }: Se
     const q = query.trim();
     if (!q) return [];
     const matches: FuzzyMatch[] = [];
-    for (const filePath of files) {
-      const title = titleFromPath(filePath);
-      const m = fuzzyMatch(q, title);
-      if (m) matches.push({ filePath, title, indices: m.indices, score: m.score });
+    for (const file of files) {
+      const m = fuzzyMatch(q, file.title);
+      if (m) matches.push({ filePath: file.path, title: file.title, indices: m.indices, score: m.score });
     }
     matches.sort((a, b) => a.score - b.score);
     return matches.slice(0, 30);

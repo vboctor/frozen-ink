@@ -4,8 +4,8 @@ import userEvent from "@testing-library/user-event";
 import SearchBar from "../components/SearchBar";
 
 const FILES = [
-  "issues/1-fix-login-bug.md",
-  "pull-requests/2-add-auth-feature.md",
+  { path: "issues/1-fix-login-bug.md", title: "1: Fix login bug" },
+  { path: "pull-requests/2-add-auth-feature.md", title: "2: Add auth feature" },
 ];
 
 beforeEach(() => {
