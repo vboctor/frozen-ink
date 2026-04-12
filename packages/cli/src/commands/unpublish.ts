@@ -6,15 +6,6 @@ import {
   removeSite,
   type SiteEntry,
 } from "@frozenink/core";
-import {
-  checkWranglerAuth,
-  deleteWorker,
-  deleteR2Object,
-  deleteR2Bucket,
-  deleteD1,
-  executeD1Command,
-  WranglerError,
-} from "./wrangler-api";
 
 async function confirm(message: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -37,6 +28,15 @@ export async function unpublishDeployment(
   deployment: SiteEntry & { name: string },
   onProgress: UnpublishProgressCallback = () => {},
 ): Promise<void> {
+  const {
+    checkWranglerAuth,
+    deleteWorker,
+    deleteR2Object,
+    deleteR2Bucket,
+    deleteD1,
+    executeD1Command,
+  } = await import("./wrangler-api");
+
   await checkWranglerAuth();
 
   // 1. Delete worker

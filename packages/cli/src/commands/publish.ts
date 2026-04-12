@@ -22,19 +22,6 @@ import {
 
 const __moduleDir = getModuleDir(import.meta.url);
 import { eq } from "drizzle-orm";
-import {
-  checkWranglerAuth,
-  createD1,
-  executeD1File,
-  executeD1Command,
-  createR2Bucket,
-  putR2Object,
-  deleteR2Object,
-  deployWorker,
-  generateWranglerToml,
-  writeTempFile,
-  cleanupTempFile,
-} from "./wrangler-api";
 import { assertInitialPublishConfirmation } from "./publish-policy";
 
 function randomSuffix(): string {
@@ -158,6 +145,20 @@ export async function publishCollections(
   options: PublishOptions,
   onProgress: PublishProgressCallback = () => {},
 ): Promise<PublishResult> {
+  const {
+    checkWranglerAuth,
+    createD1,
+    executeD1File,
+    executeD1Command,
+    createR2Bucket,
+    putR2Object,
+    deleteR2Object,
+    deployWorker,
+    generateWranglerToml,
+    writeTempFile,
+    cleanupTempFile,
+  } = await import("./wrangler-api");
+
   await checkWranglerAuth();
 
   const { workerName, workerOnly = false, removePassword = false, forcePublic = false } = options;
