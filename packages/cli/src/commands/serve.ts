@@ -65,7 +65,11 @@ function getMimeType(filePath: string): string {
   return MIME_TYPES[ext] || "application/octet-stream";
 }
 
-function buildFileTree(dirPath: string, basePath: string = ""): object[] {
+function buildFileTree(
+  dirPath: string,
+  titleByPath: Map<string, string>,
+  basePath: string = "",
+): object[] {
   if (!existsSync(dirPath)) return [];
 
   const entries = readdirSync(dirPath, { withFileTypes: true });
@@ -79,14 +83,17 @@ function buildFileTree(dirPath: string, basePath: string = ""): object[] {
         name: entry.name,
         path: relativePath,
         type: "directory",
-        children: buildFileTree(join(dirPath, entry.name), relativePath),
+        children: buildFileTree(join(dirPath, entry.name), titleByPath, relativePath),
       });
     } else if (entry.name.endsWith(".md")) {
-      files.push({
+      const node: Record<string, unknown> = {
         name: entry.name,
         path: relativePath,
         type: "file",
-      });
+      };
+      const title = titleByPath.get(relativePath);
+      if (title) node.title = title;
+      files.push(node);
     }
   }
 
@@ -179,7 +186,27 @@ export function createApiServer(
         if (!col) return errorResponse("Collection not found", 404);
 
         const markdownDir = join(home, "collections", name, "markdown");
-        const tree = buildFileTree(markdownDir);
+
+        // Build a map from relative markdown path → entity title
+        const titleByPath = new Map<string, string>();
+        const dbPath = getCollectionDbPath(name);
+        if (existsSync(dbPath)) {
+          const colDb = getCollectionDb(dbPath);
+          const rows = colDb
+            .select({ markdownPath: entities.markdownPath, title: entities.title })
+            .from(entities)
+            .all();
+          const prefix = "markdown/";
+          for (const row of rows) {
+            if (!row.markdownPath || !row.title) continue;
+            const rel = row.markdownPath.startsWith(prefix)
+              ? row.markdownPath.slice(prefix.length)
+              : row.markdownPath;
+            titleByPath.set(rel, row.title);
+          }
+        }
+
+        const tree = buildFileTree(markdownDir, titleByPath);
         return jsonResponse(tree);
       }
 
