@@ -1,6 +1,5 @@
 import type { Theme, ThemeRenderContext } from "@frozenink/core/theme";
-import { wikilink, embed } from "@frozenink/core/theme";
-import { posix } from "path";
+import { wikilink, embed, basename } from "@frozenink/core/theme";
 
 export class ObsidianTheme implements Theme {
   crawlerType = "obsidian";
@@ -92,7 +91,7 @@ export class ObsidianTheme implements Theme {
     if (hasH1) return content;
 
     // Derive title from filename
-    const filename = posix.basename(sourcePath, ".md");
+    const filename = basename(sourcePath, ".md");
     const title = `# ${filename}\n\n`;
 
     if (frontmatterBlock) {

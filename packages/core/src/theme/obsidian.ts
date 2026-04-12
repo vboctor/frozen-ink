@@ -1,4 +1,42 @@
-import { posix } from "path";
+// Portable posix path helpers — avoids importing "path" which is unavailable
+// in the Cloudflare Worker bundle (esbuild without --platform=node).
+
+function dirname(p: string): string {
+  const idx = p.lastIndexOf("/");
+  return idx === -1 ? "." : p.slice(0, idx) || ".";
+}
+
+function basename(p: string, ext?: string): string {
+  const name = p.includes("/") ? p.split("/").pop()! : p;
+  if (ext && name.endsWith(ext)) return name.slice(0, -ext.length);
+  return name;
+}
+
+function normalizeParts(parts: string[]): string[] {
+  const out: string[] = [];
+  for (const p of parts) {
+    if (p === "..") {
+      if (out.length > 0 && out[out.length - 1] !== "..") out.pop();
+      else out.push("..");
+    } else if (p !== "." && p !== "") {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+function relativePath(from: string, to: string): string {
+  const fromParts = normalizeParts(from.split("/"));
+  const toParts = normalizeParts(to.split("/"));
+  // Remove common prefix
+  let common = 0;
+  while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
+    common++;
+  }
+  const ups = fromParts.length - common;
+  const result = [...Array(ups).fill(".."), ...toParts.slice(common)];
+  return result.join("/") || ".";
+}
 
 function serializeYamlValue(value: unknown, indent: number = 0): string {
   if (value === null || value === undefined) {
@@ -60,8 +98,8 @@ export function frontmatter(fields: Record<string, unknown>): string {
 export function wikilink(target: string, label?: string, sourcePath?: string): string {
   const targetFile = `${target}.md`;
   if (sourcePath) {
-    const sourceDir = posix.dirname(sourcePath);
-    const relPath = posix.relative(sourceDir, targetFile);
+    const sourceDir = dirname(sourcePath);
+    const relPath = relativePath(sourceDir, targetFile);
     return `[${label ?? target}](${relPath})`;
   }
   return `[${label ?? target}](${targetFile})`;
@@ -80,9 +118,11 @@ export function embed(path: string, sourcePath?: string): string {
   const alt = filename.replace(/\.[^.]+$/, "");
   if (sourcePath) {
     // Source is under markdown/, attachments is a sibling directory
-    const sourceDir = posix.dirname(`markdown/${sourcePath}`);
-    const relPath = posix.relative(sourceDir, `attachments/${path}`);
+    const sourceDir = dirname(`markdown/${sourcePath}`);
+    const relPath = relativePath(sourceDir, `attachments/${path}`);
     return `![${alt}](${relPath})`;
   }
   return `![${alt}](../../attachments/${path})`;
 }
+
+export { basename, dirname, relativePath };
