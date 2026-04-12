@@ -12,6 +12,8 @@ export interface TreeNode {
   name: string;
   path: string;
   type: "file" | "directory";
+  /** Human-readable entity title; falls back to name (without .md) if absent */
+  title?: string;
   children?: TreeNode[];
 }
 

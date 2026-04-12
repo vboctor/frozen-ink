@@ -105,8 +105,25 @@ api.get("/api/collections/:name/tree", async (c) => {
   const listed = await c.env.BUCKET.list({ prefix });
   const paths = listed.objects.map((o) => o.key.slice(prefix.length)).filter((p) => p.endsWith(".md"));
 
+  // Fetch entity titles from D1 to display instead of raw filenames
+  const titleByPath = new Map<string, string>();
+  try {
+    const { results } = await c.env.DB.prepare(
+      "SELECT markdown_path, title FROM entities WHERE collection_name = ? AND markdown_path IS NOT NULL AND title IS NOT NULL",
+    ).bind(name).all<{ markdown_path: string; title: string }>();
+    const mdPrefix = "markdown/";
+    for (const row of results ?? []) {
+      const rel = row.markdown_path.startsWith(mdPrefix)
+        ? row.markdown_path.slice(mdPrefix.length)
+        : row.markdown_path;
+      titleByPath.set(rel, row.title);
+    }
+  } catch {
+    // If title lookup fails, fall back to filenames
+  }
+
   // Build tree from paths
-  const tree = buildTreeFromPaths(paths);
+  const tree = buildTreeFromPaths(paths, titleByPath);
   return c.json(tree);
 });
 
@@ -262,11 +279,12 @@ api.get("/api/attachments/:collection/*", async (c) => {
 });
 
 // Helper to build tree from flat file paths
-function buildTreeFromPaths(paths: string[]): object[] {
+function buildTreeFromPaths(paths: string[], titleByPath: Map<string, string> = new Map()): object[] {
   interface TreeNode {
     name: string;
     path: string;
     type: "directory" | "file";
+    title?: string;
     children?: TreeNode[];
   }
 
@@ -288,6 +306,10 @@ function buildTreeFromPaths(paths: string[]): object[] {
         const node: TreeNode = isFile
           ? { name: part, path: partialPath, type: "file" }
           : { name: part, path: partialPath, type: "directory", children: [] };
+        if (isFile) {
+          const title = titleByPath.get(partialPath);
+          if (title) node.title = title;
+        }
         current.push(node);
         if (!isFile) current = node.children!;
       }

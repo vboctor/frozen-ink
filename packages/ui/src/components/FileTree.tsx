@@ -64,7 +64,7 @@ function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
         title={node.path}
       >
         <span className="tree-icon tree-file-icon">📄</span>
-        <span className="tree-name">{node.name.replace(/\.md$/, "")}</span>
+        <span className="tree-name">{node.title ?? node.name.replace(/\.md$/, "")}</span>
       </button>
     </li>
   );
