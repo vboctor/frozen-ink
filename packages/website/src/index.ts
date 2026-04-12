@@ -10,6 +10,7 @@ import { whatIsFrozenInkPage } from "./docs/what-is-frozen-ink";
 import { keyScenariosPage } from "./docs/key-scenarios";
 import { managingCollectionsPage } from "./docs/managing-collections";
 import { claudeCodePage } from "./docs/claude-code";
+import { claudeDesktopPage } from "./docs/claude-desktop";
 import { localMcpPage } from "./docs/local-mcp";
 import { anythingllmMcpPage } from "./docs/anythingllm-mcp";
 import { publishingPage } from "./docs/publishing";
@@ -26,6 +27,7 @@ const DOC_PAGES: Record<string, string> = {
   "/docs/key-scenarios": keyScenariosPage,
   "/docs/managing-collections": managingCollectionsPage,
   "/docs/claude-code": claudeCodePage,
+  "/docs/claude-desktop": claudeDesktopPage,
   "/docs/local-mcp": localMcpPage,
   "/docs/anythingllm-mcp": anythingllmMcpPage,
   "/docs/publishing": publishingPage,

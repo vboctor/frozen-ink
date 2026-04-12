@@ -208,9 +208,9 @@ fink --version  <span class="cmt"># should print the installed version</span></c
   <p>The MCP server reads from the local SQLite database at query time, so after a sync the next MCP call will reflect the updated data.</p>
 
   <div class="docs-pagination">
-    <a href="/docs/claude-code" class="docs-pagination-card">
+    <a href="/docs/claude-desktop" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">Claude Code Integration</span>
+      <span class="docs-pagination-title">Claude Desktop Integration</span>
     </a>
     <a href="/docs/publishing" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>

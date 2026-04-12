@@ -240,9 +240,9 @@ fink status                <span class="cmt"># check last sync times</span></cod
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Managing Collections</span>
     </a>
-    <a href="/docs/local-mcp" class="docs-pagination-card next">
+    <a href="/docs/claude-desktop" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Local MCP Setup</span>
+      <span class="docs-pagination-title">Claude Desktop Integration</span>
     </a>
   </div>
   `,
