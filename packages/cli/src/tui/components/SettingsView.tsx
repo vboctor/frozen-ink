@@ -2,6 +2,7 @@ import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import yaml from "js-yaml";
 import { getFrozenInkHome, loadConfig } from "@frozenink/core";
 import { TextInput } from "./TextInput.js";
 
@@ -77,10 +78,10 @@ export function SettingsView(): React.ReactElement {
   }, [cursor, inputValue, fields]);
 
   const saveSettings = useCallback(() => {
-    const configPath = join(getFrozenInkHome(), "config.json");
+    const configPath = join(getFrozenInkHome(), "frozenink.yml");
     let fileConfig: Record<string, unknown> = {};
     if (existsSync(configPath)) {
-      fileConfig = JSON.parse(readFileSync(configPath, "utf-8"));
+      fileConfig = (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {};
     }
 
     if (!fileConfig.sync || typeof fileConfig.sync !== "object") fileConfig.sync = {};
@@ -93,7 +94,7 @@ export function SettingsView(): React.ReactElement {
     const logging = fileConfig.logging as Record<string, unknown>;
     logging.level = settings.logLevel;
 
-    writeFileSync(configPath, JSON.stringify(fileConfig, null, 2));
+    writeFileSync(configPath, yaml.dump(fileConfig, { lineWidth: -1, noRefs: true, sortKeys: false }));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }, [settings]);

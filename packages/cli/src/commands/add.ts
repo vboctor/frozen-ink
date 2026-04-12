@@ -5,7 +5,7 @@ import {
   getFrozenInkHome,
   getCollectionDb,
   isValidCollectionKey,
-  contextExists,
+  ensureInitialized,
   getCollection,
   addCollection,
   getCollectionDbPath,
@@ -27,11 +27,9 @@ export const addCommand = new Command("add")
   .option("--max-issues <count>", "Maximum issues to sync (for github)", parseInt)
   .option("--max-prs <count>", "Maximum pull requests to sync (for github)", parseInt)
   .option("--open-only", "Only sync open issues/PRs, delete closed ones (for github)")
+  .option("--sync-entities <types>", "Comma-separated entity types to sync: issues,pages,users (for mantisbt)")
   .action(async (crawlerType: string, opts: Record<string, string>) => {
-    if (!contextExists()) {
-      console.error("Frozen Ink not initialized. Run: fink init");
-      process.exit(1);
-    }
+    ensureInitialized();
 
     if (!isValidCollectionKey(opts.name)) {
       console.error(
@@ -73,8 +71,6 @@ export const addCommand = new Command("add")
       }
       const [ghOwner, ghRepo] = repoParts;
       credentials.token = opts.token;
-      credentials.owner = ghOwner;
-      credentials.repo = ghRepo;
       config.owner = ghOwner;
       config.repo = ghRepo;
       if (opts.openOnly) {
@@ -105,14 +101,25 @@ export const addCommand = new Command("add")
         console.error("MantisBT crawler requires --url <base-url>");
         process.exit(1);
       }
-      config.baseUrl = opts.url;
+      config.url = opts.url;
       credentials.token = opts.token ?? "";
-      credentials.baseUrl = opts.url;
+      credentials.url = opts.url;
       if (opts.projectName) {
-        config.projectName = opts.projectName;
+        config.project = { name: opts.projectName };
       }
       if (opts.max) {
         config.maxEntities = opts.max;
+      }
+      if (opts.syncEntities) {
+        const isMantisHub = opts.url.includes(".mantishub.");
+        const valid = isMantisHub ? ["issues", "pages", "users"] : ["issues", "users"];
+        const entityTypes = (opts.syncEntities as string).split(",").map((s: string) => s.trim()).filter(Boolean);
+        const invalid = entityTypes.filter((e: string) => !valid.includes(e));
+        if (invalid.length) {
+          console.error(`Invalid entity type(s): ${invalid.join(", ")}. Valid: ${valid.join(", ")}`);
+          process.exit(1);
+        }
+        config.entities = entityTypes;
       }
     } else if (crawlerType === "git") {
       if (!opts.path) {
@@ -140,12 +147,12 @@ export const addCommand = new Command("add")
     }
 
     // Resolve MantisBT project name → ID and persist both
-    if (crawlerType === "mantisbt" && config.projectName) {
+    const project = config.project as { id?: number; name?: string } | undefined;
+    if (crawlerType === "mantisbt" && project?.name) {
       try {
         await crawler.initialize(config, credentials);
-        const resolved = await (crawler as MantisBTCrawler).resolveProjectName(config.projectName as string);
-        config.projectId = resolved.id;
-        config.projectName = resolved.name; // canonical casing from server
+        const resolved = await (crawler as MantisBTCrawler).resolveProjectName(project.name);
+        config.project = { id: resolved.id, name: resolved.name };
         console.log(`  Resolved project "${resolved.name}" → ID ${resolved.id}`);
       } catch (err) {
         console.error(`Failed to resolve project name: ${err instanceof Error ? err.message : err}`);
@@ -161,9 +168,15 @@ export const addCommand = new Command("add")
     getCollectionDb(collectionDbPath);
 
     // Create markdown output directory
-    mkdirSync(join(collectionDir, "markdown"), { recursive: true });
+    mkdirSync(join(collectionDir, "content"), { recursive: true });
 
-    // Save to context.yml
+    // For MantisBT, don't store url in credentials (it's already in config)
+    if (crawlerType === "mantisbt") {
+      delete credentials.url;
+      delete credentials.baseUrl;
+    }
+
+    // Save collection config
     addCollection(opts.name, {
       title: opts.title || undefined,
       crawler: crawlerType,

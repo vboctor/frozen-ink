@@ -5,11 +5,11 @@ import { eq } from "drizzle-orm";
 import { getCollectionDb } from "../client";
 import {
   entities,
+  tags,
   entityTags,
-  attachments,
+  assets,
   syncState,
   syncRuns,
-  entityRelations,
 } from "../collection-schema";
 
 const TEST_DIR = join(import.meta.dir, ".test-dbs");
@@ -32,10 +32,9 @@ describe("Collection Database", () => {
     // Verify all tables exist by querying them
     expect(db.select().from(entities).all()).toEqual([]);
     expect(db.select().from(entityTags).all()).toEqual([]);
-    expect(db.select().from(attachments).all()).toEqual([]);
+    expect(db.select().from(assets).all()).toEqual([]);
     expect(db.select().from(syncState).all()).toEqual([]);
     expect(db.select().from(syncRuns).all()).toEqual([]);
-    expect(db.select().from(entityRelations).all()).toEqual([]);
   });
 
   it("supports CRUD on entities", () => {
@@ -76,7 +75,7 @@ describe("Collection Database", () => {
     expect(db.select().from(entities).all()).toHaveLength(0);
   });
 
-  it("supports entity_tags with foreign key to entities", () => {
+  it("supports entity_tags with foreign key to entities and tags", () => {
     const dbPath = join(TEST_DIR, "collection-tags.db");
     const db = getCollectionDb(dbPath);
 
@@ -91,19 +90,28 @@ describe("Collection Database", () => {
 
     const [entity] = db.select().from(entities).all();
 
-    db.insert(entityTags).values({ entityId: entity.id, tag: "enhancement" }).run();
-    db.insert(entityTags).values({ entityId: entity.id, tag: "frontend" }).run();
+    // Insert into tags table first
+    db.insert(tags).values({ name: "enhancement" }).run();
+    db.insert(tags).values({ name: "frontend" }).run();
+    const allTags = db.select().from(tags).all();
+    const enhancementTag = allTags.find((t) => t.name === "enhancement")!;
+    const frontendTag = allTags.find((t) => t.name === "frontend")!;
 
-    const tags = db
+    db.insert(entityTags).values({ entityId: entity.id, tagId: enhancementTag.id }).run();
+    db.insert(entityTags).values({ entityId: entity.id, tagId: frontendTag.id }).run();
+
+    const entityTagRows = db
       .select()
       .from(entityTags)
       .where(eq(entityTags.entityId, entity.id))
       .all();
-    expect(tags).toHaveLength(2);
-    expect(tags.map((t) => t.tag).sort()).toEqual(["enhancement", "frontend"]);
+    expect(entityTagRows).toHaveLength(2);
+    expect(entityTagRows.map((t) => t.tagId).sort()).toEqual(
+      [enhancementTag.id, frontendTag.id].sort(),
+    );
   });
 
-  it("supports attachments", () => {
+  it("supports assets", () => {
     const dbPath = join(TEST_DIR, "collection-attach.db");
     const db = getCollectionDb(dbPath);
 
@@ -118,24 +126,35 @@ describe("Collection Database", () => {
 
     const [entity] = db.select().from(entities).all();
 
-    db.insert(attachments)
+    db.insert(assets)
       .values({
         entityId: entity.id,
         filename: "screenshot.png",
         mimeType: "image/png",
         storagePath: "/attachments/screenshot.png",
-        backend: "local",
       })
       .run();
 
     const rows = db
       .select()
-      .from(attachments)
-      .where(eq(attachments.entityId, entity.id))
+      .from(assets)
+      .where(eq(assets.entityId, entity.id))
       .all();
     expect(rows).toHaveLength(1);
     expect(rows[0].filename).toBe("screenshot.png");
-    expect(rows[0].backend).toBe("local");
+  });
+
+  it("supports tags table with unique name", () => {
+    const dbPath = join(TEST_DIR, "collection-tags-table.db");
+    const db = getCollectionDb(dbPath);
+
+    db.insert(tags).values({ name: "bug" }).run();
+    db.insert(tags).values({ name: "feature" }).run();
+
+    const allTags = db.select().from(tags).all();
+    expect(allTags).toHaveLength(2);
+    expect(allTags.map((t) => t.name).sort()).toEqual(["bug", "feature"]);
+    expect(allTags[0].id).toBeTruthy();
   });
 
   it("supports sync_state and sync_runs", () => {
@@ -171,34 +190,4 @@ describe("Collection Database", () => {
     expect(runs[0].entitiesCreated).toBe(10);
   });
 
-  it("supports entity_relations", () => {
-    const dbPath = join(TEST_DIR, "collection-relations.db");
-    const db = getCollectionDb(dbPath);
-
-    // Create two entities
-    db.insert(entities)
-      .values([
-        { externalId: "issue-1", entityType: "issue", title: "Bug report", data: {} },
-        { externalId: "pr-1", entityType: "pull_request", title: "Fix for bug", data: {} },
-      ])
-      .run();
-
-    const allEntities = db.select().from(entities).all();
-    expect(allEntities).toHaveLength(2);
-
-    // Create a relation
-    db.insert(entityRelations)
-      .values({
-        sourceEntityId: allEntities[0].id,
-        targetEntityId: allEntities[1].id,
-        relationType: "fixes",
-      })
-      .run();
-
-    const relations = db.select().from(entityRelations).all();
-    expect(relations).toHaveLength(1);
-    expect(relations[0].relationType).toBe("fixes");
-    expect(relations[0].sourceEntityId).toBe(allEntities[0].id);
-    expect(relations[0].targetEntityId).toBe(allEntities[1].id);
-  });
 });

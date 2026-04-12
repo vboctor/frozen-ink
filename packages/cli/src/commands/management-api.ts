@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
+import yaml from "js-yaml";
 import {
   getFrozenInkHome,
   getCollectionDb,
@@ -15,8 +16,8 @@ import {
   removeCollection,
   updateCollection,
   renameCollection,
-  listDeployments,
-  removeDeployment,
+  listSites,
+  removeSite,
   loadConfig,
   SyncEngine,
   ThemeEngine,
@@ -311,11 +312,11 @@ export function handleManagementRequest(req: Request): Response | null {
     return jsonResponse(runs);
   }
 
-  // --- Deployments ---
+  // --- Sites (deployments) ---
 
   // GET /api/deployments
   if (path === "/api/deployments" && method === "GET") {
-    return jsonResponse(listDeployments());
+    return jsonResponse(listSites());
   }
 
   // DELETE /api/deployments/:name — full Cloudflare teardown
@@ -323,12 +324,12 @@ export function handleManagementRequest(req: Request): Response | null {
   if (deleteDepMatch && method === "DELETE") {
     const name = decodeURIComponent(deleteDepMatch[1]);
     return handleAsync(async () => {
-      const { getDeployment: getDeploymentEntry } = await import("@frozenink/core");
-      const deployment = getDeploymentEntry(name);
-      if (!deployment) return errorResponse("Deployment not found", 404);
+      const { getSite: getSiteEntry } = await import("@frozenink/core");
+      const site = getSiteEntry(name);
+      if (!site) return errorResponse("Site not found", 404);
 
       const { unpublishDeployment } = await import("./unpublish");
-      await unpublishDeployment(deployment, (step, detail) => {
+      await unpublishDeployment(site, (step, detail) => {
         console.log(`  [unpublish:${step}] ${detail}`);
       });
       return jsonResponse({ ok: true });
@@ -386,30 +387,30 @@ export function handleManagementRequest(req: Request): Response | null {
     return handleAsync(async () => {
       const body = await readBody(req);
       const home = getFrozenInkHome();
-      const configPath = join(home, "config.json");
+      const configPath = join(home, "frozenink.yml");
 
       let existing: Record<string, unknown> = {};
       if (existsSync(configPath)) {
-        existing = JSON.parse(readFileSync(configPath, "utf-8"));
+        existing = (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {};
       }
 
       const merged = { ...existing, ...body };
-      writeFileSync(configPath, JSON.stringify(merged, null, 2), "utf-8");
+      writeFileSync(configPath, yaml.dump(merged, { lineWidth: -1, noRefs: true, sortKeys: false }), "utf-8");
       return jsonResponse({ ok: true });
     });
   }
 
-  // --- UI Preferences (stored in config.json so they survive port changes) ---
+  // --- UI Preferences (stored in frozenink.yml so they survive port changes) ---
 
   // GET /api/preferences
   if (path === "/api/preferences" && method === "GET") {
     const home = getFrozenInkHome();
-    const configPath = join(home, "config.json");
+    const configPath = join(home, "frozenink.yml");
     let prefs: Record<string, unknown> = {};
     if (existsSync(configPath)) {
       try {
-        const raw = JSON.parse(readFileSync(configPath, "utf-8"));
-        prefs = raw.ui_preferences ?? {};
+        const raw = (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {};
+        prefs = (raw.ui_preferences as Record<string, unknown>) ?? {};
       } catch {}
     }
     return jsonResponse(prefs);
@@ -420,14 +421,14 @@ export function handleManagementRequest(req: Request): Response | null {
     return handleAsync(async () => {
       const body = await readBody(req);
       const home = getFrozenInkHome();
-      const configPath = join(home, "config.json");
+      const configPath = join(home, "frozenink.yml");
 
       let existing: Record<string, unknown> = {};
       if (existsSync(configPath)) {
-        try { existing = JSON.parse(readFileSync(configPath, "utf-8")); } catch {}
+        try { existing = (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {}; } catch {}
       }
       existing.ui_preferences = { ...((existing.ui_preferences as Record<string, unknown>) ?? {}), ...body };
-      writeFileSync(configPath, JSON.stringify(existing, null, 2), "utf-8");
+      writeFileSync(configPath, yaml.dump(existing, { lineWidth: -1, noRefs: true, sortKeys: false }), "utf-8");
       return jsonResponse({ ok: true });
     });
   }
@@ -437,12 +438,12 @@ export function handleManagementRequest(req: Request): Response | null {
   // GET /api/publish-presets
   if (path === "/api/publish-presets" && method === "GET") {
     const home = getFrozenInkHome();
-    const configPath = join(home, "config.json");
+    const configPath = join(home, "frozenink.yml");
     let presets: unknown[] = [];
     if (existsSync(configPath)) {
       try {
-        const raw = JSON.parse(readFileSync(configPath, "utf-8"));
-        presets = raw.publish_presets ?? [];
+        const raw = (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {};
+        presets = (raw.publish_presets as unknown[]) ?? [];
       } catch {}
     }
     return jsonResponse(presets);
@@ -454,14 +455,14 @@ export function handleManagementRequest(req: Request): Response | null {
       const body = await readBody(req);
       const presets = body.presets as unknown[];
       const home = getFrozenInkHome();
-      const configPath = join(home, "config.json");
+      const configPath = join(home, "frozenink.yml");
 
       let existing: Record<string, unknown> = {};
       if (existsSync(configPath)) {
-        try { existing = JSON.parse(readFileSync(configPath, "utf-8")); } catch {}
+        try { existing = (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {}; } catch {}
       }
       existing.publish_presets = presets;
-      writeFileSync(configPath, JSON.stringify(existing, null, 2), "utf-8");
+      writeFileSync(configPath, yaml.dump(existing, { lineWidth: -1, noRefs: true, sortKeys: false }), "utf-8");
       return jsonResponse({ ok: true });
     });
   }
@@ -569,7 +570,8 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
           collectionName: name,
           themeEngine,
           storage,
-          markdownBasePath: "markdown",
+          markdownBasePath: "content",
+          assetConfig: col.assets as { extensions?: string[]; maxSize?: number } | undefined,
           onEntityProcessed: (info) => {
             if (info.created) totalCreated++;
             if (info.updated) totalUpdated++;

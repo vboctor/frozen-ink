@@ -23,18 +23,22 @@ export interface EntityTag {
   id: number;
   collection_name: string;
   entity_id: number;
-  tag: string;
+  tag_id: number;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
 }
 
 export interface EntityLink {
   id: number;
   collection_name: string;
   source_entity_id: number;
-  source_markdown_path: string;
-  target_path: string;
+  target_entity_id: number;
 }
 
-export interface Attachment {
+export interface Asset {
   id: number;
   collection_name: string;
   entity_id: number;
@@ -136,36 +140,24 @@ export async function getEntityTags(
   entityId: number,
 ): Promise<string[]> {
   const { results } = await db
-    .prepare("SELECT tag FROM entity_tags WHERE collection_name = ? AND entity_id = ?")
+    .prepare(
+      "SELECT t.name FROM entity_tags et INNER JOIN tags t ON et.tag_id = t.id WHERE et.collection_name = ? AND et.entity_id = ?",
+    )
     .bind(collectionName, entityId)
-    .all<{ tag: string }>();
-  return (results ?? []).map((r) => r.tag);
+    .all<{ name: string }>();
+  return (results ?? []).map((r) => r.name);
 }
 
 export async function getBacklinks(
   db: D1Database,
   collectionName: string,
-  targetPath: string,
+  targetEntityId: number,
 ): Promise<Array<{ entity: Entity; link: EntityLink }>> {
-  // Build variants for matching
-  const variants = [targetPath, `markdown/${targetPath}`];
-  if (!targetPath.endsWith(".md")) {
-    variants.push(`${targetPath}.md`, `markdown/${targetPath}.md`);
-  }
-  const filename = targetPath.includes("/") ? targetPath.split("/").pop()! : null;
-  if (filename) {
-    variants.push(filename, `markdown/${filename}`);
-    if (!filename.endsWith(".md")) {
-      variants.push(`${filename}.md`, `markdown/${filename}.md`);
-    }
-  }
-
-  const placeholders = variants.map(() => "?").join(",");
   const { results: linkRows } = await db
     .prepare(
-      `SELECT * FROM entity_links WHERE collection_name = ? AND target_path IN (${placeholders})`,
+      "SELECT * FROM links WHERE collection_name = ? AND target_entity_id = ?",
     )
-    .bind(collectionName, ...variants)
+    .bind(collectionName, targetEntityId)
     .all<EntityLink>();
 
   const seen = new Set<number>();
@@ -188,43 +180,28 @@ export async function getBacklinks(
 export async function getOutgoingLinks(
   db: D1Database,
   collectionName: string,
-  sourcePath: string,
-): Promise<Array<{ entity: Entity | null; targetPath: string }>> {
-  const variants = [sourcePath, `markdown/${sourcePath}`];
-  const placeholders = variants.map(() => "?").join(",");
-
+  sourceEntityId: number,
+): Promise<Array<{ entity: Entity | null; link: EntityLink }>> {
   const { results: linkRows } = await db
     .prepare(
-      `SELECT * FROM entity_links WHERE collection_name = ? AND source_markdown_path IN (${placeholders})`,
+      "SELECT * FROM links WHERE collection_name = ? AND source_entity_id = ?",
     )
-    .bind(collectionName, ...variants)
+    .bind(collectionName, sourceEntityId)
     .all<EntityLink>();
 
-  const seen = new Set<string>();
-  const out: Array<{ entity: Entity | null; targetPath: string }> = [];
+  const seen = new Set<number>();
+  const out: Array<{ entity: Entity | null; link: EntityLink }> = [];
 
   for (const link of linkRows ?? []) {
-    if (seen.has(link.target_path)) continue;
-    seen.add(link.target_path);
+    if (seen.has(link.target_entity_id)) continue;
+    seen.add(link.target_entity_id);
 
-    // Try direct match
-    let entity = await db
-      .prepare("SELECT * FROM entities WHERE markdown_path = ?")
-      .bind(link.target_path)
+    const entity = await db
+      .prepare("SELECT * FROM entities WHERE id = ?")
+      .bind(link.target_entity_id)
       .first<Entity>();
 
-    // Try filename match
-    if (!entity) {
-      const filename = link.target_path.split("/").pop();
-      if (filename) {
-        entity = await db
-          .prepare("SELECT * FROM entities WHERE markdown_path LIKE ?")
-          .bind(`%/${filename}`)
-          .first<Entity>();
-      }
-    }
-
-    out.push({ entity, targetPath: link.target_path });
+    out.push({ entity, link });
   }
 
   return out;

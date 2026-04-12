@@ -4,10 +4,10 @@ import { existsSync, statSync, readdirSync } from "fs";
 import { join } from "path";
 import { exec } from "child_process";
 import {
-  contextExists,
+  ensureInitialized,
   listCollections,
-  listDeployments,
-  getDeployment,
+  listSites,
+  getSite,
   getCollectionDb,
   getCollectionDbPath,
   getFrozenInkHome,
@@ -112,10 +112,10 @@ export function PublishView({
   const [pubResult, setPubResult] = useState<{ workerUrl: string; mcpUrl: string } | null>(null);
   const [inputValue, setInputValue] = useState("");
 
-  if (!contextExists()) return <Text color="yellow">Not initialized.</Text>;
+  ensureInitialized();
 
   const collections = listCollections().filter((c: { enabled: boolean }) => c.enabled).map((c: { name: string }) => c.name);
-  const deployments = listDeployments();
+  const deployments = listSites();
   const depNames = deployments.map((d: { name: string }) => d.name);
   const currentDep = deployments[depCursor];
 
@@ -152,7 +152,7 @@ export function PublishView({
     setDepMode("deleting");
     setDepProgress([]);
     try {
-      const dep = getDeployment(currentDep.name);
+      const dep = getSite(currentDep.name);
       if (!dep) { setDepError("Deployment not found"); setDepMode("error-delete"); return; }
       await unpublishDeployment(dep, (step, detail) => setDepProgress((p) => [...p, `[${step}] ${detail}`]));
       setDepMessage(`Deployment "${currentDep.name}" removed.`);
@@ -310,7 +310,7 @@ export function PublishView({
         ) : (
           <>
             <Box flexDirection="column" marginTop={1}>
-              {deployments.map((dep: { name: string; url: string; collections: string[]; passwordProtected: boolean; publishedAt: string; mcpUrl: string }, i: number) => {
+              {deployments.map((dep: { name: string; url: string; collections: string[]; password?: { protected: boolean }; publishedAt: string; mcpUrl: string }, i: number) => {
                 let depEntities = 0;
                 let depSize = 0;
                 for (const cn of dep.collections) { const s = getCollectionStats(cn); depEntities += s.entityCount; depSize += s.diskSize; }
@@ -318,7 +318,7 @@ export function PublishView({
                   <Box key={dep.name} gap={1}>
                     <Text color={i === depCursor ? "cyan" : undefined}>{i === depCursor ? "❯" : " "}</Text>
                     <Text bold={i === depCursor}>{dep.name}</Text>
-                    <Text color={dep.passwordProtected ? "green" : "yellow"}>[{dep.passwordProtected ? "protected" : "public"}]</Text>
+                    <Text color={dep.password?.protected ? "green" : "yellow"}>[{dep.password?.protected ? "protected" : "public"}]</Text>
                     <Text dimColor>{depEntities} entities</Text>
                     <Text dimColor>{formatSize(depSize)}</Text>
                   </Box>

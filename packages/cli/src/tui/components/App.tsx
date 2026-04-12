@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import {
-  contextExists,
+  ensureInitialized,
   listCollections,
 } from "@frozenink/core";
 import { CollectionList } from "./CollectionList.js";
@@ -39,8 +39,8 @@ export function App(): React.ReactElement {
   const [screen, setScreen] = useState<Screen>("home");
   const [menuCursor, setMenuCursor] = useState(0);
 
-  const initialized = contextExists();
-  const hasCollections = initialized && listCollections().length > 0;
+  ensureInitialized();
+  const hasCollections = listCollections().length > 0;
   const menuItems = ALL_MENU_ITEMS.filter(
     (item) => !item.requiresCollections || hasCollections,
   );
@@ -82,12 +82,7 @@ export function App(): React.ReactElement {
           <Text bold color="cyan">Frozen Ink</Text>
           <Text dimColor>— Local data replica manager</Text>
         </Box>
-        {!initialized && (
-          <Box paddingX={2} marginBottom={1}>
-            <Text color="yellow">Not initialized. Select Collections to get started.</Text>
-          </Box>
-        )}
-        {initialized && !hasCollections && (
+        {!hasCollections && (
           <Box paddingX={2} marginBottom={1}>
             <Text dimColor>No collections configured. Select Collections to add one.</Text>
           </Box>

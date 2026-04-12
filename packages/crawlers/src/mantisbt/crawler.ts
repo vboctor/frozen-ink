@@ -9,7 +9,10 @@ import { createCryptoHasher } from "@frozenink/core";
 import type {
   MantisBTConfig,
   MantisBTCredentials,
+  MantisBTEntityType,
   MantisBTIssue,
+  MantisBTPage,
+  MantisBTPageFile,
   MantisBTProject,
   MantisBTUser,
 } from "./types";
@@ -28,11 +31,15 @@ interface MantisBTSyncCursor extends SyncCursor {
   /** Number of consecutive repeated page signatures. */
   repeatedPageCount?: number;
   /** Current sync phase. Undefined / missing means "issues". */
-  phase?: "issues" | "users";
+  phase?: "issues" | "pages" | "users";
   /** User data accumulated across issue pages (serialized in cursor). */
   _users?: Record<number, { id: number; name: string; email?: string }>;
   /** Project data accumulated across issue pages (serialized in cursor). */
   _projects?: Record<number, { id: number; name: string; categories: string[] }>;
+  /** Remaining project IDs to browse for pages (MantisHub only). */
+  _pagesProjectIds?: number[];
+  /** Current browse page within the current project's pages. */
+  _pagesBrowsePage?: number;
 }
 
 const PAGE_SIZE = 25;
@@ -56,22 +63,17 @@ function padId(id: number): string {
   return String(id).padStart(5, "0");
 }
 
-function attachmentFilename(issueId: number, filename: string): string {
-  const hasher = createCryptoHasher("md5");
-  hasher.update(filename);
-  const hash = hasher.digest("hex").slice(0, 8);
-  const dotIdx = filename.lastIndexOf(".");
-  const ext = dotIdx !== -1 ? filename.slice(dotIdx) : "";
-  return `${padId(issueId)}-${hash}${ext}`;
+/** Asset filename: <id>-<original-filename> */
+function assetFilename(id: number, filename: string): string {
+  return `${id}-${filename}`;
 }
 
-function noteAttachmentFilename(issueId: number, noteId: number, filename: string): string {
-  const hasher = createCryptoHasher("md5");
-  hasher.update(filename);
-  const hash = hasher.digest("hex").slice(0, 8);
-  const dotIdx = filename.lastIndexOf(".");
-  const ext = dotIdx !== -1 ? filename.slice(dotIdx) : "";
-  return `${padId(issueId)}-${padId(noteId)}-${hash}${ext}`;
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60);
 }
 
 /** Detect MantisHub instances by URL pattern. */
@@ -91,16 +93,17 @@ export class MantisBTCrawler implements Crawler {
     displayName: "MantisBT Issue Tracker",
     description:
       "Crawls a MantisBT instance via its REST API, syncing issues from newest to oldest",
+    version: "3.1",
     configSchema: {
-      baseUrl: {
+      url: {
         type: "string",
         required: true,
         description: "Base URL of the MantisBT instance (e.g. https://mantisbt.org/bugs)",
       },
-      projectName: {
-        type: "string",
+      project: {
+        type: "object",
         required: false,
-        description: "Optional project name to filter issues (resolved to ID via API)",
+        description: "Optional project to filter (object with id and name)",
       },
       maxEntities: {
         type: "number",
@@ -116,7 +119,22 @@ export class MantisBTCrawler implements Crawler {
   private projectId?: number;
   private maxEntities?: number;
   private mantisHubMode = false;
+  private syncEntities?: MantisBTEntityType[];
   private fetchFn: typeof fetch = globalThis.fetch;
+
+  /** Accept both new field names and legacy field names for backward compat. */
+  private static resolveConfig(config: Record<string, unknown>): MantisBTConfig {
+    const url = (config.url ?? config.baseUrl) as string;
+    const project = config.project as { id?: number; name?: string } | undefined;
+    const projectId = project?.id ?? (config.projectId as number | undefined);
+    const projectName = project?.name ?? (config.projectName as string | undefined);
+    return {
+      url,
+      project: projectId || projectName ? { id: projectId, name: projectName } : undefined,
+      maxEntities: config.maxEntities as number | undefined,
+      entities: (config.entities ?? config.syncEntities) as MantisBTEntityType[] | undefined,
+    };
+  }
 
   // Accumulated during the issues phase; emitted in the users phase.
   private collectedUsers = new Map<number, { id: number; name: string; email?: string }>();
@@ -126,19 +144,20 @@ export class MantisBTCrawler implements Crawler {
     config: Record<string, unknown>,
     credentials: Record<string, unknown>,
   ): Promise<void> {
-    const cfg = config as unknown as MantisBTConfig;
+    const cfg = MantisBTCrawler.resolveConfig(config);
     const creds = credentials as unknown as MantisBTCredentials;
-    this.baseUrl = cfg.baseUrl.replace(/\/+$/, "");
+    this.baseUrl = cfg.url.replace(/\/+$/, "");
     this.token = creds.token ?? "";
     this.maxEntities = cfg.maxEntities;
     this.mantisHubMode = isMantisHub(this.baseUrl);
+    this.syncEntities = cfg.entities;
 
-    // Use stored projectId if available (persisted at creation time);
-    // otherwise resolve projectName to projectId via API.
-    if (cfg.projectId) {
-      this.projectId = cfg.projectId;
-    } else if (cfg.projectName) {
-      this.projectId = await this.resolveProjectId(cfg.projectName);
+    // Use stored project.id if available (persisted at creation time);
+    // otherwise resolve project.name to project.id via API.
+    if (cfg.project?.id) {
+      this.projectId = cfg.project.id;
+    } else if (cfg.project?.name) {
+      this.projectId = await this.resolveProjectId(cfg.project.name);
     }
   }
 
@@ -178,9 +197,19 @@ export class MantisBTCrawler implements Crawler {
       );
     }
 
-    // Users + projects phase: emit after all issues are processed.
+    // Pages phase (MantisHub only): sync wiki pages between issues and users.
+    if (c.phase === "pages") {
+      return this.syncPages(c);
+    }
+
+    // Users + projects phase: emit after all issues (and pages) are processed.
     if (c.phase === "users") {
       return this.syncUsersAndProjects(c);
+    }
+
+    // If issues sync is disabled, skip directly to the next applicable phase.
+    if (!this.shouldSync("issues") && !c.phase) {
+      return { entities: [], ...this.transitionFromIssues(c.updatedSince) };
     }
 
     // ── Issues phase ─────────────────────────────────────────────
@@ -253,14 +282,7 @@ export class MantisBTCrawler implements Crawler {
     if (page > 1 && repeatedPageCount > 0) {
       return {
         entities: [],
-        nextCursor: {
-          phase: "users",
-          updatedSince: finalUpdatedSince,
-          _users: Object.fromEntries(this.collectedUsers),
-          _projects: Object.fromEntries(this.collectedProjects),
-        },
-        hasMore: true,
-        deletedExternalIds: [],
+        ...this.transitionFromIssues(finalUpdatedSince),
       };
     }
 
@@ -301,12 +323,11 @@ export class MantisBTCrawler implements Crawler {
       };
     }
 
-    // Issues exhausted — transition to users+projects phase.
+    // Issues exhausted — transition to pages phase (MantisHub) or users+projects phase.
+    const transition = this.transitionFromIssues(finalUpdatedSince);
     return {
       entities,
-      nextCursor: { phase: "users", updatedSince: finalUpdatedSince, ...serializedCollected },
-      hasMore: true,
-      deletedExternalIds: [],
+      ...transition,
     };
   }
 
@@ -314,18 +335,20 @@ export class MantisBTCrawler implements Crawler {
     const entities: CrawlerEntityData[] = [];
 
     // Fetch full user profiles; fall back to basic data on error.
-    for (const basic of this.collectedUsers.values()) {
-      if (!basic.name) continue; // Skip users without a name
-      try {
-        const profile = await this.fetchUser(basic.id);
-        entities.push(this.buildUserEntity(profile));
-      } catch {
-        // Build a minimal user entity from data collected during issue sync.
-        entities.push(this.buildUserEntity({
-          id: basic.id,
-          name: basic.name,
-          email: basic.email,
-        }));
+    if (this.shouldSync("users")) {
+      for (const basic of this.collectedUsers.values()) {
+        if (!basic.name) continue; // Skip users without a name
+        try {
+          const profile = await this.fetchUser(basic.id);
+          entities.push(this.buildUserEntity(profile));
+        } catch {
+          // Build a minimal user entity from data collected during issue sync.
+          entities.push(this.buildUserEntity({
+            id: basic.id,
+            name: basic.name,
+            email: basic.email,
+          }));
+        }
       }
     }
 
@@ -348,7 +371,7 @@ export class MantisBTCrawler implements Crawler {
   ): Promise<boolean> {
     try {
       const token = (credentials.token as string) ?? "";
-      const baseUrl = ((credentials.baseUrl as string) ?? this.baseUrl).replace(/\/+$/, "");
+      const baseUrl = ((credentials.url as string) ?? (credentials.baseUrl as string) ?? this.baseUrl).replace(/\/+$/, "");
       if (!baseUrl) return false;
 
       const headers: Record<string, string> = {
@@ -373,6 +396,12 @@ export class MantisBTCrawler implements Crawler {
   }
 
   async dispose(): Promise<void> {}
+
+  /** Whether a given entity type should be synced based on the syncEntities config. */
+  private shouldSync(type: MantisBTEntityType): boolean {
+    if (!this.syncEntities) return true; // default: sync everything applicable
+    return this.syncEntities.includes(type);
+  }
 
   setFetch(fn: typeof fetch): void {
     this.fetchFn = fn;
@@ -462,6 +491,310 @@ export class MantisBTCrawler implements Crawler {
         name: project.name,
         categories: project.categories,
       },
+    };
+  }
+
+  /**
+   * Build the cursor/result for transitioning out of the issues phase.
+   * Goes to pages (if MantisHub + pages enabled) or users, or finishes.
+   */
+  private transitionFromIssues(updatedSince: string | undefined): Pick<SyncResult, "nextCursor" | "hasMore" | "deletedExternalIds"> {
+    const serialized = {
+      _users: Object.fromEntries(this.collectedUsers),
+      _projects: Object.fromEntries(this.collectedProjects),
+    };
+
+    if (this.mantisHubMode && this.shouldSync("pages")) {
+      return {
+        nextCursor: {
+          phase: "pages" as const,
+          updatedSince,
+          ...serialized,
+          _pagesProjectIds: this.getPageProjectIds(),
+        },
+        hasMore: true,
+        deletedExternalIds: [],
+      };
+    }
+
+    if (this.shouldSync("users")) {
+      return {
+        nextCursor: { phase: "users" as const, updatedSince, ...serialized },
+        hasMore: true,
+        deletedExternalIds: [],
+      };
+    }
+
+    // Neither pages nor users selected — we're done.
+    return {
+      nextCursor: updatedSince ? { updatedSince } : null,
+      hasMore: false,
+      deletedExternalIds: [],
+    };
+  }
+
+  /**
+   * Build the cursor/result for transitioning out of the pages phase.
+   * Goes to users if enabled, otherwise finishes.
+   */
+  private transitionFromPages(c: MantisBTSyncCursor): Pick<SyncResult, "nextCursor" | "hasMore" | "deletedExternalIds"> {
+    const serialized = {
+      _users: Object.fromEntries(this.collectedUsers),
+      _projects: c._projects ?? Object.fromEntries(this.collectedProjects),
+    };
+
+    if (this.shouldSync("users")) {
+      return {
+        nextCursor: { phase: "users" as const, updatedSince: c.updatedSince, ...serialized },
+        hasMore: true,
+        deletedExternalIds: [],
+      };
+    }
+
+    return {
+      nextCursor: c.updatedSince ? { updatedSince: c.updatedSince } : null,
+      hasMore: false,
+      deletedExternalIds: [],
+    };
+  }
+
+  /** Compute the assets directory prefix for an entity type and project. */
+  private assetDir(entityType: string, projectName?: string): string {
+    if (this.projectId) {
+      // Single project: content/<entity-type>/assets/
+      return `content/${entityType}/assets`;
+    }
+    // Multi-project: content/<project-slug>/<entity-type>/assets/
+    return `content/${slugify(projectName ?? "unknown")}/${entityType}/assets`;
+  }
+
+  /** Build a project name → ID mapping from collected projects. */
+  private getProjectNameToId(): Record<string, number> {
+    const map: Record<string, number> = {};
+    for (const p of this.collectedProjects.values()) {
+      map[p.name] = p.id;
+    }
+    return map;
+  }
+
+  /** Get project IDs to browse for pages. Uses configured project or all collected projects. */
+  private getPageProjectIds(): number[] {
+    if (this.projectId) return [this.projectId];
+    return [...this.collectedProjects.keys()];
+  }
+
+  /**
+   * Pages phase: browse and fetch wiki pages from MantisHub instances.
+   * Processes one project per sync call to avoid timeouts.
+   */
+  private async syncPages(c: MantisBTSyncCursor): Promise<SyncResult> {
+    const projectIds = c._pagesProjectIds ?? [];
+    if (projectIds.length === 0) {
+      // No projects left — transition to users phase or finish.
+      return { entities: [], ...this.transitionFromPages(c) };
+    }
+
+    const currentProjectId = projectIds[0];
+    const remainingProjectIds = projectIds.slice(1);
+    const entities: CrawlerEntityData[] = [];
+
+    try {
+      // Browse all pages for this project (with pagination).
+      const browsePage = c._pagesBrowsePage ?? 1;
+      const browseResult = await this.browsePages(currentProjectId, browsePage);
+
+      // Fetch full details for each page and build entities.
+      for (const pageSummary of browseResult.pages) {
+        try {
+          const { page, files } = await this.fetchPage(currentProjectId, pageSummary.name);
+          entities.push(await this.buildPageEntity(page, files));
+
+          // Collect users from page metadata.
+          this.collectUsersFromPage(page);
+        } catch (err) {
+          console.warn(`  Warning: could not fetch page "${pageSummary.name}" in project ${currentProjectId}: ${err}`);
+        }
+      }
+
+      // If there are more browse pages, continue with this project.
+      if (browseResult.hasMore) {
+        return {
+          entities,
+          nextCursor: {
+            phase: "pages",
+            updatedSince: c.updatedSince,
+            _users: Object.fromEntries(this.collectedUsers),
+            _projects: c._projects,
+            _pagesProjectIds: projectIds,
+            _pagesBrowsePage: browsePage + 1,
+          },
+          hasMore: true,
+          deletedExternalIds: [],
+        };
+      }
+    } catch (err) {
+      // Pages plugin not available or project has no pages — skip gracefully.
+      console.warn(`  Warning: could not browse pages for project ${currentProjectId}: ${err}`);
+    }
+
+    // Move to the next project (or users phase if no more projects).
+    const serialized = {
+      _users: Object.fromEntries(this.collectedUsers),
+      _projects: c._projects,
+    };
+
+    if (remainingProjectIds.length > 0) {
+      return {
+        entities,
+        nextCursor: {
+          phase: "pages",
+          updatedSince: c.updatedSince,
+          ...serialized,
+          _pagesProjectIds: remainingProjectIds,
+        },
+        hasMore: true,
+        deletedExternalIds: [],
+      };
+    }
+
+    // All projects processed — transition to users phase or finish.
+    return { entities, ...this.transitionFromPages(c) };
+  }
+
+  /** Browse pages for a project via the ApiX browse endpoint. */
+  private async browsePages(
+    projectId: number,
+    page: number,
+  ): Promise<{ pages: Array<{ id: number; name: string; title: string }>; hasMore: boolean }> {
+    const limit = 50;
+    const url = `${this.baseUrl}/api/rest/plugins/ApiX/projects/${projectId}/pages/pages/browse?limit=${limit}&page=${page}`;
+    const response = await this.apiFetch(url);
+    const data = (await response.json()) as {
+      pages: Array<{ id: number; name: string; title: string }>;
+      total_count: number;
+    };
+    const pages = data.pages ?? [];
+    const totalCount = data.total_count ?? pages.length;
+    const hasMore = page * limit < totalCount;
+    return { pages, hasMore };
+  }
+
+  /** Fetch a single page's full content and files via the ApiX update endpoint (raw markdown). */
+  private async fetchPage(
+    projectId: number,
+    pageName: string,
+  ): Promise<{ page: MantisBTPage; files: MantisBTPageFile[] }> {
+    const url = `${this.baseUrl}/api/rest/plugins/ApiX/projects/${projectId}/pages/update/${encodeURIComponent(pageName)}`;
+    const response = await this.apiFetch(url);
+    const data = (await response.json()) as {
+      page_view: {
+        page: MantisBTPage;
+        files: MantisBTPageFile[];
+      };
+    };
+    return {
+      page: data.page_view.page,
+      files: data.page_view.files ?? [],
+    };
+  }
+
+  /** Collect users from a page's created_by and updated_by fields. */
+  private collectUsersFromPage(page: MantisBTPage): void {
+    if (page.created_by?.name) {
+      this.collectedUsers.set(page.created_by.id, {
+        id: page.created_by.id,
+        name: page.created_by.name,
+        email: page.created_by.email,
+      });
+    }
+    if (page.updated_by?.name) {
+      this.collectedUsers.set(page.updated_by.id, {
+        id: page.updated_by.id,
+        name: page.updated_by.name,
+        email: page.updated_by.email,
+      });
+    }
+  }
+
+  private async buildPageEntity(
+    page: MantisBTPage,
+    files: MantisBTPageFile[],
+  ): Promise<CrawlerEntityData> {
+    const hasher = createCryptoHasher("sha256");
+    hasher.update(JSON.stringify({ page, files }));
+    const contentHash = hasher.digest("hex");
+
+    const tags: string[] = ["page"];
+    if (page.project?.name) {
+      tags.push(`project:${page.project.name}`);
+    }
+
+    // Download page file attachments.
+    const entityAttachments: CrawlerEntityData["attachments"] = [];
+    const savedPaths = new Set<string>();
+    const assetPrefix = this.assetDir("pages", page.project?.name);
+
+    for (const file of files) {
+      const storedName = assetFilename(file.id, file.name);
+      const storagePath = `${assetPrefix}/${storedName}`;
+
+      // The download_url from Pages is relative; make it absolute.
+      let downloadUrl = file.download_url;
+      if (downloadUrl && !downloadUrl.startsWith("http")) {
+        downloadUrl = `${this.baseUrl}/${downloadUrl.replace(/^\//, "")}`;
+      }
+
+      const content = await this.downloadBinary(
+        downloadUrl,
+        `page "${page.name}" file "${file.name}"`,
+      );
+
+      if (content) {
+        entityAttachments.push({
+          filename: storedName,
+          mimeType: file.content_type || "application/octet-stream",
+          content,
+          storagePath,
+        });
+        savedPaths.add(storagePath);
+      }
+    }
+
+    const projectId = page.project?.id;
+    const pageName = page.name;
+    const pageUrl = `${this.baseUrl}/plugin.php?page=Pages/view&project_id=${projectId}&name=${encodeURIComponent(pageName)}`;
+
+    return {
+      externalId: `page:${projectId}:${pageName}`,
+      entityType: "page",
+      title: page.title || page.name,
+      contentHash,
+      url: pageUrl,
+      data: {
+        id: page.id,
+        name: page.name,
+        title: page.title,
+        content: page.content ?? "",
+        project: page.project,
+        issueId: page.issue_id,
+        createdBy: page.created_by,
+        updatedBy: page.updated_by,
+        createdAt: page.created_at?.timestamp,
+        updatedAt: page.updated_at?.timestamp,
+        files: files.map((f) => {
+          const sp = `${assetPrefix}/${assetFilename(f.id, f.name)}`;
+          return {
+            name: f.name,
+            content_type: f.content_type,
+            size: f.size,
+            storagePath: savedPaths.has(sp) ? sp : undefined,
+          };
+        }),
+        _projectNameToId: this.getProjectNameToId(),
+        _singleProject: !!this.projectId,
+      },
+      tags,
+      attachments: entityAttachments.length > 0 ? entityAttachments : undefined,
     };
   }
 
@@ -586,13 +919,14 @@ export class MantisBTCrawler implements Crawler {
     // Download attachments; track storage paths that were successfully saved.
     // Uses core MantisBT REST API first. On MantisHub instances, if the core
     // API fails, falls back to the ApiX IssueViewPage for signed download URLs.
-    const attachments: CrawlerEntityData["attachments"] = [];
+    const entityAttachments: CrawlerEntityData["attachments"] = [];
     const savedPaths = new Set<string>();
     let mantisHubUrls: Map<number, AttachmentUrlInfo> | null = null;
+    const assetPrefix = this.assetDir("issues", issue.project?.name);
 
     for (const file of issue.attachments ?? []) {
-      const storedName = attachmentFilename(issue.id, file.filename);
-      const storagePath = `attachments/mantisbt/${storedName}`;
+      const storedName = assetFilename(file.id, file.filename);
+      const storagePath = `${assetPrefix}/${storedName}`;
       let content = await this.downloadAttachment(
         issue.id, file.id, file.download_url,
         `issue ${issue.id} file "${file.filename}"`,
@@ -611,7 +945,7 @@ export class MantisBTCrawler implements Crawler {
       }
 
       if (content) {
-        attachments.push({
+        entityAttachments.push({
           filename: storedName,
           mimeType: file.content_type || "application/octet-stream",
           content,
@@ -623,8 +957,8 @@ export class MantisBTCrawler implements Crawler {
 
     for (const note of issue.notes ?? []) {
       for (const att of note.attachments ?? []) {
-        const storedName = noteAttachmentFilename(issue.id, note.id, att.filename);
-        const storagePath = `attachments/mantisbt/${storedName}`;
+        const storedName = assetFilename(att.id, att.filename);
+        const storagePath = `${assetPrefix}/${storedName}`;
         let content = await this.downloadAttachment(
           issue.id, att.id, att.download_url,
           `issue ${issue.id} note ${note.id} file "${att.filename}"`,
@@ -643,7 +977,7 @@ export class MantisBTCrawler implements Crawler {
         }
 
         if (content) {
-          attachments.push({
+          entityAttachments.push({
             filename: storedName,
             mimeType: att.content_type || "application/octet-stream",
             content,
@@ -679,28 +1013,30 @@ export class MantisBTCrawler implements Crawler {
         updatedAt: issue.updated_at,
         sticky: issue.sticky,
         attachments: (issue.attachments ?? []).map((f) => {
-          const storagePath = `attachments/mantisbt/${attachmentFilename(issue.id, f.filename)}`;
+          const sp = `${assetPrefix}/${assetFilename(f.id, f.filename)}`;
           return {
             filename: f.filename,
             content_type: f.content_type,
             size: f.size,
-            storagePath: savedPaths.has(storagePath) ? storagePath : undefined,
+            storagePath: savedPaths.has(sp) ? sp : undefined,
           };
         }),
         notes: (issue.notes ?? []).map((note) => ({
           ...note,
           attachments: (note.attachments ?? []).map((att) => {
-            const storagePath = `attachments/mantisbt/${noteAttachmentFilename(issue.id, note.id, att.filename)}`;
+            const sp = `${assetPrefix}/${assetFilename(att.id, att.filename)}`;
             return {
               ...att,
-              storagePath: savedPaths.has(storagePath) ? storagePath : undefined,
+              storagePath: savedPaths.has(sp) ? sp : undefined,
             };
           }),
         })),
         relationships: issue.relationships ?? [],
+        _projectNameToId: this.getProjectNameToId(),
+        _singleProject: !!this.projectId,
       },
       tags,
-      attachments: attachments.length > 0 ? attachments : undefined,
+      attachments: entityAttachments.length > 0 ? entityAttachments : undefined,
       relations: relations.length > 0 ? relations : undefined,
     };
   }

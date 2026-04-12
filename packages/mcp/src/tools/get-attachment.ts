@@ -8,7 +8,7 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
-  attachments,
+  assets,
 } from "@frozenink/core";
 import { and, eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
@@ -54,22 +54,22 @@ function buildCandidates(refPath: string, markdownPath: string | null): string[]
   }
 
   candidates.add(clean);
-  if (!clean.startsWith("attachments/")) {
-    candidates.add(`attachments/${clean}`);
+  if (!clean.startsWith("assets/")) {
+    candidates.add(`assets/${clean}`);
   }
 
   if (markdownPath) {
     const markdownDir = posix.dirname(markdownPath);
     const relResolved = posix.normalize(posix.join(markdownDir, clean));
     candidates.add(relResolved);
-    if (!relResolved.startsWith("attachments/")) {
-      candidates.add(`attachments/${relResolved}`);
+    if (!relResolved.startsWith("assets/")) {
+      candidates.add(`assets/${relResolved}`);
     }
 
     const relResolvedNoMd = posix.normalize(posix.join(markdownDir.replace(/^markdown\/?/, ""), clean));
     candidates.add(relResolvedNoMd);
-    if (!relResolvedNoMd.startsWith("attachments/")) {
-      candidates.add(`attachments/${relResolvedNoMd}`);
+    if (!relResolvedNoMd.startsWith("assets/")) {
+      candidates.add(`assets/${relResolvedNoMd}`);
     }
   }
 
@@ -90,7 +90,7 @@ export function registerGetAttachment(
         collection: z.string().describe("Collection name"),
         reference: z
           .string()
-          .describe("Attachment reference from markdown, e.g. ![[git/abc/logo.png]] or attachments/git/abc/logo.png"),
+          .describe("Attachment reference from markdown, e.g. ![[git/abc/logo.png]] or assets/git/abc/logo.png"),
         externalId: z
           .string()
           .optional()
@@ -186,7 +186,6 @@ export function registerGetAttachment(
             filename: string;
             mimeType: string;
             storagePath: string;
-            backend: string;
           }
         | undefined;
 
@@ -194,18 +193,18 @@ export function registerGetAttachment(
         const rows = sourceEntityId
           ? colDb
             .select()
-            .from(attachments)
+            .from(assets)
             .where(
               and(
-                eq(attachments.storagePath, candidate),
-                eq(attachments.entityId, sourceEntityId),
+                eq(assets.storagePath, candidate),
+                eq(assets.entityId, sourceEntityId),
               ),
             )
             .all()
           : colDb
             .select()
-            .from(attachments)
-            .where(eq(attachments.storagePath, candidate))
+            .from(assets)
+            .where(eq(assets.storagePath, candidate))
             .all();
 
         if (rows.length > 0) {
@@ -219,13 +218,13 @@ export function registerGetAttachment(
         const byFilename = sourceEntityId
           ? colDb
             .select()
-            .from(attachments)
-            .where(and(eq(attachments.filename, fileName), eq(attachments.entityId, sourceEntityId)))
+            .from(assets)
+            .where(and(eq(assets.filename, fileName), eq(assets.entityId, sourceEntityId)))
             .all()
           : colDb
             .select()
-            .from(attachments)
-            .where(eq(attachments.filename, fileName))
+            .from(assets)
+            .where(eq(assets.filename, fileName))
             .all();
 
         if (byFilename.length === 1) {

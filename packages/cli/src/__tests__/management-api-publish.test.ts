@@ -37,6 +37,8 @@ beforeEach(async () => {
     removeCollection: () => {},
     updateCollection: () => {},
     renameCollection: () => {},
+    listSites: () => [],
+    removeSite: () => {},
     listDeployments: () => [],
     removeDeployment: () => {},
     loadConfig: () => ({}),
@@ -45,6 +47,20 @@ beforeEach(async () => {
     LocalStorageBackend: class {},
     syncRuns: {},
     entities: {},
+    tags: {},
+    entityTags: {},
+    assets: {},
+    links: {},
+    SearchIndexer: class { updateIndex() {} clearIndex() {} close() {} removeIndex() {} },
+    isValidCollectionKey: () => true,
+    contextExists: () => true,
+    migrateFromLegacyContext: () => {},
+    getSite: () => null,
+    addSite: () => {},
+    getDeployment: () => null,
+    addDeployment: () => {},
+    configSchema: { parse: (x: any) => x },
+    defaultConfig: {},
   }));
 
   mock.module("@frozenink/crawlers", () => ({
@@ -55,9 +71,14 @@ beforeEach(async () => {
     mantisBTTheme: {},
   }));
 
+  mock.module("js-yaml", () => ({
+    default: { load: () => ({}), dump: () => "" },
+  }));
+
   mock.module("drizzle-orm", () => ({
     desc: () => ({}),
     eq: () => ({}),
+    sql: () => ({}),
   }));
 
   const mod = await import("../commands/management-api");

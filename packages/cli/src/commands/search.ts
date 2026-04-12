@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import {
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollection,
   getCollectionDbPath,
@@ -26,10 +26,7 @@ export const searchCommand = new Command("search")
         json?: boolean;
       },
     ) => {
-      if (!contextExists()) {
-        console.error("Frozen Ink not initialized. Run: fink init");
-        process.exit(1);
-      }
+      ensureInitialized();
 
       let collectionRows = opts.collection
         ? (() => {

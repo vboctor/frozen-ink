@@ -1,23 +1,17 @@
 import { Command } from "commander";
-import { existsSync } from "fs";
+import { existsSync, rmSync } from "fs";
 import { join } from "path";
 import {
   getFrozenInkHome,
   getCollectionDb,
-  contextExists,
+  ensureInitialized,
   listCollections,
   getCollection,
   getCollectionDbPath,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
-  SearchIndexer,
-  syncState,
   entities,
-  entityTags,
-  attachments,
-  entityLinks,
-  entityRelations,
 } from "@frozenink/core";
 import { sql } from "drizzle-orm";
 import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisBTTheme } from "@frozenink/crawlers";
@@ -30,10 +24,7 @@ export const syncCommand = new Command("sync")
   .option("--max-issues <count>", "Maximum issues to sync (overrides collection config)", parseInt)
   .option("--max-prs <count>", "Maximum pull requests to sync (overrides collection config)", parseInt)
   .action(async (collection: string, opts: { full?: boolean; max?: number; maxIssues?: number; maxPrs?: number }) => {
-    if (!contextExists()) {
-      console.error("Frozen Ink not initialized. Run: fink init");
-      process.exit(1);
-    }
+    ensureInitialized();
 
     const home = getFrozenInkHome();
     let collectionRows = collection === "*"
@@ -92,23 +83,16 @@ export const syncCommand = new Command("sync")
       );
 
       const dbPath = getCollectionDbPath(col.name);
+      const collectionDir = join(home, "collections", col.name);
 
-      // Full re-sync: wipe all collection data so the sync starts clean
+      // Full re-sync: nuke content/ and db/ directories so the sync starts clean
       if (opts.full) {
-        const colDb = getCollectionDb(dbPath);
-        colDb.delete(entityLinks).run();
-        colDb.delete(entityRelations).run();
-        colDb.delete(attachments).run();
-        colDb.delete(entityTags).run();
-        colDb.delete(entities).run();
-        colDb.delete(syncState).run();
-        const indexer = new SearchIndexer(dbPath);
-        indexer.clearIndex();
-        indexer.close();
+        const contentDir = join(collectionDir, "content");
+        const dbDir = join(collectionDir, "db");
+        if (existsSync(contentDir)) rmSync(contentDir, { recursive: true, force: true });
+        if (existsSync(dbDir)) rmSync(dbDir, { recursive: true, force: true });
         console.log(`  Cleared all data for full re-sync`);
       }
-
-      const collectionDir = join(home, "collections", col.name);
       const storage = new LocalStorageBackend(collectionDir);
 
       const engine = new SyncEngine({
@@ -117,7 +101,8 @@ export const syncCommand = new Command("sync")
         collectionName: col.name,
         themeEngine,
         storage,
-        markdownBasePath: "markdown",
+        markdownBasePath: "content",
+        assetConfig: col.assets as { extensions?: string[]; maxSize?: number } | undefined,
         onBatchFetched: ({ externalIds }) => {
           if (externalIds.length === 0) return;
           const ids = externalIds.map((externalId) => {

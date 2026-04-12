@@ -9,6 +9,11 @@ import { isBun } from "./runtime";
  * (exec, prepare, close).
  */
 export function openDatabase(dbPath: string): any {
+  // Ensure parent directory exists
+  const { mkdirSync } = require("fs");
+  const { dirname } = require("path");
+  mkdirSync(dirname(dbPath), { recursive: true });
+
   if (isBun) {
     const { Database } = require("bun:sqlite");
     return new Database(dbPath);

@@ -5,15 +5,16 @@ import { createInterface } from "readline";
 import {
   getFrozenInkHome,
   getCollectionDb,
-  contextExists,
+  ensureInitialized,
   getCollection,
   getCollectionDbPath,
-  addDeployment,
-  getDeployment,
+  addSite,
+  getSite,
   entities,
   entityTags,
-  entityLinks,
-  attachments,
+  tags,
+  links,
+  assets,
   getModuleDir,
   resolveWorkerBundle,
   resolveUiDist,
@@ -135,15 +136,15 @@ export async function publishCollections(
   }
   let collectionNames = [...options.collectionNames];
 
-  const existingDeployment = getDeployment(workerName);
-  const isUpdate = !!existingDeployment;
+  const existingSite = getSite(workerName);
+  const isUpdate = !!existingSite;
 
-  if (workerOnly && !existingDeployment) {
-    throw new Error(`Deployment "${workerName}" not found. --worker-only only works for existing deployments.`);
+  if (workerOnly && !existingSite) {
+    throw new Error(`Site "${workerName}" not found. --worker-only only works for existing sites.`);
   }
 
-  if (workerOnly && existingDeployment) {
-    collectionNames = existingDeployment.collections;
+  if (workerOnly && existingSite) {
+    collectionNames = existingSite.collections;
   }
 
   const home = getFrozenInkHome();
@@ -162,10 +163,10 @@ export async function publishCollections(
   let d1DatabaseId: string;
   let r2BucketName: string;
   if (workerOnly) {
-    const deployment = existingDeployment!;
-    d1DatabaseName = deployment.d1DatabaseName || `${workerName}-db`;
-    d1DatabaseId = deployment.d1DatabaseId;
-    r2BucketName = deployment.r2BucketName;
+    const site = existingSite!;
+    d1DatabaseName = site.database.name || `${workerName}-db`;
+    d1DatabaseId = site.database.id;
+    r2BucketName = site.bucket.name;
   } else {
     d1DatabaseName = `${workerName}-db`;
     d1DatabaseId = "";
@@ -181,11 +182,11 @@ export async function publishCollections(
     passwordHash = await hashPassword(password);
   } else if (removePassword) {
     passwordHash = "";
-  } else if (existingDeployment?.passwordHash) {
-    passwordHash = existingDeployment.passwordHash;
-  } else if (isUpdate && existingDeployment?.passwordProtected) {
+  } else if (existingSite?.password?.hash) {
+    passwordHash = existingSite.password.hash;
+  } else if (isUpdate && existingSite?.password?.protected) {
     throw new Error(
-      `Deployment "${workerName}" is password protected but no reusable password hash is stored locally. ` +
+      `Site "${workerName}" is password protected but no reusable password hash is stored locally. ` +
       "Re-publish with --password <new-password> to rotate credentials or --remove-password to disable protection.",
     );
   }
@@ -237,7 +238,7 @@ export async function publishCollections(
     try {
       onProgress("r2-manifest", "Reading existing R2 manifest...");
       const manifestJson = await executeD1Command(
-        existingDeployment!.d1DatabaseName || d1DatabaseName,
+        existingSite!.database.name || d1DatabaseName,
         "SELECT key FROM r2_manifest",
       );
       const parsed = JSON.parse(manifestJson);
@@ -256,9 +257,10 @@ export async function publishCollections(
 
     schemaSql.push("DROP TABLE IF EXISTS entities_fts;");
     schemaSql.push("DROP TABLE IF EXISTS r2_manifest;");
-    schemaSql.push("DROP TABLE IF EXISTS entity_links;");
+    schemaSql.push("DROP TABLE IF EXISTS links;");
     schemaSql.push("DROP TABLE IF EXISTS entity_tags;");
-    schemaSql.push("DROP TABLE IF EXISTS attachments;");
+    schemaSql.push("DROP TABLE IF EXISTS tags;");
+    schemaSql.push("DROP TABLE IF EXISTS assets;");
     schemaSql.push("DROP TABLE IF EXISTS entities;");
     schemaSql.push("DROP TABLE IF EXISTS collections_meta;");
     schemaSql.push("");
@@ -271,18 +273,19 @@ export async function publishCollections(
 );`);
     schemaSql.push("CREATE INDEX idx_entities_collection ON entities(collection_name);");
     schemaSql.push("CREATE INDEX idx_entities_external ON entities(collection_name, external_id);");
+    schemaSql.push("CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);");
     schemaSql.push(`CREATE TABLE entity_tags (
   id INTEGER PRIMARY KEY, collection_name TEXT NOT NULL,
-  entity_id INTEGER NOT NULL, tag TEXT NOT NULL
+  entity_id INTEGER NOT NULL, tag_id INTEGER NOT NULL
 );`);
-    schemaSql.push(`CREATE TABLE entity_links (
+    schemaSql.push(`CREATE TABLE links (
   id INTEGER PRIMARY KEY, collection_name TEXT NOT NULL,
   source_entity_id INTEGER NOT NULL,
-  source_markdown_path TEXT NOT NULL, target_path TEXT NOT NULL
+  target_entity_id INTEGER NOT NULL
 );`);
-    schemaSql.push("CREATE INDEX idx_links_target ON entity_links(target_path);");
-    schemaSql.push("CREATE INDEX idx_links_source ON entity_links(source_markdown_path);");
-    schemaSql.push(`CREATE TABLE attachments (
+    schemaSql.push("CREATE INDEX idx_links_target ON links(target_entity_id);");
+    schemaSql.push("CREATE INDEX idx_links_source ON links(source_entity_id);");
+    schemaSql.push(`CREATE TABLE assets (
   id INTEGER PRIMARY KEY, collection_name TEXT NOT NULL,
   entity_id INTEGER NOT NULL, filename TEXT NOT NULL,
   mime_type TEXT NOT NULL, storage_path TEXT NOT NULL
@@ -313,22 +316,41 @@ export async function publishCollections(
         schemaSql.push(`INSERT INTO entities (id, collection_name, external_id, entity_type, title, data, markdown_path, url, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(colName)}', '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.markdownPath ? `'${escapeSQL(entity.markdownPath)}'` : "NULL"}, ${entity.url ? `'${escapeSQL(entity.url)}'` : "NULL"}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "NULL"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "NULL"});`);
       }
 
-      for (const tag of colDb.select().from(entityTags).all()) {
-        const remoteId = entityIdMap.get(tag.entityId);
+      // Export tags and entity_tags — resolve tagId to tag name via tags table
+      const tagNameCache: Record<number, string> = {};
+      const remoteTagNameToId: Record<string, number> = {};
+      let remoteTagIdCounter = 0;
+      for (const et of colDb.select().from(entityTags).all()) {
+        const remoteId = entityIdMap.get(et.entityId);
         if (!remoteId) continue;
-        schemaSql.push(`INSERT INTO entity_tags (collection_name, entity_id, tag) VALUES ('${escapeSQL(colName)}', ${remoteId}, '${escapeSQL(tag.tag)}');`);
+        // Resolve tag name from local tags table
+        let tagName = tagNameCache[et.tagId];
+        if (!tagName) {
+          const [tagRow] = colDb.select().from(tags).where(eq(tags.id, et.tagId)).all();
+          tagName = tagRow?.name ?? `tag_${et.tagId}`;
+          tagNameCache[et.tagId] = tagName;
+        }
+        // Insert into remote tags table if not already done
+        if (!remoteTagNameToId[tagName]) {
+          remoteTagIdCounter++;
+          remoteTagNameToId[tagName] = remoteTagIdCounter;
+          schemaSql.push(`INSERT INTO tags (id, name) VALUES (${remoteTagIdCounter}, '${escapeSQL(tagName)}');`);
+        }
+        const remoteTagId = remoteTagNameToId[tagName];
+        schemaSql.push(`INSERT INTO entity_tags (collection_name, entity_id, tag_id) VALUES ('${escapeSQL(colName)}', ${remoteId}, ${remoteTagId});`);
       }
 
-      for (const link of colDb.select().from(entityLinks).all()) {
-        const remoteId = entityIdMap.get(link.sourceEntityId);
-        if (!remoteId) continue;
-        schemaSql.push(`INSERT INTO entity_links (collection_name, source_entity_id, source_markdown_path, target_path) VALUES ('${escapeSQL(colName)}', ${remoteId}, '${escapeSQL(link.sourceMarkdownPath)}', '${escapeSQL(link.targetPath)}');`);
+      for (const link of colDb.select().from(links).all()) {
+        const remoteSourceId = entityIdMap.get(link.sourceEntityId);
+        const remoteTargetId = entityIdMap.get(link.targetEntityId);
+        if (!remoteSourceId || !remoteTargetId) continue;
+        schemaSql.push(`INSERT INTO links (collection_name, source_entity_id, target_entity_id) VALUES ('${escapeSQL(colName)}', ${remoteSourceId}, ${remoteTargetId});`);
       }
 
-      for (const att of colDb.select().from(attachments).all()) {
+      for (const att of colDb.select().from(assets).all()) {
         const remoteId = entityIdMap.get(att.entityId);
         if (!remoteId) continue;
-        schemaSql.push(`INSERT INTO attachments (collection_name, entity_id, filename, mime_type, storage_path) VALUES ('${escapeSQL(colName)}', ${remoteId}, '${escapeSQL(att.filename)}', '${escapeSQL(att.mimeType)}', '${escapeSQL(att.storagePath)}');`);
+        schemaSql.push(`INSERT INTO assets (collection_name, entity_id, filename, mime_type, storage_path) VALUES ('${escapeSQL(colName)}', ${remoteId}, '${escapeSQL(att.filename)}', '${escapeSQL(att.mimeType)}', '${escapeSQL(att.storagePath)}');`);
       }
 
       onProgress("export", `Exported "${colName}": ${allEntities.length} entities`);
@@ -364,13 +386,17 @@ export async function publishCollections(
         if (content.length > MAX_FTS_CONTENT) {
           content = content.slice(0, MAX_FTS_CONTENT);
         }
-        const tags = colDb.select().from(entityTags)
+        const entityTagNames = colDb.select().from(entityTags)
           .where(eq(entityTags.entityId, entity.id))
           .all()
-          .map((t: any) => t.tag)
+          .map((t: any) => {
+            const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
+            return tagRow?.name ?? "";
+          })
+          .filter(Boolean)
           .join(" ");
 
-        ftsSql.push(`INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES ('${escapeSQL(colName)}', ${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(tags)}');`);
+        ftsSql.push(`INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES ('${escapeSQL(colName)}', ${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(entityTagNames)}');`);
       }
     }
 
@@ -407,11 +433,8 @@ export async function publishCollections(
     const uploads: Array<{ r2Key: string; fullPath: string }> = [];
     for (const colName of collectionNames) {
       const collectionDir = join(home, "collections", colName);
-      for (const file of collectFiles(join(collectionDir, "markdown"))) {
-        uploads.push({ r2Key: `${colName}/markdown/${file.relativePath}`, fullPath: file.fullPath });
-      }
-      for (const file of collectFiles(join(collectionDir, "attachments"))) {
-        uploads.push({ r2Key: `${colName}/attachments/${file.relativePath}`, fullPath: file.fullPath });
+      for (const file of collectFiles(join(collectionDir, "content"))) {
+        uploads.push({ r2Key: `${colName}/content/${file.relativePath}`, fullPath: file.fullPath });
       }
     }
     if (existsSync(uiDistDir)) {
@@ -459,16 +482,14 @@ export async function publishCollections(
   const mcpUrl = `${workerUrl}/mcp`;
   const passwordProtected = passwordHash.length > 0;
 
-  // Save deployment
-  addDeployment(workerName, {
+  // Save site
+  addSite(workerName, {
     url: workerUrl,
     mcpUrl,
     collections: collectionNames,
-    d1DatabaseId,
-    d1DatabaseName,
-    r2BucketName,
-    passwordProtected,
-    passwordHash: passwordHash || undefined,
+    database: { type: "cloudflare-d1", id: d1DatabaseId, name: d1DatabaseName },
+    bucket: { type: "cloudflare-r2", name: r2BucketName },
+    password: { protected: passwordProtected, hash: passwordHash || undefined },
     publishedAt: new Date().toISOString(),
   });
 
@@ -495,10 +516,7 @@ export const publishCommand = new Command("publish")
     workerOnly?: boolean;
   }) => {
     try {
-      if (!contextExists()) {
-        console.error("Frozen Ink not initialized. Run: fink init");
-        process.exit(1);
-      }
+      ensureInitialized();
 
       const workerOnly = !!opts.workerOnly;
       const collectionNames = collectionNamesArg ?? [];
@@ -516,8 +534,8 @@ export const publishCommand = new Command("publish")
       let forcePublic = !!opts.public;
 
       if (!forcePublic && !opts.password && !workerOnly) {
-        const existingDeployment = getDeployment(workerName);
-        const isInitialPublish = !existingDeployment;
+        const existingSite = getSite(workerName);
+        const isInitialPublish = !existingSite;
         if (isInitialPublish && process.stdin.isTTY && process.stdout.isTTY) {
           console.warn("\nWARNING: No password was provided.");
           console.warn("This initial publish will make collection data publicly accessible.");

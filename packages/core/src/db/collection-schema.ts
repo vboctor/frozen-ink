@@ -20,15 +20,22 @@ export const entities = sqliteTable("entities", {
     .default(sql`(datetime('now'))`),
 });
 
+export const tags = sqliteTable("tags", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+});
+
 export const entityTags = sqliteTable("entity_tags", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   entityId: integer("entity_id")
     .notNull()
     .references(() => entities.id),
-  tag: text("tag").notNull(),
+  tagId: integer("tag_id")
+    .notNull()
+    .references(() => tags.id),
 });
 
-export const attachments = sqliteTable("attachments", {
+export const assets = sqliteTable("assets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   entityId: integer("entity_id")
     .notNull()
@@ -36,13 +43,13 @@ export const attachments = sqliteTable("attachments", {
   filename: text("filename").notNull(),
   mimeType: text("mime_type").notNull(),
   storagePath: text("storage_path").notNull(),
-  backend: text("backend").notNull(),
 });
 
 export const syncState = sqliteTable("sync_state", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   crawlerType: text("crawler_type").notNull(),
   cursor: text("cursor", { mode: "json" }).$type<Record<string, unknown>>(),
+  crawlerVersion: text("crawler_version"),
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`(datetime('now'))`),
@@ -62,7 +69,7 @@ export const syncRuns = sqliteTable("sync_runs", {
   completedAt: text("completed_at"),
 });
 
-export const entityRelations = sqliteTable("entity_relations", {
+export const links = sqliteTable("links", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   sourceEntityId: integer("source_entity_id")
     .notNull()
@@ -70,14 +77,4 @@ export const entityRelations = sqliteTable("entity_relations", {
   targetEntityId: integer("target_entity_id")
     .notNull()
     .references(() => entities.id),
-  relationType: text("relation_type").notNull(),
-});
-
-export const entityLinks = sqliteTable("entity_links", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  sourceEntityId: integer("source_entity_id")
-    .notNull()
-    .references(() => entities.id),
-  sourceMarkdownPath: text("source_markdown_path").notNull(),
-  targetPath: text("target_path").notNull(),
 });

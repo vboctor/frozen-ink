@@ -13,10 +13,23 @@ function padId(id: number): string {
   return String(id).padStart(5, "0");
 }
 
-/** Returns the wikilink path (no extension) for an issue by id and summary. */
-function issueFilePath(id: number, summary: string): string {
+/**
+ * Convert an attachment storagePath to a relative reference from a markdown file.
+ * Assets are stored as siblings in an `assets/` dir next to the markdown files,
+ * so the reference is always `assets/<filename>`.
+ */
+function assetRef(storagePath: string | undefined): string {
+  if (!storagePath) return "";
+  const filename = storagePath.split("/").pop() ?? storagePath;
+  return `assets/${filename}`;
+}
+
+/** Returns the wikilink path (no extension) for an issue by id and summary. Includes project folder for multi-project collections. */
+function issueFilePath(id: number, summary: string, projectName?: string, singleProject?: boolean): string {
   const slug = slugify(summary);
-  return slug ? `issues/${padId(id)}-${slug}` : `issues/${padId(id)}`;
+  const issuePart = slug ? `${padId(id)}-${slug}` : padId(id);
+  if (singleProject || !projectName) return `issues/${issuePart}`;
+  return `${slugify(projectName)}/issues/${issuePart}`;
 }
 
 function formatDate(iso: string): string {
@@ -85,20 +98,42 @@ type Lookup = (externalId: string) => string | undefined;
  * Convert plain text to HTML with escaped entities, line breaks,
  * and #1234 issue references / @mentions converted to wikilinks.
  */
-function textToHtml(text: string, lookup?: Lookup): string {
+function textToHtml(
+  text: string,
+  lookup?: Lookup,
+  projectId?: number,
+  projectNameToId?: Record<string, number>,
+): string {
   let html = esc(text);
 
-  // Linkify #1234 issue references
   if (lookup) {
+    // Resolve cross-project page links: [[/Project Name/page-name]]
+    html = html.replace(/\[\[\/(.+?)\/([\w-]+)\]\]/g, (match, projName: string, pageName: string) => {
+      // projName may be HTML-escaped; unescape for lookup
+      const rawProjName = projName.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+      const pid = projectNameToId?.[rawProjName];
+      if (!pid) return match;
+      const path = lookup(`page:${pid}:${pageName}`);
+      if (!path) return match;
+      return `<a class="mt-page-link" href="#wikilink/${encodeURIComponent(path)}">${projName}/${esc(pageName)}</a>`;
+    });
+
+    // Resolve same-project page links: [[page-name]]
+    html = html.replace(/\[\[([\w-]+)\]\]/g, (match, pageName: string) => {
+      if (!projectId) return match;
+      const path = lookup(`page:${projectId}:${pageName}`);
+      if (!path) return match;
+      return `<a class="mt-page-link" href="#wikilink/${encodeURIComponent(path)}">${esc(pageName)}</a>`;
+    });
+
+    // Linkify #1234 issue references
     html = html.replace(/#(\d+)/g, (match, id) => {
       const path = lookup(`issue:${id}`);
       if (!path) return match;
       return `<a class="mt-issue-ref" href="#wikilink/${encodeURIComponent(path)}">#${padId(parseInt(id))}</a>`;
     });
-  }
 
-  // Linkify @mentions to user entities
-  if (lookup) {
+    // Linkify @mentions to user entities
     html = html.replace(/@([a-zA-Z0-9_.-]+)/g, (match, name) => {
       const path = lookup(`user:${name}`);
       if (!path) return match;
@@ -118,13 +153,22 @@ function textToHtml(text: string, lookup?: Lookup): string {
   return html;
 }
 
-/** Render a user name as a link to the user entity (underline on hover only). */
+/** Render a username as a link to the user entity, prefixed with @. */
 function mtUserLink(name: string, lookup?: Lookup): string {
   const path = lookup?.(`user:${name}`);
   if (path) {
-    return `<a class="mt-user-link" href="#wikilink/${encodeURIComponent(path)}">${esc(name)}</a>`;
+    return `<a class="mt-user-link" href="#wikilink/${encodeURIComponent(path)}">@${esc(name)}</a>`;
   }
-  return esc(name);
+  return `@${esc(name)}`;
+}
+
+/** Render a user's full name as a link to the user entity (no @ prefix). */
+function mtUserLinkFull(username: string, fullName: string, lookup?: Lookup): string {
+  const path = lookup?.(`user:${username}`);
+  if (path) {
+    return `<a class="mt-user-link" href="#wikilink/${encodeURIComponent(path)}">${esc(fullName)}</a>`;
+  }
+  return esc(fullName);
 }
 
 /** Render a project name as a link to the project entity (underline on hover only). */
@@ -169,37 +213,126 @@ function priorityIndicator(name: string): string {
 }
 
 /**
- * Replace bare #1234 issue references in prose text with wikilinks.
- * Skips text inside code fences, inline code, and existing wikilinks.
+ * Linkify all cross-entity references in prose text for markdown output.
+ * Handles: #1234 issue refs, @username mentions, [[page-name]] same-project
+ * page links, and [[/project-name/page-name]] cross-project page links.
+ * Skips text inside code fences and inline code.
  */
-function linkifyIssueRefs(
+function linkifyContent(
   text: string,
   lookup: (externalId: string) => string | undefined,
+  projectId?: number,
+  projectNameToId?: Record<string, number>,
 ): string {
-  // Split on code fences, inline code, and existing [[...]] blocks to avoid
-  // double-linking or corrupting code samples.
-  const skip = /(```[\s\S]*?```|`[^`\n]+`|\[\[[^\]]*\]\])/g;
+  // Split on code fences and inline code to avoid corrupting code samples.
+  const codeSkip = /(```[\s\S]*?```|`[^`\n]+`)/g;
   const parts: string[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
-  while ((m = skip.exec(text)) !== null) {
-    parts.push(replaceRefs(text.slice(last, m.index), lookup));
+  while ((m = codeSkip.exec(text)) !== null) {
+    parts.push(linkifySegment(text.slice(last, m.index), lookup, projectId, projectNameToId));
     parts.push(m[0]);
     last = m.index + m[0].length;
   }
-  parts.push(replaceRefs(text.slice(last), lookup));
+  parts.push(linkifySegment(text.slice(last), lookup, projectId, projectNameToId));
   return parts.join("");
 }
 
-function replaceRefs(
+/**
+ * Process a single non-code text segment: first resolve [[...]] page links,
+ * then linkify #issue refs and @mentions while skipping resulting wikilinks.
+ */
+function linkifySegment(
+  text: string,
+  lookup: (externalId: string) => string | undefined,
+  projectId?: number,
+  projectNameToId?: Record<string, number>,
+): string {
+  // Step 1: Resolve cross-project page links [[/Project Name/page-name]]
+  text = text.replace(/\[\[\/(.+?)\/([\w-]+)\]\]/g, (_match, projName: string, pageName: string) => {
+    const pid = projectNameToId?.[projName];
+    if (!pid) return `[[${projName}/${pageName}]]`;
+    const path = lookup(`page:${pid}:${pageName}`);
+    if (!path) return `[[${projName}/${pageName}]]`;
+    return `[[${path}|${projName}/${pageName}]]`;
+  });
+
+  // Step 2: Resolve same-project page links [[page-name]]
+  // Only match bare [[word-chars]] that haven't been resolved yet (no | inside).
+  text = text.replace(/\[\[([\w-]+)\]\]/g, (match, pageName: string) => {
+    if (!projectId) return match;
+    const path = lookup(`page:${projectId}:${pageName}`);
+    if (!path) return match;
+    return `[[${path}|${pageName}]]`;
+  });
+
+  // Step 3: Linkify #issue refs and @mentions, skipping inside [[...]] blocks
+  const wikiSkip = /\[\[[^\]]*\]\]/g;
+  const parts: string[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = wikiSkip.exec(text)) !== null) {
+    parts.push(replaceInlineRefs(text.slice(last, m.index), lookup));
+    parts.push(m[0]);
+    last = m.index + m[0].length;
+  }
+  parts.push(replaceInlineRefs(text.slice(last), lookup));
+  return parts.join("");
+}
+
+/** Replace #issue refs and @mentions in a text fragment (no wikilinks inside). */
+function replaceInlineRefs(
   text: string,
   lookup: (externalId: string) => string | undefined,
 ): string {
-  return text.replace(/#(\d+)/g, (match, id) => {
+  // #1234 issue references
+  text = text.replace(/#(\d+)/g, (match, id) => {
     const path = lookup(`issue:${id}`);
     if (!path) return match;
     return `[[${path}|#${padId(parseInt(id))}]]`;
   });
+
+  // @username mentions
+  text = text.replace(/@([a-zA-Z0-9_.-]+)/g, (match, name) => {
+    const path = lookup(`user:${name}`);
+    if (!path) return match;
+    return `[[${path}|@${name}]]`;
+  });
+
+  return text;
+}
+
+/** Render a username as a wikilink to the user entity in markdown, prefixed with @. */
+function mdUserRef(
+  username: string,
+  lookup: (externalId: string) => string | undefined,
+): string {
+  const path = lookup(`user:${username}`);
+  if (path) {
+    return `[[${path}|@${username}]]`;
+  }
+  return `@${username}`;
+}
+
+/** Render a user's full name as a wikilink to the user entity in markdown (no @ prefix). */
+function mdUserRefFull(
+  username: string,
+  fullName: string,
+  lookup: (externalId: string) => string | undefined,
+): string {
+  const path = lookup(`user:${username}`);
+  if (path) {
+    return `[[${path}|${fullName}]]`;
+  }
+  return fullName;
+}
+
+/** Returns the file path (no extension) for a page. Includes project folder for multi-project collections. */
+function pageFilePath(name: string, projectName?: string, singleProject?: boolean): string {
+  const slug = slugify(name);
+  const pagePart = slug || name;
+  if (singleProject || !projectName) return `pages/${pagePart}`;
+  return `${slugify(projectName)}/pages/${pagePart}`;
 }
 
 export class MantisBTTheme implements Theme {
@@ -208,6 +341,7 @@ export class MantisBTTheme implements Theme {
   render(context: ThemeRenderContext): string {
     if (context.entity.entityType === "user") return this.renderUserMd(context);
     if (context.entity.entityType === "project") return this.renderProjectMd(context);
+    if (context.entity.entityType === "page") return this.renderPageMd(context);
     return this.renderIssue(context);
   }
 
@@ -220,29 +354,37 @@ export class MantisBTTheme implements Theme {
     }
 
     if (context.entity.entityType === "project") {
-      const id = d.id as number;
       const name = d.name as string;
       const slug = slugify(name);
-      return slug ? `projects/${padId(id)}-${slug}.md` : `projects/${padId(id)}.md`;
+      return `projects/${slug || "unnamed"}.md`;
+    }
+
+    if (context.entity.entityType === "page") {
+      const name = d.name as string;
+      const projectName = (d.project as { name: string })?.name;
+      const singleProject = d._singleProject as boolean | undefined;
+      return `${pageFilePath(name, projectName, singleProject)}.md`;
     }
 
     const id = d.id as number;
     const summary = d.summary as string;
-    const slug = slugify(summary);
-    return slug
-      ? `issues/${padId(id)}-${slug}.md`
-      : `issues/${padId(id)}.md`;
+    const projectName = (d.project as { name: string })?.name;
+    const singleProject = d._singleProject as boolean | undefined;
+    return `${issueFilePath(id, summary, projectName, singleProject)}.md`;
   }
 
   renderHtml(context: ThemeRenderContext): string | null {
     if (context.entity.entityType === "user") return this.renderUserHtml(context);
     if (context.entity.entityType === "project") return this.renderProjectHtml(context);
+    if (context.entity.entityType === "page") return this.renderPageHtml(context);
     return this.renderIssueHtml(context);
   }
 
   private renderIssueHtml(context: ThemeRenderContext): string {
     const d = context.entity.data;
     const lookup = context.lookupEntityPath;
+    const projectId = (d.project as { id: number } | null)?.id;
+    const projectNameToId = d._projectNameToId as Record<string, number> | undefined;
 
     const status = d.status as { name: string; label: string; color?: string };
     const resolution = d.resolution as { name: string; label: string };
@@ -287,15 +429,15 @@ export class MantisBTTheme implements Theme {
     parts.push(`<h2 class="mt-section-title">Details</h2>`);
     parts.push(`<div class="mt-section-body">`);
     if (d.description) {
-      parts.push(`<div class="mt-description">${textToHtml(d.description as string, lookup)}</div>`);
+      parts.push(`<div class="mt-description">${textToHtml(d.description as string, lookup, projectId, projectNameToId)}</div>`);
     }
     if (d.stepsToReproduce) {
       parts.push(`<h3 class="mt-subsection-title">Steps to Reproduce</h3>`);
-      parts.push(`<div class="mt-description">${textToHtml(d.stepsToReproduce as string, lookup)}</div>`);
+      parts.push(`<div class="mt-description">${textToHtml(d.stepsToReproduce as string, lookup, projectId, projectNameToId)}</div>`);
     }
     if (d.additionalInformation) {
       parts.push(`<h3 class="mt-subsection-title">Additional Information</h3>`);
-      parts.push(`<div class="mt-description">${textToHtml(d.additionalInformation as string, lookup)}</div>`);
+      parts.push(`<div class="mt-description">${textToHtml(d.additionalInformation as string, lookup, projectId, projectNameToId)}</div>`);
     }
 
     // Issue-level attachments
@@ -322,7 +464,7 @@ export class MantisBTTheme implements Theme {
       parts.push(`<h2 class="mt-section-title">Relationships</h2>`);
       parts.push(`<div class="mt-section-body">`);
       for (const rel of relationships) {
-        const targetPath = issueFilePath(rel.issue.id, rel.issue.summary ?? "");
+        const targetPath = lookup?.(`issue:${rel.issue.id}`) ?? issueFilePath(rel.issue.id, rel.issue.summary ?? "", project?.name, !!(d._singleProject));
         const label = rel.issue.summary
           ? `${padId(rel.issue.id)} - ${esc(rel.issue.summary)}`
           : padId(rel.issue.id);
@@ -392,7 +534,7 @@ export class MantisBTTheme implements Theme {
           parts.push(`</div>`);
           parts.push(`<div class="mt-activity-body">`);
           parts.push(`<div class="mt-note-body ${borderClass}">`);
-          parts.push(`<div class="mt-note-text">${textToHtml(note.text, lookup)}</div>`);
+          parts.push(`<div class="mt-note-text">${textToHtml(note.text, lookup, projectId, projectNameToId)}</div>`);
 
           // Note attachments
           if (note.attachments?.length) {
@@ -411,7 +553,7 @@ export class MantisBTTheme implements Theme {
           const entry = activity.data as typeof history[number];
           parts.push(`<div class="mt-activity mt-history-entry">`);
           parts.push(`<div class="mt-activity-header">`);
-          parts.push(`${mtAvatar(entry.user.name)} <strong class="mt-activity-author">${esc(entry.user.name)}</strong>`);
+          parts.push(`${mtAvatar(entry.user.name)} <strong class="mt-activity-author">${mtUserLink(entry.user.name, lookup)}</strong>`);
           parts.push(`<span class="mt-activity-date">${formatDateCompact(entry.created_at)}</span>`);
           parts.push(`</div>`);
           if (entry.field || entry.message) {
@@ -546,6 +688,157 @@ export class MantisBTTheme implements Theme {
     return parts.join("\n");
   }
 
+  private renderPageMd(context: ThemeRenderContext): string {
+    const d = context.entity.data;
+    const lookup = context.lookupEntityPath ?? (() => undefined);
+    const projectId = (d.project as { id: number } | null)?.id;
+    const projectNameToId = d._projectNameToId as Record<string, number> | undefined;
+    const project = d.project as { id: number; name: string } | null;
+    const createdBy = d.createdBy as { name: string; real_name?: string } | null;
+    const updatedBy = d.updatedBy as { name: string; real_name?: string } | null;
+    const content = (d.content as string) ?? "";
+
+    const fm: Record<string, unknown> = {
+      title: d.title || d.name,
+      type: "page",
+      name: d.name,
+    };
+    if (project) fm.project = project.name;
+    if (d.createdAt) fm.created = d.createdAt;
+    if (d.updatedAt) fm.updated = d.updatedAt;
+    if (context.entity.tags?.length) fm.tags = context.entity.tags;
+
+    const sections: string[] = [frontmatter(fm)];
+
+    // Header with project breadcrumb
+    const crumbs = [project?.name, d.name as string].filter(Boolean).join(" > ");
+    sections.push(`**${crumbs}**`);
+
+    sections.push(`## ${d.title || d.name}`);
+
+    // Page content (raw markdown)
+    if (content) {
+      sections.push(linkifyContent(content, lookup, projectId, projectNameToId));
+    }
+
+    // File attachments
+    const files = d.files as Array<{ name: string; storagePath?: string }> | undefined;
+    if (files?.length) {
+      const embeds = files
+        .filter((f) => f.storagePath)
+        .map((f) => `![${f.name}](${assetRef(f.storagePath)})`);
+      if (embeds.length) {
+        sections.push("### Attachments\n\n" + embeds.join("\n\n"));
+      }
+    }
+
+    // Metadata
+    const rows: string[] = ["| | |", "|---|---|"];
+    if (createdBy?.name) {
+      const ref = createdBy.real_name
+        ? mdUserRefFull(createdBy.name, createdBy.real_name, lookup)
+        : mdUserRef(createdBy.name, lookup);
+      rows.push(tableRow("Created By", ref));
+    }
+    if (updatedBy?.name) {
+      const ref = updatedBy.real_name
+        ? mdUserRefFull(updatedBy.name, updatedBy.real_name, lookup)
+        : mdUserRef(updatedBy.name, lookup);
+      rows.push(tableRow("Updated By", ref));
+    }
+    if (d.createdAt) rows.push(tableRow("Created", formatDate(d.createdAt as string)));
+    if (d.updatedAt) rows.push(tableRow("Updated", formatDate(d.updatedAt as string)));
+    sections.push("### Metadata\n\n" + rows.join("\n"));
+
+    return sections.join("\n\n");
+  }
+
+  private renderPageHtml(context: ThemeRenderContext): string {
+    const d = context.entity.data;
+    const lookup = context.lookupEntityPath;
+    const projectId = (d.project as { id: number } | null)?.id;
+    const projectNameToId = d._projectNameToId as Record<string, number> | undefined;
+    const project = d.project as { id: number; name: string } | null;
+    const createdBy = d.createdBy as { name: string; real_name?: string } | null;
+    const updatedBy = d.updatedBy as { name: string; real_name?: string } | null;
+    const content = (d.content as string) ?? "";
+
+    const parts: string[] = [];
+    parts.push(`<div class="mt-issue-view">`);
+
+    // Header
+    parts.push(`<div class="mt-header">`);
+    if (project) {
+      const projectHtml = mtProjectLink(project, lookup);
+      parts.push(`<div class="mt-breadcrumb">${projectHtml} &rsaquo; ${esc(d.name as string)}</div>`);
+    }
+    parts.push(`<h1 class="mt-title">${esc((d.title as string) || (d.name as string))}</h1>`);
+    parts.push(`</div>`);
+
+    // Two-column layout
+    parts.push(`<div class="mt-columns">`);
+
+    // Main column
+    parts.push(`<div class="mt-main-col">`);
+
+    // Content section
+    if (content) {
+      parts.push(`<div class="mt-section">`);
+      parts.push(`<div class="mt-section-body">`);
+      parts.push(`<div class="mt-description">${textToHtml(content, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`</div>`);
+      parts.push(`</div>`);
+    }
+
+    // File attachments
+    const files = d.files as Array<{ name: string; storagePath?: string; size: number }> | undefined;
+    if (files?.length) {
+      parts.push(`<div class="mt-section">`);
+      parts.push(`<h2 class="mt-section-title">Attachments</h2>`);
+      parts.push(`<div class="mt-section-body">`);
+      parts.push(`<div class="mt-attachments">`);
+      for (const f of files) {
+        const sizeKb = Math.round(f.size / 1024);
+        parts.push(`<div class="mt-attachment-item">${esc(f.name)} <span class="mt-attachment-size">(${sizeKb} KB)</span></div>`);
+      }
+      parts.push(`</div>`);
+      parts.push(`</div>`);
+      parts.push(`</div>`);
+    }
+
+    parts.push(`</div>`); // mt-main-col
+
+    // Sidebar
+    parts.push(`<div class="mt-sidebar-col">`);
+    parts.push(`<h3 class="mt-sidebar-heading">Overview</h3>`);
+
+    if (createdBy?.name) {
+      const userHtml = createdBy.real_name
+        ? mtUserLinkFull(createdBy.name, createdBy.real_name, lookup)
+        : mtUserLink(createdBy.name, lookup);
+      parts.push(mtSidebarRow("Created By", `${mtAvatar(createdBy.name, null, 20)} <strong>${userHtml}</strong>`));
+    }
+    if (updatedBy?.name) {
+      const userHtml = updatedBy.real_name
+        ? mtUserLinkFull(updatedBy.name, updatedBy.real_name, lookup)
+        : mtUserLink(updatedBy.name, lookup);
+      parts.push(mtSidebarRow("Updated By", `${mtAvatar(updatedBy.name, null, 20)} <strong>${userHtml}</strong>`));
+    }
+
+    if (d.createdAt) parts.push(mtSidebarRow("Created", formatDateCompact(d.createdAt as string)));
+    if (d.updatedAt) parts.push(mtSidebarRow("Updated", formatDateCompact(d.updatedAt as string)));
+
+    if (context.entity.url) {
+      parts.push(`<div class="mt-sidebar-row mt-sidebar-link-row"><a class="mt-sidebar-link" href="${esc(context.entity.url)}" target="_blank" rel="noopener noreferrer">View in MantisHub &rarr;</a></div>`);
+    }
+
+    parts.push(`</div>`); // mt-sidebar-col
+    parts.push(`</div>`); // mt-columns
+    parts.push(`</div>`); // mt-issue-view
+
+    return parts.join("\n");
+  }
+
   private renderIssue(context: ThemeRenderContext): string {
     const d = context.entity.data;
     const sections: string[] = [];
@@ -554,13 +847,15 @@ export class MantisBTTheme implements Theme {
     const resolution = d.resolution as { name: string; label: string };
     const priority = d.priority as { name: string; label: string };
     const severity = d.severity as { name: string; label: string };
-    const project = d.project as { name: string } | null;
+    const project = d.project as { id: number; name: string } | null;
     const category = d.category as { name: string } | null;
     const reporter = d.reporter as { name: string } | null;
     const handler = d.handler as { name: string } | null;
     const reproducibility = d.reproducibility as { label: string } | null;
 
     const lookup = context.lookupEntityPath ?? (() => undefined);
+    const projectId = project?.id;
+    const projectNameToId = d._projectNameToId as Record<string, number> | undefined;
 
     // Frontmatter
     const fm: Record<string, unknown> = {
@@ -598,8 +893,8 @@ export class MantisBTTheme implements Theme {
       tableRow("Priority", priority.label),
       tableRow("Severity", severity.label),
     ];
-    if (reporter?.name) rows.push(tableRow("Reporter", reporter.name));
-    if (handler?.name) rows.push(tableRow("Assigned To", handler.name));
+    if (reporter?.name) rows.push(tableRow("Reporter", mdUserRef(reporter.name, lookup)));
+    if (handler?.name) rows.push(tableRow("Assigned To", mdUserRef(handler.name, lookup)));
     if (reproducibility) rows.push(tableRow("Reproducibility", reproducibility.label));
     rows.push(tableRow("Created", formatDate(d.createdAt as string)));
     rows.push(tableRow("Updated", formatDate(d.updatedAt as string)));
@@ -610,7 +905,7 @@ export class MantisBTTheme implements Theme {
     if (files?.length) {
       const embeds = files
         .filter((f) => f.storagePath)
-        .map((f) => `![${f.filename}](../../${f.storagePath})`);
+        .map((f) => `![${f.filename}](${assetRef(f.storagePath)})`);
       if (embeds.length) {
         sections.push("### Attachments\n\n" + embeds.join("\n\n"));
       }
@@ -619,7 +914,7 @@ export class MantisBTTheme implements Theme {
     // Description
     if (d.description) {
       sections.push(
-        linkifyIssueRefs(d.description as string, lookup),
+        linkifyContent(d.description as string, lookup, projectId, projectNameToId),
       );
     }
 
@@ -627,7 +922,7 @@ export class MantisBTTheme implements Theme {
     if (d.stepsToReproduce) {
       sections.push(
         "### Steps to Reproduce\n\n" +
-          linkifyIssueRefs(d.stepsToReproduce as string, lookup),
+          linkifyContent(d.stepsToReproduce as string, lookup, projectId, projectNameToId),
       );
     }
 
@@ -635,7 +930,7 @@ export class MantisBTTheme implements Theme {
     if (d.additionalInformation) {
       sections.push(
         "### Additional Information\n\n" +
-          linkifyIssueRefs(d.additionalInformation as string, lookup),
+          linkifyContent(d.additionalInformation as string, lookup, projectId, projectNameToId),
       );
     }
 
@@ -646,7 +941,7 @@ export class MantisBTTheme implements Theme {
     }>;
     if (relationships?.length) {
       const relLines = relationships.map((rel) => {
-        const targetPath = issueFilePath(rel.issue.id, rel.issue.summary ?? "");
+        const targetPath = lookup(`issue:${rel.issue.id}`) ?? issueFilePath(rel.issue.id, rel.issue.summary ?? "", project?.name, !!projectId && !!(d._singleProject));
         const label = rel.issue.summary
           ? `${padId(rel.issue.id)} ${rel.issue.summary}`
           : padId(rel.issue.id);
@@ -666,18 +961,19 @@ export class MantisBTTheme implements Theme {
     }>;
     if (notes?.length) {
       const noteBlocks = notes.map((note) => {
-        const author = note.reporter?.name ?? "Unknown";
+        const authorName = note.reporter?.name ?? "Unknown";
+        const authorRef = authorName !== "Unknown" ? mdUserRef(authorName, lookup) : authorName;
         const isPrivate = note.view_state?.name === "private";
-        const parts = [author, formatDate(note.created_at)];
-        if (isPrivate) parts.push("private");
-        const header = `**${parts.join(" | ")}**`;
+        const headerParts = [authorRef, formatDate(note.created_at)];
+        if (isPrivate) headerParts.push("private");
+        const header = `**${headerParts.join(" | ")}**`;
 
-        const body = linkifyIssueRefs(note.text, lookup);
+        const body = linkifyContent(note.text, lookup, projectId, projectNameToId);
 
         // Embed note attachments using stored paths (relative from markdown/<type>/)
         const embeds = (note.attachments ?? [])
           .filter((att) => att.storagePath)
-          .map((att) => `![${att.filename}](../../${att.storagePath})`);
+          .map((att) => `![${att.filename}](${assetRef(att.storagePath)})`);
 
         return [header, body, ...embeds].filter(Boolean).join("\n\n");
       });
