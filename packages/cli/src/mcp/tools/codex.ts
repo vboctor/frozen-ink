@@ -62,8 +62,8 @@ async function ensureSuccess(args: string[], operation: string): Promise<void> {
 }
 
 export const codexAdapter: McpToolAdapter = {
-  tool: "codex",
-  displayName: "Codex",
+  tool: "codex-cli",
+  displayName: "Codex CLI",
 
   async isAvailable() {
     try {

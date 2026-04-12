@@ -131,8 +131,8 @@ fink sync "*"</code></pre>
     </a>
     <a href="/docs/local-mcp" class="feature-card" style="text-decoration:none;">
       <div class="feature-card-icon">🤖</div>
-      <h4>Connect to Claude</h4>
-      <p>Link collections to Claude Code or Claude Desktop so AI assistants can query your knowledge base via MCP.</p>
+      <h4>Connect MCP Clients</h4>
+      <p>Link collections to Claude Code, Codex CLI, or other local MCP clients, and set up ChatGPT Desktop via published MCP endpoints.</p>
     </a>
     <a href="/docs/publishing" class="feature-card" style="text-decoration:none;">
       <div class="feature-card-icon">🌐</div>

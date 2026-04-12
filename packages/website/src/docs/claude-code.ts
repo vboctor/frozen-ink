@@ -3,20 +3,22 @@ import { renderDocsPage } from "./layout";
 export const claudeCodePage = renderDocsPage({
   title: "Claude Code Integration",
   description:
-    "Add collection folders and browse your knowledge base from Claude Code, the desktop app, or the terminal TUI.",
+    "Connect Frozen Ink collections to Claude Code via local stdio MCP or a published cloud MCP endpoint, and browse your knowledge base from the built-in web UI.",
   activePath: "/docs/claude-code",
   tocLinks: [
     { id: "overview", title: "Overview" },
+    { id: "local-mcp", title: "Local MCP setup" },
+    { id: "local-link-collections", title: "Link collections", indent: true },
+    { id: "local-multiple", title: "Multiple collections", indent: true },
+    { id: "cloud-mcp", title: "Cloud MCP access" },
     { id: "add-collection-folder", title: "Add a collection folder" },
     { id: "obsidian-vault", title: "Obsidian vault", indent: true },
     { id: "git-repo", title: "Git repository", indent: true },
     { id: "sync-and-serve", title: "Sync & serve" },
     { id: "browsing-in-claude", title: "Browsing in Claude Code" },
-    { id: "quick-reference", title: "Quick reference" },
-    { id: "desktop-app", title: "Using the desktop app" },
-    { id: "combine-with-mcp", title: "Combine with MCP" },
-    { id: "claude-cowork", title: "Claude Cowork" },
     { id: "collection-description", title: "Collection descriptions" },
+    { id: "quick-reference", title: "Quick reference" },
+    { id: "troubleshooting", title: "Troubleshooting" },
   ],
   content: `
   <div class="docs-breadcrumb">
@@ -26,82 +28,154 @@ export const claudeCodePage = renderDocsPage({
   </div>
 
   <h1 class="page-title">Claude Code Integration</h1>
-  <p class="page-lead">Frozen Ink works naturally alongside Claude Code. Add your Obsidian vaults, local Git repos, or any other source as Frozen Ink collections, and your knowledge becomes instantly searchable — from the web UI, from the terminal, and via MCP so Claude can query it too.</p>
+  <p class="page-lead">Frozen Ink integrates with Claude Code via the Model Context Protocol. Link your collections locally so Claude can query them over stdio, or connect to a published cloud deployment over HTTP. Either way, Claude can search your notes, read documents, and access your knowledge base without copy-paste.</p>
 
   <h2 id="overview">Overview</h2>
-  <p>There are two complementary ways to use Frozen Ink with Claude Code:</p>
-
   <div class="feature-grid">
     <div class="feature-card">
-      <div class="feature-card-icon">📂</div>
-      <h4>Collection folders</h4>
-      <p>Point Frozen Ink at your local folders — an Obsidian vault, a Git repository, a project directory. Sync them into the local index so you can browse and search them from the web UI or terminal.</p>
+      <div class="feature-card-icon">🖥️</div>
+      <h4>Local MCP</h4>
+      <p>Claude Code spawns <code>fink mcp serve</code> over stdio — direct process communication with no HTTP overhead. Responses are instant, there are no rate limits, and your data never leaves the machine.</p>
     </div>
     <div class="feature-card">
-      <div class="feature-card-icon">🤖</div>
-      <h4>MCP for Claude</h4>
-      <p>Link collections to Claude Code via the Model Context Protocol. Claude can then search and read your knowledge base without you copying and pasting content into the conversation.</p>
+      <div class="feature-card-icon">☁️</div>
+      <h4>Cloud MCP</h4>
+      <p>Connect Claude Code to a published Frozen Ink deployment over HTTP. Useful when you need the same knowledge base across multiple machines or want to share it with teammates.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-icon">📂</div>
+      <h4>Web UI browser</h4>
+      <p>Run <code>fink serve</code> to open a local web UI at <code>localhost:3000</code>. Browse, search, and read your collections side-by-side with Claude Code in any browser.</p>
     </div>
   </div>
 
-  <p>This page covers adding collection folders and browsing your knowledge base. For the MCP integration that lets Claude query collections, see <a href="/docs/local-mcp">Local MCP Setup</a>.</p>
+  <h2 id="local-mcp">Local MCP setup</h2>
+  <p>Local MCP uses a <strong>per-collection, stdio-based transport</strong>. When Claude calls a tool, Claude Code spawns <code>fink mcp serve --collection &lt;name&gt;</code> as a subprocess and communicates over stdio — direct process I/O with no network round-trip. Tool responses land in single-digit milliseconds, and since everything runs locally, there are no API rate limits or per-query costs to worry about.</p>
 
-  <h2 id="add-collection-folder">Add a collection folder</h2>
-  <p>A "collection folder" is simply a Frozen Ink collection that points at a local directory. The two most common cases are an Obsidian vault and a Git repository.</p>
+  <h3 id="local-link-collections">Link collections</h3>
 
-  <h3 id="obsidian-vault">Obsidian vault</h3>
-  <p>If your notes live in an Obsidian vault, add it as an <code>obsidian</code> collection. Frozen Ink understands Obsidian's wiki-link syntax, callout blocks, embedded images, and YAML frontmatter:</p>
-  <pre><code>fink add obsidian \
-  <span class="flag">--name</span> my-vault \
-  <span class="flag">--path</span> ~/Documents/MyVault</code></pre>
-
-  <p>This creates a collection named <code>my-vault</code> that points at your vault. The name is used in all subsequent commands:</p>
-  <pre><code>fink sync my-vault
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h4>Ensure the collection is synced</h4>
+        <pre><code>fink sync my-vault
 fink status</code></pre>
+        <p>Claude queries the local SQLite database at tool-call time, so the collection needs data before linking.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h4>Link to Claude Code</h4>
+        <pre><code>fink mcp add <span class="flag">--tool</span> claude-code my-vault</code></pre>
+        <p>This writes an entry to <code>~/.claude/mcp_servers.json</code> that tells Claude Code to call <code>fink mcp serve --collection my-vault</code> when the MCP server is needed.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h4>Verify</h4>
+        <pre><code>fink mcp list <span class="flag">--tool</span> claude-code</code></pre>
+        <p>You should see <code>my-vault</code> listed with status <strong>linked</strong>.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h4>Start a conversation</h4>
+        <p>Open or restart Claude Code and start a new conversation. Claude now has access to your collection. Try: <em>"Search my knowledge base for anything about authentication"</em>.</p>
+      </div>
+    </div>
+  </div>
 
-  <h3 id="git-repo">Git repository</h3>
-  <p>Add a local code repository to get a searchable index of its commit history, branches, and tags:</p>
-  <pre><code>fink add git \
-  <span class="flag">--name</span> my-project \
-  <span class="flag">--path</span> ~/code/my-project</code></pre>
+  <div class="callout callout-info">
+    <div class="callout-icon">ℹ️</div>
+    <div class="callout-body">
+      <strong>fink must be on your PATH</strong>
+      <p>Claude Code spawns <code>fink mcp serve</code> as a subprocess. The <code>fink</code> binary must be on the system PATH — installing via npm (<code>npm install -g @vboctor/fink</code>) handles this automatically. If you installed a standalone binary, ensure it's in <code>/usr/local/bin/</code> or another standard PATH directory.</p>
+    </div>
+  </div>
 
-  <p>Add <code>--include-diffs</code> if you want the full diff of each commit included in the rendered markdown. This is useful for understanding what changed in a given commit:</p>
-  <pre><code>fink add git \
-  <span class="flag">--name</span>           my-project \
-  <span class="flag">--path</span>           ~/code/my-project \
-  <span class="flag">--include-diffs</span></code></pre>
+  <h3 id="local-multiple">Multiple collections</h3>
+  <p>Link multiple collections in one command or separately — the result is the same:</p>
+  <pre><code><span class="cmt"># Link two collections at once</span>
+fink mcp add <span class="flag">--tool</span> claude-code my-vault my-project-issues
+
+<span class="cmt"># Or one at a time</span>
+fink mcp add <span class="flag">--tool</span> claude-code my-vault
+fink mcp add <span class="flag">--tool</span> claude-code my-project-issues</code></pre>
+
+  <p>Each collection becomes a separate MCP connection. Claude sees them as distinct knowledge sources and can query them independently in the same conversation.</p>
+
+  <pre><code><span class="cmt"># Remove a collection link</span>
+fink mcp remove <span class="flag">--tool</span> claude-code my-vault
+
+<span class="cmt"># List all current links</span>
+fink mcp list <span class="flag">--tool</span> claude-code</code></pre>
+
+  <h2 id="cloud-mcp">Cloud MCP access</h2>
+  <p>If you've <a href="/docs/publishing">published a deployment to Cloudflare</a>, Claude Code can connect to it over HTTP. This is useful when you want the same knowledge base accessible from multiple machines, or when teammates need access without running Frozen Ink locally.</p>
+
+  <p>Cloud MCP uses the <code>streamable-http</code> transport. Add it manually to <code>~/.claude/mcp_servers.json</code>:</p>
+
+  <pre><code>{
+  "mcpServers": {
+    "frozen-ink-cloud": {
+      "transport": "http",
+      "url": "https://my-deployment.workers.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer your-deployment-password"
+      }
+    }
+  }
+}</code></pre>
+
+  <p>Restart Claude Code for the change to take effect. The cloud connection appears alongside any local collection links you've configured — you can use both at the same time.</p>
 
   <div class="callout callout-tip">
     <div class="callout-icon">💡</div>
     <div class="callout-body">
-      <strong>Add multiple repos at once</strong>
-      <p>You can add as many collections as you want. They're indexed separately, but Frozen Ink's full-text search queries all of them simultaneously, so you don't have to choose which one to search.</p>
+      <strong>Local vs. cloud</strong>
+      <p>Local links give Claude per-collection access scoped to your machine — great for private notes. The cloud link gives access to everything in the published deployment, across any device. Combine them as needed.</p>
     </div>
   </div>
 
+  <h2 id="add-collection-folder">Add a collection folder</h2>
+  <p>A "collection folder" is a Frozen Ink collection pointing at a local directory. The two most common cases are an Obsidian vault and a Git repository.</p>
+
+  <h3 id="obsidian-vault">Obsidian vault</h3>
+  <p>Frozen Ink understands Obsidian's wiki-link syntax, callout blocks, embedded images, and YAML frontmatter:</p>
+  <pre><code>fink add obsidian \
+  <span class="flag">--name</span> my-vault \
+  <span class="flag">--path</span> ~/Documents/MyVault</code></pre>
+
+  <h3 id="git-repo">Git repository</h3>
+  <p>Get a searchable index of commit history, branches, and tags:</p>
+  <pre><code>fink add git \
+  <span class="flag">--name</span> my-project \
+  <span class="flag">--path</span> ~/code/my-project</code></pre>
+  <p>Add <code>--include-diffs</code> to include the full unified diff of each commit in the rendered markdown — useful for understanding what changed in any given commit.</p>
+
   <h2 id="sync-and-serve">Sync &amp; serve</h2>
-  <p>After adding your collections, sync them to pull data into the local index, then start the server:</p>
-  <pre><code><span class="cmt"># Sync all collections at once</span>
+  <p>After adding collections, sync them and start the local web UI:</p>
+  <pre><code><span class="cmt"># Sync all collections</span>
 fink sync "*"
 
-<span class="cmt"># Start the local web UI and API server (runs on port 3000)</span>
+<span class="cmt"># Start the local web UI (port 3000)</span>
 fink serve</code></pre>
 
-  <p>Open <a href="http://localhost:3000">http://localhost:3000</a> to browse your collections in the web UI.</p>
-
-  <p>To keep collections up to date automatically, start the background daemon:</p>
+  <p>Open <a href="http://localhost:3000">http://localhost:3000</a> to browse your collections. To keep everything up to date automatically, run the background daemon:</p>
   <pre><code>fink daemon start</code></pre>
 
   <h2 id="browsing-in-claude">Browsing in Claude Code</h2>
-  <p>With <code>fink serve</code> running, the web UI at <code>localhost:3000</code> is available anywhere in your browser, including side-by-side with Claude Code in a split window.</p>
-
-  <p>The web UI provides:</p>
+  <p>With <code>fink serve</code> running, the web UI is available in any browser — open it side-by-side with Claude Code in a split window. Features include:</p>
   <ul>
-    <li><strong>Collection picker</strong> — switch between your synced data sources</li>
-    <li><strong>File tree</strong> — browse all markdown files in a folder tree, resizable</li>
-    <li><strong>Tabs</strong> — open multiple notes simultaneously (<kbd>Cmd+W</kbd> to close)</li>
-    <li><strong>Backlinks panel</strong> — see which notes link to the current note (Obsidian-style)</li>
-    <li><strong>Quick switcher</strong> — press <kbd>Cmd+P</kbd> or <kbd>Cmd+K</kbd> for instant full-text search across all collections</li>
+    <li><strong>Collection picker</strong> — switch between data sources</li>
+    <li><strong>File tree</strong> — browse all markdown files in a resizable folder tree</li>
+    <li><strong>Tabs</strong> — open multiple notes simultaneously</li>
+    <li><strong>Backlinks panel</strong> — see which notes link to the current one</li>
+    <li><strong>Quick switcher</strong> — <kbd>Cmd+P</kbd> or <kbd>Cmd+K</kbd> for full-text search across all collections</li>
     <li><strong>6 display themes</strong> — Default Light, Minimal Light, Solarized Light, Nord Dark, Catppuccin Dark, Dracula Dark</li>
   </ul>
 
@@ -112,137 +186,76 @@ fink serve</code></pre>
     <tbody>
       <tr><td><kbd>Cmd+P</kbd> / <kbd>Cmd+K</kbd></td><td>Quick switcher / full-text search</td></tr>
       <tr><td><kbd>Cmd+W</kbd></td><td>Close current tab</td></tr>
-      <tr><td><kbd>Ctrl+Tab</kbd></td><td>Cycle to next tab</td></tr>
-      <tr><td><kbd>Ctrl+Shift+Tab</kbd></td><td>Cycle to previous tab</td></tr>
+      <tr><td><kbd>Ctrl+Tab</kbd></td><td>Next tab</td></tr>
+      <tr><td><kbd>Ctrl+Shift+Tab</kbd></td><td>Previous tab</td></tr>
       <tr><td><kbd>Alt+←</kbd> / <kbd>Cmd+[</kbd></td><td>Navigate back</td></tr>
       <tr><td><kbd>Alt+→</kbd> / <kbd>Cmd+]</kbd></td><td>Navigate forward</td></tr>
       <tr><td><kbd>Cmd+\\</kbd></td><td>Toggle sidebar</td></tr>
     </tbody>
   </table>
 
-  <h2 id="quick-reference">Quick reference</h2>
-  <p>Common commands when working with Claude Code and Frozen Ink together:</p>
-  <pre><code><span class="cmt"># First time setup</span>
-fink init
-fink add obsidian <span class="flag">--name</span> notes <span class="flag">--path</span> ~/Documents/MyVault
-fink add git <span class="flag">--name</span> myapp <span class="flag">--path</span> ~/code/myapp
-fink sync "*"
-fink serve
-
-<span class="cmt"># Daily workflow</span>
-fink daemon start          <span class="cmt"># auto-sync in background</span>
-fink serve                 <span class="cmt"># start web UI when needed</span>
-fink search "auth flow"    <span class="cmt"># quick terminal search</span>
-fink status                <span class="cmt"># check last sync times</span></code></pre>
-
-  <h2 id="desktop-app">Using the desktop app</h2>
-  <p>If you're on macOS, the Frozen Ink desktop app provides all the same functionality without the terminal. It adds:</p>
-  <ul>
-    <li><strong>Workspace management</strong> — multiple isolated workspaces, each with their own collections</li>
-    <li><strong>System tray icon</strong> — sync status, quick access to the UI, daemon control</li>
-    <li><strong>Management UI</strong> — add/edit/remove collections, trigger syncs, manage publications — all from a GUI</li>
-    <li><strong>Export panel</strong> — export collections as markdown or HTML files with one click</li>
-  </ul>
-
-  <p>Download the desktop app from the <a href="/#download">download page</a>. On first launch, create a workspace and add your first collection from the Collections screen.</p>
-
-  <div class="callout callout-info">
-    <div class="callout-icon">ℹ️</div>
-    <div class="callout-body">
-      <strong>CLI and desktop app share data</strong>
-      <p>The desktop app and the CLI both read from <code>~/.frozenink/</code>. Collections you add via the CLI are visible in the desktop app and vice versa, as long as you're using the same workspace.</p>
-    </div>
-  </div>
-
-  <h2 id="combine-with-mcp">Combine with MCP</h2>
-  <p>The most powerful Claude Code workflow combines collection folders with MCP. After adding and syncing your collections, link them to Claude Code so Claude can query them directly in any conversation:</p>
-  <pre><code>fink mcp add <span class="flag">--tool</span> claude-code notes myapp</code></pre>
-
-  <p>Now, when you're in a Claude Code conversation, you can ask:</p>
-  <ul>
-    <li><em>"What does my architecture note say about the caching strategy?"</em></li>
-    <li><em>"Search my notes for anything about rate limiting"</em></li>
-    <li><em>"Find commits in myapp that changed the auth module"</em></li>
-  </ul>
-
-  <p>Claude queries Frozen Ink via MCP and brings back exact content from your collections — no manual copy-paste needed.</p>
-
-  <p>See <a href="/docs/local-mcp">Local MCP Setup</a> for the full configuration guide.</p>
-
-  <h2 id="claude-cowork">Claude Cowork</h2>
-  <p>Claude Cowork is Anthropic's collaborative AI workspace that lets teams work alongside Claude in a shared environment. Unlike Claude Code (which runs in your terminal), Cowork runs in the browser and doesn't support stdio MCP connections.</p>
-  <p>You can still give Cowork access to your Frozen Ink knowledge base by <strong>adding your collections folder as a workspace folder</strong>. Claude Cowork can read files directly from your local filesystem when you share a folder with it.</p>
-
-  <div class="steps">
-    <div class="step">
-      <div class="step-num">1</div>
-      <div class="step-body">
-        <h4>Sync your collections</h4>
-        <p>Make sure your collections are synced locally. The markdown files in <code>~/.frozenink/collections/</code> are what Cowork will read:</p>
-        <pre><code>fink sync "*"</code></pre>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">2</div>
-      <div class="step-body">
-        <h4>Add the collections folder</h4>
-        <p>In Claude Cowork, open your workspace settings and add <code>~/.frozenink/collections/</code> as a shared folder. This gives Claude access to all your synced markdown files.</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">3</div>
-      <div class="step-body">
-        <h4>Ask questions naturally</h4>
-        <p>Claude Cowork can now read from your collections folder. Ask questions and Claude will reference your knowledge base:</p>
-        <ul>
-          <li><em>"Check my notes for anything about the authentication redesign"</em></li>
-          <li><em>"What open GitHub issues do I have tagged with 'performance'?"</em></li>
-          <li><em>"Summarize recent commits in my project"</em></li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="callout callout-tip">
-    <div class="callout-icon">🔄</div>
-    <div class="callout-body">
-      <strong>Keep it fresh</strong>
-      <p>Run <code>fink daemon start</code> to keep your collections auto-syncing in the background. Cowork reads the latest files on disk, so syncing regularly ensures Claude sees up-to-date information.</p>
-    </div>
-  </div>
-
   <h2 id="collection-description">Collection descriptions</h2>
-  <p>A collection description tells AI assistants what the collection contains and when to consult it. It's included in the MCP server instructions that Claude receives when a collection is linked, making Claude much more effective at routing questions to the right source.</p>
+  <p>A collection description tells Claude what the collection contains and when to consult it. It's included in the MCP server instructions Claude receives, making it much more effective at routing questions to the right source.</p>
 
-  <p>Set a description when adding a collection:</p>
   <pre><code>fink add github \
   <span class="flag">--name</span>        backend-issues \
   <span class="flag">--repo</span>        acme/backend \
   <span class="flag">--token</span>       ghp_... \
-  <span class="flag">--description</span> "GitHub issues and PRs for the acme/backend repo. Search here for bug reports, feature requests, architecture decisions, and code review history."</code></pre>
+  <span class="flag">--description</span> "GitHub issues and PRs for the acme/backend repo. Search here for bug reports, feature requests, and code review history."</code></pre>
 
-  <p>Or update an existing collection:</p>
+  <p>Update an existing collection's description at any time:</p>
   <pre><code>fink collections update backend-issues \
   <span class="flag">--description</span> "GitHub issues and PRs for the acme/backend repo."</code></pre>
-
-  <p>In the desktop app, the description field appears on the Edit Collection form, below the Display Title. It accepts free-form text — write it as if you're explaining to a colleague what this collection is and what questions it can answer.</p>
 
   <div class="callout callout-tip">
     <div class="callout-icon">💡</div>
     <div class="callout-body">
       <strong>What makes a good description</strong>
-      <p>Include: the data source and project/repo/vault name, the kinds of entities it contains (issues, notes, commits), and the types of questions it can answer. For example: <em>"Obsidian vault for personal engineering notes. Contains architecture decisions, meeting notes, and reference docs. Consult this for design rationale and background context."</em></p>
+      <p>Include: the data source and project name, the kinds of entities it contains (issues, notes, commits), and the types of questions it can answer. For example: <em>"Obsidian vault for personal engineering notes. Contains architecture decisions, meeting notes, and reference docs. Consult for design rationale and background context."</em></p>
     </div>
   </div>
+
+  <h2 id="quick-reference">Quick reference</h2>
+  <pre><code><span class="cmt"># First-time setup</span>
+fink init
+fink add obsidian <span class="flag">--name</span> notes <span class="flag">--path</span> ~/Documents/MyVault
+fink add git <span class="flag">--name</span> myapp <span class="flag">--path</span> ~/code/myapp
+fink sync "*"
+fink mcp add <span class="flag">--tool</span> claude-code notes myapp
+
+<span class="cmt"># Daily workflow</span>
+fink daemon start              <span class="cmt"># auto-sync in background</span>
+fink serve                     <span class="cmt"># start web UI when needed</span>
+fink status                    <span class="cmt"># check last sync times</span>
+
+<span class="cmt"># Manage MCP links</span>
+fink mcp list <span class="flag">--tool</span> claude-code
+fink mcp remove <span class="flag">--tool</span> claude-code notes</code></pre>
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+
+  <h3>Claude doesn't seem to be using Frozen Ink</h3>
+  <pre><code>fink mcp list --tool claude-code</code></pre>
+  <p>If the collection shows as <strong>unlinked</strong> or missing, run <code>fink mcp add</code> again. If Claude Code was already open, start a new conversation.</p>
+
+  <h3>"fink: command not found" errors</h3>
+  <p>Claude Code spawns <code>fink mcp serve</code> using the system PATH. Verify:</p>
+  <pre><code>which fink      <span class="cmt"># should print /usr/local/bin/fink or similar</span>
+fink --version</code></pre>
+  <p>If <code>fink</code> is only on your shell's PATH (e.g. via NVM-managed Node), reinstall globally so it lands in a standard system directory: <code>npm install -g @vboctor/fink</code>.</p>
+
+  <h3>Stale results</h3>
+  <p>Sync the collection and the next MCP call will return fresh data:</p>
+  <pre><code>fink sync my-vault</code></pre>
 
   <div class="docs-pagination">
     <a href="/docs/managing-collections" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Managing Collections</span>
     </a>
-    <a href="/docs/claude-desktop" class="docs-pagination-card next">
+    <a href="/docs/claude-cowork" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Claude Desktop Integration</span>
+      <span class="docs-pagination-title">Claude Cowork Integration</span>
     </a>
   </div>
   `,

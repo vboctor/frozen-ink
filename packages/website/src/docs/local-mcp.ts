@@ -3,13 +3,15 @@ import { renderDocsPage } from "./layout";
 export const localMcpPage = renderDocsPage({
   title: "Local MCP Setup",
   description:
-    "Link Frozen Ink collections to Claude Code and Claude Desktop via the Model Context Protocol for AI-powered knowledge queries.",
+    "Link Frozen Ink collections to Claude Code, Codex CLI, and other MCP clients, plus set up ChatGPT Desktop via remote MCP endpoints.",
   activePath: "/docs/local-mcp",
   tocLinks: [
     { id: "what-is-mcp", title: "What is MCP" },
     { id: "how-it-works", title: "How it works in Frozen Ink" },
     { id: "link-to-claude-code", title: "Link to Claude Code" },
     { id: "link-to-claude-desktop", title: "Link to Claude Desktop" },
+    { id: "link-to-codex-cli", title: "Link to Codex CLI" },
+    { id: "link-to-chatgpt-desktop", title: "Link to ChatGPT Desktop" },
     { id: "available-tools", title: "Available MCP tools" },
     { id: "available-resources", title: "Available MCP resources" },
     { id: "multiple-collections", title: "Multiple collections" },
@@ -25,14 +27,14 @@ export const localMcpPage = renderDocsPage({
   </div>
 
   <h1 class="page-title">Local MCP Setup</h1>
-  <p class="page-lead">The Model Context Protocol (MCP) lets AI assistants like Claude directly query your Frozen Ink collections. Once linked, Claude can search your notes, read specific documents, and access attachments — without you copying and pasting anything.</p>
+  <p class="page-lead">The Model Context Protocol (MCP) lets AI assistants directly query your Frozen Ink collections. Once linked, your MCP client can search notes, read specific documents, and access attachments without copy/paste.</p>
 
   <h2 id="what-is-mcp">What is MCP</h2>
-  <p>The <a href="https://modelcontextprotocol.io">Model Context Protocol</a> is an open standard that lets AI assistants connect to external data sources and tools. Think of it as a structured API between Claude and your local Frozen Ink knowledge base.</p>
-  <p>When a collection is linked via MCP, Claude can call Frozen Ink's search and retrieval tools during a conversation. Claude decides when to call them, fetches relevant content, and incorporates it into its response — all transparently.</p>
+  <p>The <a href="https://modelcontextprotocol.io">Model Context Protocol</a> is an open standard that lets AI assistants connect to external data sources and tools. Think of it as a structured API between your MCP client and your local Frozen Ink knowledge base.</p>
+  <p>When a collection is linked via MCP, the client can call Frozen Ink's search and retrieval tools during a conversation, fetch relevant content, and incorporate it into responses.</p>
 
   <h2 id="how-it-works">How it works in Frozen Ink</h2>
-  <p>Frozen Ink uses a <strong>per-collection, stdio-based MCP transport</strong>. Each collection link registers a separate MCP connection in the AI tool's configuration. When Claude needs to query a collection, it spawns <code>fink mcp serve --collection &lt;name&gt;</code> as a subprocess and communicates over stdio.</p>
+  <p>Frozen Ink uses a <strong>per-collection, stdio-based MCP transport</strong> for local clients like Claude Code, Claude Desktop, and Codex CLI. Each collection link registers a separate MCP connection. When the client queries a collection, it spawns <code>fink mcp serve --collection &lt;name&gt;</code> as a subprocess and communicates over stdio.</p>
 
   <p>This means:</p>
   <ul>
@@ -101,8 +103,26 @@ fink status</code></pre>
     </div>
   </div>
 
+  <h2 id="link-to-codex-cli">Link to Codex CLI</h2>
+  <p>Use the canonical Codex tool name:</p>
+  <pre><code>fink mcp add <span class="flag">--tool</span> codex-cli my-vault</code></pre>
+  <p>Legacy compatibility is preserved for older scripts:</p>
+  <pre><code>fink mcp add <span class="flag">--tool</span> codex my-vault</code></pre>
+  <p><code>codex</code> is treated as an alias for <code>codex-cli</code>.</p>
+
+  <h2 id="link-to-chatgpt-desktop">Link to ChatGPT Desktop</h2>
+  <p>ChatGPT Desktop uses a remote MCP connector flow rather than local per-collection stdio registration.</p>
+  <p>Publish your collection(s), then add the published MCP URL in ChatGPT:</p>
+  <pre><code>fink publish my-vault <span class="flag">--password</span> secret123 <span class="flag">--name</span> my-vault-pub
+
+<span class="cmt"># ChatGPT connector endpoint</span>
+https://my-vault-pub.workers.dev/mcp
+<span class="cmt"># Header</span>
+Authorization: Bearer secret123</code></pre>
+  <p>Running <code>fink mcp add --tool chatgpt-desktop ...</code> returns setup guidance because ChatGPT Desktop does not currently expose a stable local config file for automatic stdio link registration.</p>
+
   <h2 id="available-tools">Available MCP tools</h2>
-  <p>Each Frozen Ink MCP connection exposes the following tools to Claude:</p>
+  <p>Each Frozen Ink MCP connection exposes the following tools to your MCP client:</p>
 
   <table>
     <thead>
@@ -133,14 +153,14 @@ fink status</code></pre>
   </table>
 
   <h3>Example interaction</h3>
-  <p>In a Claude Code session with <code>my-vault</code> linked, you might say:</p>
+  <p>In an MCP-enabled session with <code>my-vault</code> linked, you might say:</p>
   <blockquote style="border-left:3px solid var(--border); padding: 12px 20px; margin: 16px 0; color: var(--text-secondary); font-style: italic;">
     "What does my note on the authentication architecture say about token refresh?"
   </blockquote>
-  <p>Claude calls <code>entity_search</code> with <code>"token refresh authentication"</code>, finds the relevant note, then calls <code>entity_get_markdown</code> to read it in full, and synthesizes the answer.</p>
+  <p>The assistant calls <code>entity_search</code> with <code>"token refresh authentication"</code>, finds the relevant note, then calls <code>entity_get_markdown</code> to read it in full, and synthesizes the answer.</p>
 
   <h2 id="available-resources">Available MCP resources</h2>
-  <p>In addition to tools (callable functions), Frozen Ink exposes these MCP resources — addressable content that Claude can reference:</p>
+  <p>In addition to tools (callable functions), Frozen Ink exposes these MCP resources — addressable content your assistant can reference:</p>
 
   <table>
     <thead>

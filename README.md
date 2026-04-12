@@ -327,6 +327,12 @@ Exposes 5 tools and 4 resources for AI assistants:
 # Link one collection
 fink mcp add --tool claude-code my-github
 
+# Link via Codex CLI (canonical name)
+fink mcp add --tool codex-cli my-github
+
+# Legacy Codex alias (still supported)
+fink mcp add --tool codex my-github
+
 # Link multiple collections (still one connection per collection)
 fink mcp add --tool claude-code my-github my-notes
 
@@ -346,7 +352,9 @@ Connection count semantics:
 
 TUI path: `fink` -> `Collections` -> select collection -> `[m]` MCP config.
 
+`--tool codex-cli` is the canonical Codex option; `--tool codex` remains a legacy alias.
 Codex MCP support is best-effort and available only when `codex mcp` CLI commands are detected.
+ChatGPT Desktop uses a remote MCP endpoint flow. `fink mcp add --tool chatgpt-desktop` returns setup guidance for published `/mcp` endpoints instead of writing local client config.
 
 ## Development
 

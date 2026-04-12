@@ -33,14 +33,19 @@ export const claudeDesktopPage = renderDocsPage({
 
   <div class="feature-grid">
     <div class="feature-card">
-      <div class="feature-card-icon">🔍</div>
-      <h4>Search from any conversation</h4>
-      <p>Ask Claude questions about your notes and repos. Claude calls Frozen Ink's MCP tools, fetches the relevant content, and incorporates it into its response — all inline, without switching apps.</p>
+      <div class="feature-card-icon">⚡</div>
+      <h4>Instant responses</h4>
+      <p>stdio transport means direct process I/O — no HTTP round-trip, no serialization overhead. Tool calls resolve in single-digit milliseconds against the local SQLite index.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-icon">♾️</div>
+      <h4>No rate limits</h4>
+      <p>Everything runs on your machine. No API quotas, no per-query cost, no throttling. Claude can call Frozen Ink tools as many times as needed in a conversation without hitting a wall.</p>
     </div>
     <div class="feature-card">
       <div class="feature-card-icon">🔒</div>
       <h4>Local and private</h4>
-      <p>MCP connections use stdio — Claude Desktop spawns <code>fink mcp serve</code> on demand and reads your local SQLite index. No background server, no network calls for local collections.</p>
+      <p>Claude Desktop spawns <code>fink mcp serve</code> on demand and reads your local SQLite index. No background server required, fully offline — data never leaves your machine.</p>
     </div>
   </div>
 
@@ -263,13 +268,13 @@ fink --version</code></pre>
   <pre><code>fink sync my-vault</code></pre>
 
   <div class="docs-pagination">
-    <a href="/docs/claude-code" class="docs-pagination-card">
+    <a href="/docs/claude-cowork" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">Claude Code Integration</span>
+      <span class="docs-pagination-title">Claude Cowork Integration</span>
     </a>
-    <a href="/docs/local-mcp" class="docs-pagination-card next">
+    <a href="/docs/codex-cli" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Local MCP Setup</span>
+      <span class="docs-pagination-title">Codex CLI Integration</span>
     </a>
   </div>
   `,

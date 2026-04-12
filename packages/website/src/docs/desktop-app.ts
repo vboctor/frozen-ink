@@ -191,7 +191,7 @@ export const desktopAppPage = renderDocsPage({
       <tr><td>Full-text search</td><td>✅ <kbd>Cmd+P</kbd></td><td>✅ <code>fink search</code></td></tr>
       <tr><td>Publish to Cloudflare</td><td>✅ Publish panel</td><td>✅ <code>fink publish</code></td></tr>
       <tr><td>Export collections</td><td>✅ Export panel</td><td>✅ Via API</td></tr>
-      <tr><td>Configure MCP</td><td>✅ Collections panel</td><td>✅ <code>fink mcp add</code></td></tr>
+      <tr><td>Configure local MCP links</td><td>✅ Collections panel</td><td>✅ <code>fink mcp add --tool claude-code|codex-cli|...</code></td></tr>
       <tr><td>Multiple workspaces</td><td>✅ Built-in</td><td>⚠️ Manual directory switching</td></tr>
       <tr><td>Background sync</td><td>✅ System tray daemon</td><td>✅ <code>fink daemon</code></td></tr>
       <tr><td>Scripting / automation</td><td>❌</td><td>✅ Composable commands</td></tr>
