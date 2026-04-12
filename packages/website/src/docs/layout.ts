@@ -46,6 +46,7 @@ const NAV_SECTIONS = [
     title: "Integrations",
     items: [
       { label: "Claude Code Integration", href: "/docs/claude-code" },
+      { label: "Claude Desktop Integration", href: "/docs/claude-desktop" },
       { label: "Local MCP Setup", href: "/docs/local-mcp" },
       { label: "AnythingLLM MCP Setup", href: "/docs/anythingllm-mcp" },
       { label: "Publishing to Cloudflare", href: "/docs/publishing" },
