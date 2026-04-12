@@ -15,6 +15,8 @@ beforeEach(() => {
   listArg = null;
 
   mkdirSync(TEST_DIR, { recursive: true });
+  mkdirSync(join(TEST_DIR, "collections"), { recursive: true });
+  mkdirSync(join(TEST_DIR, "sites"), { recursive: true });
   process.env.FROZENINK_HOME = TEST_DIR;
   saveContext({ collections: {}, deployments: {} });
 
