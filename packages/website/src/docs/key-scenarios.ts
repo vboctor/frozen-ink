@@ -97,7 +97,7 @@ fink status</code></pre>
       <div class="step-num">3</div>
       <div class="step-body">
         <h4>Option A — Local MCP (private, zero-upload)</h4>
-        <p>Link the collection to Claude Code so it can query your notes locally, with no data leaving your machine:</p>
+        <p>Link the collection to a local MCP client (for example Claude Code or Codex CLI) so it can query your notes locally, with no data leaving your machine:</p>
         <pre><code>fink mcp add --tool claude-code my-vault</code></pre>
         <p>See <a href="/docs/local-mcp">Local MCP Setup</a> for the full configuration guide.</p>
       </div>
@@ -136,7 +136,7 @@ fink publish architecture-notes github-issues internal-docs \
   <span class="flag">--password</span> team-secret <span class="flag">--name</span> team-knowledge</code></pre>
 
   <h2 id="local-ai">Local AI assistant context</h2>
-  <p><strong>Situation:</strong> You use Claude Code for software development. When working on a feature, you want Claude to have instant access to your project's GitHub issues, git history, and design notes — without manually pasting content into every conversation.</p>
+  <p><strong>Situation:</strong> You use an MCP-enabled coding assistant (for example Claude Code or Codex CLI). When working on a feature, you want instant access to your project's GitHub issues, git history, and design notes — without manually pasting content into every conversation.</p>
 
   <p>Link all relevant collections to Claude Code:</p>
   <pre><code>fink mcp add <span class="flag">--tool</span> claude-code my-project-issues my-repo my-vault</code></pre>

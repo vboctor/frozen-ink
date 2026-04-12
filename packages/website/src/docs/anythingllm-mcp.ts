@@ -23,7 +23,7 @@ export const anythingllmMcpPage = renderDocsPage({
   </div>
 
   <h1 class="page-title">AnythingLLM MCP Setup</h1>
-  <p class="page-lead">AnythingLLM supports the Model Context Protocol natively. Once linked, any model you run in AnythingLLM can search and read your Frozen Ink collections — entirely on your machine, no cloud required.</p>
+  <p class="page-lead">AnythingLLM supports the Model Context Protocol natively. Once linked, any local model you run — Llama, Mistral, Qwen, Gemma, and more — can search and read your Frozen Ink collections instantly, with no rate limits and no data leaving your machine.</p>
 
   <h2 id="overview">Overview</h2>
   <p>AnythingLLM reads a JSON config file (<code>anythingllm_mcp_servers.json</code>) to discover which MCP servers to expose to models in its Agent mode. Frozen Ink writes entries directly into that file, so you don't need to edit it manually.</p>
@@ -32,12 +32,17 @@ export const anythingllmMcpPage = renderDocsPage({
     <div class="feature-card">
       <div class="feature-card-icon">🤖</div>
       <h4>Any local model</h4>
-      <p>Works with any model AnythingLLM supports — Ollama, LM Studio, local Llama, Mistral, Qwen, Gemma, and more. Your knowledge base is available regardless of which model is active.</p>
+      <p>Works with any model AnythingLLM supports — Ollama, LM Studio, Llama, Mistral, Qwen, Gemma, and more. Give your local model a rich, searchable knowledge base without a cloud subscription.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-card-icon">⚡</div>
+      <h4>Instant, unlimited queries</h4>
+      <p>stdio transport queries the local SQLite index with no HTTP overhead — responses land in milliseconds. No API rate limits, no per-query cost, no throttling regardless of how many tool calls the model makes.</p>
     </div>
     <div class="feature-card">
       <div class="feature-card-icon">🔒</div>
       <h4>Fully local</h4>
-      <p>AnythingLLM spawns <code>fink mcp serve</code> as a subprocess when a tool call is made. Everything stays on your machine — no network calls, no cloud.</p>
+      <p>AnythingLLM spawns <code>fink mcp serve</code> as a subprocess on demand. Model, data, and retrieval all stay on your machine — nothing touches the cloud.</p>
     </div>
   </div>
 
@@ -181,9 +186,9 @@ fink --version</code></pre>
   <pre><code>fink sync my-vault</code></pre>
 
   <div class="docs-pagination">
-    <a href="/docs/local-mcp" class="docs-pagination-card">
+    <a href="/docs/chatgpt-desktop" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">Local MCP Setup</span>
+      <span class="docs-pagination-title">ChatGPT Desktop Integration</span>
     </a>
     <a href="/docs/publishing" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>

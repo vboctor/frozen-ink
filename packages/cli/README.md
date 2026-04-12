@@ -151,12 +151,18 @@ Published sites include:
 
 ## MCP Server
 
-Frozen Ink includes an MCP server for AI tools (Claude, etc.):
+Frozen Ink includes an MCP server for AI tools (Claude, Codex CLI, etc.):
 
 ```bash
 # Link one or more collections to Claude Code
 fink mcp add --tool claude-code my-repo
 fink mcp add --tool claude-code my-notes
+
+# Link to Codex CLI (canonical name)
+fink mcp add --tool codex-cli my-repo
+
+# Legacy alias (still supported)
+fink mcp add --tool codex my-repo
 
 # Or add both in one command
 fink mcp add --tool claude-code my-repo my-notes
@@ -183,7 +189,9 @@ Behavior notes:
 - One MCP connection is created per `(tool, collection)`:
   - Add `my-repo` then `my-notes` => 2 connections
   - Add `my-repo my-notes` together => also 2 connections
-- Codex tool support is best-effort and shown only when `codex mcp` commands are detected.
+- `--tool codex-cli` is the canonical Codex option; `--tool codex` remains a legacy alias.
+- Codex CLI support is best-effort and shown only when `codex mcp` commands are detected.
+- ChatGPT Desktop uses a remote MCP endpoint flow. `fink mcp add --tool chatgpt-desktop` returns setup guidance instead of writing local client config.
 
 TUI path: open `fink` -> `Collections` -> select a collection -> press `[m]` for MCP actions.
 

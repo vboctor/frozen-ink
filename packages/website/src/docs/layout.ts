@@ -45,12 +45,13 @@ const NAV_SECTIONS = [
   {
     title: "Integrations",
     items: [
-      { label: "Claude Code Integration", href: "/docs/claude-code" },
-      { label: "Claude Desktop Integration", href: "/docs/claude-desktop" },
-      { label: "Local MCP Setup", href: "/docs/local-mcp" },
-      { label: "AnythingLLM MCP Setup", href: "/docs/anythingllm-mcp" },
+      { label: "Claude Code", href: "/docs/claude-code" },
+      { label: "Claude Cowork", href: "/docs/claude-cowork" },
+      { label: "Claude Desktop", href: "/docs/claude-desktop" },
+      { label: "Codex CLI", href: "/docs/codex-cli" },
+      { label: "ChatGPT Desktop", href: "/docs/chatgpt-desktop" },
+      { label: "AnythingLLM", href: "/docs/anythingllm-mcp" },
       { label: "Publishing to Cloudflare", href: "/docs/publishing" },
-      { label: "Cloud MCP Access", href: "/docs/cloud-mcp" },
     ],
   },
 ];

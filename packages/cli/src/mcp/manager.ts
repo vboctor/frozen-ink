@@ -8,11 +8,11 @@ import {
   getConnectionName,
   getMcpToolAdapter,
   listMcpToolAdapters,
-  type McpToolName,
+  type McpToolCanonicalName,
 } from "./tools";
 
 export interface AvailableToolInfo {
-  tool: McpToolName;
+  tool: McpToolCanonicalName;
   displayName: string;
   available: boolean;
   reason?: string;
@@ -37,7 +37,7 @@ export interface ToolCollectionLink {
 }
 
 export interface ToolLinkStatus {
-  tool: McpToolName;
+  tool: McpToolCanonicalName;
   displayName: string;
   available: boolean;
   reason?: string;
@@ -58,7 +58,7 @@ async function ensureFinkOnPath(): Promise<void> {
   }
 }
 
-async function ensureToolAvailable(tool: McpToolName): Promise<void> {
+async function ensureToolAvailable(tool: McpToolCanonicalName): Promise<void> {
   const adapter = getMcpToolAdapter(tool);
   const availability = await adapter.isAvailable();
   if (!availability.available) {
@@ -86,11 +86,14 @@ export async function listAvailableMcpTools(): Promise<AvailableToolInfo[]> {
 }
 
 export async function addMcpConnections(params: {
-  tool: McpToolName;
+  tool: McpToolCanonicalName;
   collections: string[];
   description?: string;
 }): Promise<AddMcpResult[]> {
-  await ensureFinkOnPath();
+  // Remote-only integrations (for example ChatGPT Desktop) don't spawn local stdio subprocesses.
+  if (params.tool !== "chatgpt-desktop") {
+    await ensureFinkOnPath();
+  }
   await ensureToolAvailable(params.tool);
 
   const adapter = getMcpToolAdapter(params.tool);
@@ -127,7 +130,7 @@ export async function addMcpConnections(params: {
 }
 
 export async function removeMcpConnections(params: {
-  tool: McpToolName;
+  tool: McpToolCanonicalName;
   collections: string[];
 }): Promise<RemoveMcpResult[]> {
   await ensureToolAvailable(params.tool);
@@ -149,7 +152,7 @@ export async function removeMcpConnections(params: {
   return results;
 }
 
-export async function listMcpConnections(tool?: McpToolName): Promise<ToolLinkStatus[]> {
+export async function listMcpConnections(tool?: McpToolCanonicalName): Promise<ToolLinkStatus[]> {
   const adapters = tool
     ? [getMcpToolAdapter(tool)]
     : listMcpToolAdapters();

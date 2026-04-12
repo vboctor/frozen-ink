@@ -1,6 +1,27 @@
-export const MCP_TOOL_NAMES = ["claude-code", "claude-desktop", "codex", "anythingllm"] as const;
+export const MCP_TOOL_CANONICAL_NAMES = [
+  "claude-code",
+  "claude-desktop",
+  "codex-cli",
+  "chatgpt-desktop",
+  "anythingllm",
+] as const;
 
-export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
+export const MCP_TOOL_ALIAS_MAP = {
+  codex: "codex-cli",
+} as const;
+
+export const MCP_TOOL_NAMES = [
+  "claude-code",
+  "claude-desktop",
+  "codex-cli",
+  "chatgpt-desktop",
+  "anythingllm",
+  "codex",
+] as const;
+
+export type McpToolCanonicalName = (typeof MCP_TOOL_CANONICAL_NAMES)[number];
+export type McpToolAliasName = keyof typeof MCP_TOOL_ALIAS_MAP;
+export type McpToolName = McpToolCanonicalName | McpToolAliasName;
 
 export interface ToolConnectionSpec {
   collection: string;
@@ -9,7 +30,7 @@ export interface ToolConnectionSpec {
 }
 
 export interface McpToolAdapter {
-  tool: McpToolName;
+  tool: McpToolCanonicalName;
   displayName: string;
   isAvailable(): Promise<{ available: boolean; reason?: string }>;
   addConnection(spec: ToolConnectionSpec): Promise<void>;

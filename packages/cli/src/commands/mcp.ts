@@ -6,9 +6,10 @@ import {
 } from "@frozenink/core";
 import { startStdioServer } from "@frozenink/mcp";
 import {
-  MCP_TOOL_NAMES,
+  MCP_TOOL_CANONICAL_NAMES,
   isMcpToolName,
-  type McpToolName,
+  normalizeMcpToolName,
+  type McpToolCanonicalName,
 } from "../mcp/tools";
 import {
   addMcpConnections,
@@ -16,11 +17,15 @@ import {
   removeMcpConnections,
 } from "../mcp/manager";
 
-function parseTool(value: string): McpToolName {
-  if (!isMcpToolName(value)) {
-    throw new Error(`Unsupported MCP tool "${value}". Use one of: ${MCP_TOOL_NAMES.join(", ")}`);
+function parseTool(value: string): McpToolCanonicalName {
+  const normalized = value.trim().toLowerCase();
+  if (!isMcpToolName(normalized)) {
+    throw new Error(
+      `Unsupported MCP tool "${value}". Use one of: ${MCP_TOOL_CANONICAL_NAMES.join(", ")} ` +
+      "(legacy alias: codex -> codex-cli)",
+    );
   }
-  return value;
+  return normalizeMcpToolName(normalized);
 }
 
 function requireInitialized(): void {
@@ -32,6 +37,9 @@ function requireInitialized(): void {
 
 export const mcpCommand = new Command("mcp")
   .description("Manage MCP tool registrations and run collection-scoped MCP stdio server");
+
+const TOOL_HELP =
+  `${MCP_TOOL_CANONICAL_NAMES.join(", ")} (legacy alias: codex -> codex-cli)`;
 
 mcpCommand
   .command("serve")
@@ -58,21 +66,22 @@ mcpCommand
 mcpCommand
   .command("add")
   .description("Add MCP tool links for one or more collections")
-  .requiredOption("--tool <tool>", `Target MCP client tool (${MCP_TOOL_NAMES.join(", ")})`)
+  .requiredOption("--tool <tool>", `Target MCP client tool (${TOOL_HELP})`)
   .option("--description <text>", "Optional tool description to store on collection(s)")
   .argument("<collections...>", "Collection names")
   .action(async (collectionNames: string[], opts: { tool: string; description?: string }) => {
     requireInitialized();
+    const tool = parseTool(opts.tool);
 
     try {
       const results = await addMcpConnections({
-        tool: parseTool(opts.tool),
+        tool,
         collections: collectionNames,
         description: opts.description,
       });
 
       for (const row of results) {
-        console.log(`Linked ${row.collection} -> ${opts.tool} (${row.connectionName})`);
+        console.log(`Linked ${row.collection} -> ${tool} (${row.connectionName})`);
       }
       console.log(`Added ${results.length} MCP link(s).`);
     } catch (err) {
@@ -85,19 +94,20 @@ mcpCommand
 mcpCommand
   .command("remove")
   .description("Remove MCP tool links for one or more collections")
-  .requiredOption("--tool <tool>", `Target MCP client tool (${MCP_TOOL_NAMES.join(", ")})`)
+  .requiredOption("--tool <tool>", `Target MCP client tool (${TOOL_HELP})`)
   .argument("<collections...>", "Collection names")
   .action(async (collectionNames: string[], opts: { tool: string }) => {
     requireInitialized();
+    const tool = parseTool(opts.tool);
 
     try {
       const results = await removeMcpConnections({
-        tool: parseTool(opts.tool),
+        tool,
         collections: collectionNames,
       });
 
       for (const row of results) {
-        console.log(`Removed ${row.collection} from ${opts.tool} (${row.connectionName})`);
+        console.log(`Removed ${row.collection} from ${tool} (${row.connectionName})`);
       }
       console.log(`Removed ${results.length} MCP link(s).`);
     } catch (err) {
@@ -110,7 +120,7 @@ mcpCommand
 mcpCommand
   .command("list")
   .description("List MCP tool links by collection")
-  .option("--tool <tool>", `Filter by tool (${MCP_TOOL_NAMES.join(", ")})`)
+  .option("--tool <tool>", `Filter by tool (${TOOL_HELP})`)
   .action(async (opts: { tool?: string }) => {
     requireInitialized();
 

@@ -10,11 +10,12 @@ import { whatIsFrozenInkPage } from "./docs/what-is-frozen-ink";
 import { keyScenariosPage } from "./docs/key-scenarios";
 import { managingCollectionsPage } from "./docs/managing-collections";
 import { claudeCodePage } from "./docs/claude-code";
+import { claudeCoworkPage } from "./docs/claude-cowork";
 import { claudeDesktopPage } from "./docs/claude-desktop";
-import { localMcpPage } from "./docs/local-mcp";
+import { codexCliPage } from "./docs/codex-cli";
+import { chatgptDesktopPage } from "./docs/chatgpt-desktop";
 import { anythingllmMcpPage } from "./docs/anythingllm-mcp";
 import { publishingPage } from "./docs/publishing";
-import { cloudMcpPage } from "./docs/cloud-mcp";
 import { desktopAppPage } from "./docs/desktop-app";
 import { connectorGithubPage } from "./docs/connector-github";
 import { connectorObsidianPage } from "./docs/connector-obsidian";
@@ -27,11 +28,12 @@ const DOC_PAGES: Record<string, string> = {
   "/docs/key-scenarios": keyScenariosPage,
   "/docs/managing-collections": managingCollectionsPage,
   "/docs/claude-code": claudeCodePage,
+  "/docs/claude-cowork": claudeCoworkPage,
   "/docs/claude-desktop": claudeDesktopPage,
-  "/docs/local-mcp": localMcpPage,
+  "/docs/codex-cli": codexCliPage,
+  "/docs/chatgpt-desktop": chatgptDesktopPage,
   "/docs/anythingllm-mcp": anythingllmMcpPage,
   "/docs/publishing": publishingPage,
-  "/docs/cloud-mcp": cloudMcpPage,
   "/docs/desktop-app": desktopAppPage,
   "/docs/connectors/github": connectorGithubPage,
   "/docs/connectors/obsidian": connectorObsidianPage,

@@ -90,4 +90,37 @@ describe("mcp command", () => {
 
     expect(listArg).toBe("claude-code");
   });
+
+  it("accepts codex-cli as the canonical Codex tool name", async () => {
+    const { addCollection } = await import("@frozenink/core");
+    addCollection("collection-a", { crawler: "github", config: {}, credentials: {} });
+
+    const { mcpCommand } = await import("../commands/mcp");
+    await mcpCommand.parseAsync([
+      "add",
+      "--tool",
+      "codex-cli",
+      "collection-a",
+    ], { from: "user" });
+
+    expect(addArgs).toEqual({
+      tool: "codex-cli",
+      collections: ["collection-a"],
+      description: undefined,
+    });
+  });
+
+  it("accepts chatgpt-desktop tool name", async () => {
+    const { mcpCommand } = await import("../commands/mcp");
+    await mcpCommand.parseAsync(["list", "--tool", "chatgpt-desktop"], { from: "user" });
+
+    expect(listArg).toBe("chatgpt-desktop");
+  });
+
+  it("normalizes legacy codex alias to codex-cli", async () => {
+    const { mcpCommand } = await import("../commands/mcp");
+    await mcpCommand.parseAsync(["list", "--tool", "codex"], { from: "user" });
+
+    expect(listArg).toBe("codex-cli");
+  });
 });

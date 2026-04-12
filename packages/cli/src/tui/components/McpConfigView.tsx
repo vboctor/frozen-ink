@@ -8,7 +8,7 @@ import {
   removeMcpConnections,
   type AvailableToolInfo,
 } from "../../mcp/manager";
-import type { McpToolName } from "../../mcp/tools";
+import { normalizeMcpToolName, type McpToolName } from "../../mcp/tools";
 import { TextInput } from "./TextInput.js";
 
 type Mode = "menu" | "edit-description" | "busy";
@@ -46,7 +46,7 @@ export function McpConfigView({
       return;
     }
 
-    const statuses = await listMcpConnections(tool);
+    const statuses = await listMcpConnections(normalizeMcpToolName(tool));
     const row = statuses[0]?.links.find((link) => link.collection === collectionName);
     setLinked(!!row?.linked);
   }, [collectionName]);
