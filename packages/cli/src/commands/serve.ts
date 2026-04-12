@@ -8,6 +8,7 @@ import {
   listCollections,
   getCollection,
   getCollectionDbPath,
+  updateCollection,
   entities,
   entityTags,
   tags,
@@ -21,6 +22,7 @@ import {
   resolveUiDist,
 } from "@frozenink/core";
 import {
+  createDefaultRegistry,
   gitHubTheme,
   obsidianTheme,
   gitTheme,
@@ -29,6 +31,7 @@ import {
 import { startStdioServer } from "@frozenink/mcp";
 import { eq, desc } from "drizzle-orm";
 import { handleManagementRequest, setAppMode } from "./management-api";
+import { generateCollection, createGenerateThemeEngine } from "./generate";
 
 const __moduleDir = getModuleDir(import.meta.url);
 
@@ -148,6 +151,41 @@ function tryServeStatic(
   }
 
   return null;
+}
+
+/**
+ * Check all enabled collections for minor-version upgrades and re-generate
+ * markdown for any that are behind. Logs progress for each collection regenerated.
+ */
+async function checkAndRegenerateCollections(home: string): Promise<void> {
+  const registry = createDefaultRegistry();
+  const themeEngine = createGenerateThemeEngine();
+  const collections = listCollections().filter((c) => c.enabled);
+
+  for (const col of collections) {
+    const factory = registry.get(col.crawler);
+    if (!factory) continue;
+
+    const crawlerVersion = factory().metadata.version ?? "1.0";
+    const collectionVersion = col.version ?? "1.0";
+
+    const [colMajor, colMinor] = collectionVersion.split(".").map(Number);
+    const [crwMajor, crwMinor] = crawlerVersion.split(".").map(Number);
+
+    // Only re-generate when same major but collection minor is older
+    if (colMajor !== crwMajor) continue;
+    if (colMinor >= crwMinor) continue;
+
+    console.log(
+      `Re-generating collection "${col.name}" (${col.crawler} schema ${collectionVersion} → ${crawlerVersion})...`,
+    );
+
+    const summary = await generateCollection(col, home, themeEngine);
+    if (summary) {
+      console.log(`  ${summary}`);
+      updateCollection(col.name, { version: crawlerVersion });
+    }
+  }
 }
 
 export function createApiServer(
@@ -707,8 +745,17 @@ export function createApiServer(
   }
 
   if (isBun) {
-    const server = Bun.serve({ port, fetch: handleRequest });
-    return { port: server.port as number, stop: () => server.stop() };
+    try {
+      const server = Bun.serve({ port, fetch: handleRequest });
+      return { port: server.port as number, stop: () => server.stop() };
+    } catch (err: any) {
+      if (err?.code === "EADDRINUSE") {
+        console.error(`Error: Port ${port} is already in use.`);
+        console.error(`Use --port <number> to choose a different port, or stop the process using port ${port}.`);
+        process.exit(1);
+      }
+      throw err;
+    }
   }
 
   // Node.js / Electron: plain http server
@@ -750,7 +797,15 @@ export function createApiServer(
 
   // Return a promise that resolves once the server is listening,
   // with the actual assigned port (important when port=0).
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    nodeServer.on("error", (err: any) => {
+      if (err?.code === "EADDRINUSE") {
+        console.error(`Error: Port ${port} is already in use.`);
+        console.error(`Use --port <number> to choose a different port, or stop the process using port ${port}.`);
+        process.exit(1);
+      }
+      reject(err);
+    });
     nodeServer.listen(port, () => {
       const addr = nodeServer.address() as any;
       const actualPort = typeof addr === "object" ? addr.port : port;
@@ -771,6 +826,8 @@ export const serveCommand = new Command("serve")
 
     const config = loadConfig();
     const port = opts.port ? parseInt(opts.port, 10) : config.ui.port;
+
+    await checkAndRegenerateCollections(home);
 
     if (opts.mcpOnly) {
       console.error("Starting Frozen Ink MCP server (STDIO)...");
