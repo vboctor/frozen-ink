@@ -17,6 +17,7 @@ export const addCommand = new Command("add")
   .argument("<crawler>", "Crawler type (e.g., github)")
   .requiredOption("--name <key>", "Collection key (alphanumeric, dash, underscore)")
   .option("--title <title>", "Display title for the collection")
+  .option("--description <text>", "Description of what this collection contains (helps AI know when to use it)")
   .option("--token <token>", "Authentication token")
   .option("--repo <repo>", "Repository in owner/repo format (for github)")
   .option("--path <path>", "Path to local directory (for obsidian, git)")
@@ -179,6 +180,7 @@ export const addCommand = new Command("add")
     // Save collection config
     addCollection(opts.name, {
       title: opts.title || undefined,
+      description: opts.description || undefined,
       crawler: crawlerType,
       config,
       credentials,

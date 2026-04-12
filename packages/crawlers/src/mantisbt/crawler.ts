@@ -296,7 +296,13 @@ export class MantisBTCrawler implements Crawler {
     // and note attachments. Sequential to avoid overwhelming the server.
     const entities: CrawlerEntityData[] = [];
     for (const issue of issuesToProcess) {
-      const fullIssue = await this.fetchIssue(issue.id);
+      let fullIssue: MantisBTIssue;
+      try {
+        fullIssue = await this.fetchIssue(issue.id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to sync entity type=issue id=${issue.id}: ${message}`);
+      }
       entities.push(await this.buildIssueEntity(fullIssue));
     }
 
@@ -341,7 +347,9 @@ export class MantisBTCrawler implements Crawler {
         try {
           const profile = await this.fetchUser(basic.id);
           entities.push(this.buildUserEntity(profile));
-        } catch {
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`  Warning: entity type=user id=${basic.id} name=${basic.name}: ${message}`);
           // Build a minimal user entity from data collected during issue sync.
           entities.push(this.buildUserEntity({
             id: basic.id,
@@ -417,8 +425,13 @@ export class MantisBTCrawler implements Crawler {
 
     const response = await this.fetchFn(url, { headers });
     if (!response.ok) {
+      let bodySnippet = "";
+      try {
+        const text = await response.text();
+        if (text.trim()) bodySnippet = ` — ${text.trim().slice(0, 300)}`;
+      } catch { /* ignore body read errors */ }
       throw new Error(
-        `MantisBT API request failed: ${response.status} ${response.statusText}`,
+        `MantisBT API error: GET ${url} → ${response.status} ${response.statusText}${bodySnippet}`,
       );
     }
     return response;
@@ -612,7 +625,8 @@ export class MantisBTCrawler implements Crawler {
           // Collect users from page metadata.
           this.collectUsersFromPage(page);
         } catch (err) {
-          console.warn(`  Warning: could not fetch page "${pageSummary.name}" in project ${currentProjectId}: ${err}`);
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(`  Warning: entity type=page id=${pageSummary.name} project_id=${currentProjectId}: ${message}`);
         }
       }
 
@@ -634,7 +648,8 @@ export class MantisBTCrawler implements Crawler {
       }
     } catch (err) {
       // Pages plugin not available or project has no pages — skip gracefully.
-      console.warn(`  Warning: could not browse pages for project ${currentProjectId}: ${err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`  Warning: entity type=page project_id=${currentProjectId} (browse): ${message}`);
     }
 
     // Move to the next project (or users phase if no more projects).
@@ -880,7 +895,8 @@ export class MantisBTCrawler implements Crawler {
         }
       }
     } catch (err) {
-      console.warn(`  Warning: MantisHub IssueViewPage failed for issue ${issueId}: ${err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`  Warning: entity type=issue id=${issueId} (MantisHub attachment URLs): ${message}`);
     }
     return urlMap;
   }

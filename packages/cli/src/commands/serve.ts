@@ -171,6 +171,7 @@ export function createApiServer(
         const result = rows.map((r) => ({
           name: r.name,
           title: r.title ?? r.name,
+          description: r.description,
           crawlerType: r.crawler,
           enabled: r.enabled,
           syncInterval: r.syncInterval,

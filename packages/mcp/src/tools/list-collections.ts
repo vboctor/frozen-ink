@@ -21,7 +21,7 @@ export function registerListCollections(
     {
       title: "List Collections",
       description:
-        "Lists all configured collections with entity counts and last sync time",
+        "Discover what knowledge sources are available in Frozen Ink. Call this first to see collection names, types, and sizes before searching. Each collection is a different data source (GitHub repo, notes vault, git history, issue tracker, etc.).",
       annotations: { readOnlyHint: true },
     },
     async () => {

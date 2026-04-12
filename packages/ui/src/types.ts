@@ -1,6 +1,7 @@
 export interface Collection {
   name: string;
   title: string;
+  description?: string;
   crawlerType: string;
   enabled: boolean;
   syncInterval: number;

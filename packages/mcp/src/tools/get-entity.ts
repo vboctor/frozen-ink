@@ -85,8 +85,7 @@ async function handleGetEntity(
         {
           type: "text" as const,
           text: JSON.stringify({
-            id: entity.id,
-            externalId: entity.externalId,
+            id: entity.externalId,
             collection: colName,
             entityType: entity.entityType,
             title: entity.title,
@@ -118,13 +117,13 @@ export function registerGetEntity(
       {
         title: "Get Entity",
         description:
-          "Returns full entity data and rendered markdown by external ID",
+          "Retrieve the full content and structured metadata for an item by its ID. Use entity_search first to find IDs, then call this to read the complete record including title, URL, tags, dates, and all source data.",
         inputSchema: {
-          externalId: z.string().describe("External ID of the entity"),
+          id: z.string().describe("The item ID, as returned by entity_search"),
         },
         annotations: { readOnlyHint: true },
       },
-      async (args) => handleGetEntity(singleCollectionName, args.externalId, options),
+      async (args) => handleGetEntity(singleCollectionName, args.id, options),
     );
   } else {
     server.registerTool(
@@ -132,17 +131,17 @@ export function registerGetEntity(
       {
         title: "Get Entity",
         description:
-          "Returns full entity data and rendered markdown by external ID. When collection is omitted all allowed collections are searched.",
+          "Retrieve the full content and structured metadata for an item by its ID. Use entity_search first to find IDs, then call this to read the complete record. Optionally specify a collection to narrow the lookup.",
         inputSchema: {
-          externalId: z.string().describe("External ID of the entity"),
+          id: z.string().describe("The item ID, as returned by entity_search"),
           collection: z
             .string()
             .optional()
-            .describe("Collection to search in. Omit to search all allowed collections."),
+            .describe("Collection to look in. Omit to search all collections."),
         },
         annotations: { readOnlyHint: true },
       },
-      async (args) => handleGetEntity(args.collection, args.externalId, options),
+      async (args) => handleGetEntity(args.collection, args.id, options),
     );
   }
 }

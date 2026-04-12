@@ -136,9 +136,10 @@ const updateCommand = new Command("update")
   .description("Update collection settings")
   .argument("<key>", "Collection key")
   .option("--title <title>", "Set display title")
+  .option("--description <text>", "Set description of what this collection contains (helps AI know when to use it)")
   .option("--include-diffs", "Enable commit diffs (git collections)")
   .option("--no-include-diffs", "Disable commit diffs (git collections)")
-  .action((key: string, opts: { title?: string; includeDiffs?: boolean }) => {
+  .action((key: string, opts: { title?: string; description?: string; includeDiffs?: boolean }) => {
     requireInit();
     const col = getCollection(key);
 
@@ -154,6 +155,11 @@ const updateCommand = new Command("update")
       changes.push(`title → "${opts.title}"`);
     }
 
+    if (opts.description !== undefined) {
+      updateCollection(key, { description: opts.description });
+      changes.push(`description updated`);
+    }
+
     if (opts.includeDiffs !== undefined) {
       const config = { ...(col.config ?? {}) };
       config.includeDiffs = opts.includeDiffs;
@@ -162,7 +168,7 @@ const updateCommand = new Command("update")
     }
 
     if (changes.length === 0) {
-      console.log("Nothing to update. Use --title or --include-diffs.");
+      console.log("Nothing to update. Use --title, --description, or --include-diffs.");
       return;
     }
 

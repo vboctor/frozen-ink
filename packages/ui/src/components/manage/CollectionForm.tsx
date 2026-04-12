@@ -5,6 +5,7 @@ interface CollectionFormProps {
   editName?: string;
   editConfig?: {
     title: string;
+    description?: string;
     crawler: string;
     config: Record<string, unknown>;
     credentials: Record<string, unknown>;
@@ -25,6 +26,7 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
   const [crawler, setCrawler] = useState(editConfig?.crawler ?? "");
   const [name, setName] = useState(editName ?? "");
   const [title, setTitle] = useState(editConfig?.title ?? "");
+  const [description, setDescription] = useState(editConfig?.description ?? "");
   const [config, setConfig] = useState<Record<string, string>>(
     configToStrings(editConfig?.config ?? {}),
   );
@@ -69,7 +71,7 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
         await fetch(`/api/collections/${encodeURIComponent(editName)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, config: parsedConfig, credentials: parsedCreds }),
+          body: JSON.stringify({ title, description: description || undefined, config: parsedConfig, credentials: parsedCreds }),
         });
       } else {
         const res = await fetch("/api/collections", {
@@ -78,6 +80,7 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
           body: JSON.stringify({
             name,
             title: title || name,
+            description: description || undefined,
             crawler,
             config: parsedConfig,
             credentials: parsedCreds,
@@ -147,6 +150,17 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
           onChange={(e) => setTitle(e.target.value)}
           placeholder="My Collection"
           className="form-input"
+        />
+        <label>
+          Description
+          <span className="form-label-hint"> — helps AI know when to search this collection</span>
+        </label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="e.g. GitHub issues and PRs for the acme/backend repo. Search here for bug reports, feature requests, and code review history."
+          className="form-input form-textarea"
+          rows={3}
         />
       </div>
 

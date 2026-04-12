@@ -20,6 +20,7 @@ type Step =
   | "select-crawler"
   | "name"
   | "title"
+  | "description"
   | "github-token"
   | "github-repo"
   | "github-open-only"
@@ -43,12 +44,13 @@ interface FormData {
   crawlerType: string;
   name: string;
   title: string;
+  description: string;
   config: Record<string, unknown>;
   credentials: Record<string, unknown>;
 }
 
 function getStepsForCrawler(type: string): Step[] {
-  const base: Step[] = ["select-crawler", "name", "title"];
+  const base: Step[] = ["select-crawler", "name", "title", "description"];
   switch (type) {
     case "github":
       return [...base, "github-token", "github-repo", "github-open-only", "github-max-issues", "github-max-prs", "confirm"];
@@ -75,6 +77,7 @@ export function AddCollection({
     crawlerType: "",
     name: "",
     title: "",
+    description: "",
     config: {},
     credentials: {},
   });
@@ -119,6 +122,10 @@ export function AddCollection({
       }
       case "title":
         setData((d) => ({ ...d, title: val }));
+        nextStep();
+        break;
+      case "description":
+        setData((d) => ({ ...d, description: val }));
         nextStep();
         break;
       case "github-token":
@@ -259,6 +266,7 @@ export function AddCollection({
 
       addCollection(data.name, {
         title: data.title || undefined,
+        description: data.description || undefined,
         crawler: data.crawlerType,
         config: data.config,
         credentials: creds,
@@ -308,6 +316,9 @@ export function AddCollection({
         )}
         {step === "title" && (
           <TextInput label="Display title (optional)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} placeholder="My Collection" />
+        )}
+        {step === "description" && (
+          <TextInput label="Description (optional — helps AI know when to search this collection)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} placeholder="e.g. GitHub issues and PRs for the acme/backend repo" />
         )}
         {step === "github-token" && (
           <TextInput label="GitHub token" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} mask />
@@ -366,6 +377,7 @@ export function AddCollection({
             )}
             <Text>  Name:    <Text color="cyan">{data.name}</Text></Text>
             {data.title && <Text>  Title:   <Text color="cyan">{data.title}</Text></Text>}
+            {data.description && <Text>  Desc:    <Text color="cyan">{data.description}</Text></Text>}
             {Array.isArray(data.config.entities) && (
               <Text>  Sync:    <Text color="cyan">{(data.config.entities as string[]).join(", ")}</Text></Text>
             )}

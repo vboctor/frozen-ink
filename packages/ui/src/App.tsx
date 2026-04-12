@@ -782,7 +782,7 @@ export default function App() {
           editName={editingCollection}
           editConfig={(() => {
             const col = collections.find((c) => c.name === editingCollection);
-            return col ? { title: col.title, crawler: col.crawlerType, config: {}, credentials: {} } : undefined;
+            return col ? { title: col.title, description: col.description, crawler: col.crawlerType, config: {}, credentials: {} } : undefined;
           })()}
           onSave={() => { setEditingCollection(null); triggerRefresh(); }}
           onCancel={() => setEditingCollection(null)}

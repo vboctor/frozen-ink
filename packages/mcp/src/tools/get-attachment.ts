@@ -257,20 +257,20 @@ export function registerGetAttachment(
       {
         title: "Get Entity Attachment",
         description:
-          "Returns base64 encoded attachment content from a markdown reference",
+          "Retrieve an image or file attachment (base64-encoded) referenced in an item's markdown. Use this when the user asks about images, diagrams, or files attached to their notes or issues.",
         inputSchema: {
           reference: z
             .string()
             .describe("Attachment reference from markdown, e.g. ![logo](../../attachments/git/abc/logo.png) or assets/git/abc/logo.png"),
-          externalId: z
+          id: z
             .string()
             .optional()
-            .describe("Optional entity external ID for resolving relative references"),
+            .describe("The item ID to resolve relative attachment paths (from entity_search)"),
         },
         annotations: { readOnlyHint: true },
       },
       async (args) =>
-        handleGetAttachment(singleCollectionName, args.reference, args.externalId, options),
+        handleGetAttachment(singleCollectionName, args.reference, args.id, options),
     );
   } else {
     server.registerTool(
@@ -278,7 +278,7 @@ export function registerGetAttachment(
       {
         title: "Get Entity Attachment",
         description:
-          "Returns base64 encoded attachment content from a markdown reference. When collection is omitted all allowed collections are searched.",
+          "Retrieve an image or file attachment (base64-encoded) referenced in an item's markdown. Use this when the user asks about images, diagrams, or files attached to their notes or issues. Optionally specify a collection.",
         inputSchema: {
           reference: z
             .string()
@@ -286,16 +286,16 @@ export function registerGetAttachment(
           collection: z
             .string()
             .optional()
-            .describe("Collection to search in. Omit to search all allowed collections."),
-          externalId: z
+            .describe("Collection to look in. Omit to search all collections."),
+          id: z
             .string()
             .optional()
-            .describe("Optional entity external ID for resolving relative references"),
+            .describe("The item ID to resolve relative attachment paths (from entity_search)"),
         },
         annotations: { readOnlyHint: true },
       },
       async (args) =>
-        handleGetAttachment(args.collection, args.reference, args.externalId, options),
+        handleGetAttachment(args.collection, args.reference, args.id, options),
     );
   }
 }

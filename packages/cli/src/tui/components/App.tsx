@@ -51,6 +51,9 @@ export function App(): React.ReactElement {
       return;
     }
     if (key.escape) {
+      // Collections screen manages its own sub-navigation and ESC back to home;
+      // skip the global handler so sub-screens (e.g. CollectionEdit) aren't bypassed.
+      if (screen === "collections") return;
       if (screen !== "home") {
         setScreen("home");
       } else {

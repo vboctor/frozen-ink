@@ -108,13 +108,13 @@ export function registerGetMarkdown(
       {
         title: "Get Entity Markdown",
         description:
-          "Returns rendered markdown content for an entity by external ID",
+          "Get the full readable markdown content of a note, issue, commit, or document by its ID. Use this when you need to read or quote the complete text. Prefer this over entity_get_data when the goal is to read content rather than inspect metadata.",
         inputSchema: {
-          externalId: z.string().describe("External ID of the entity"),
+          id: z.string().describe("The item ID, as returned by entity_search"),
         },
         annotations: { readOnlyHint: true },
       },
-      async (args) => handleGetMarkdown(singleCollectionName, args.externalId, options),
+      async (args) => handleGetMarkdown(singleCollectionName, args.id, options),
     );
   } else {
     server.registerTool(
@@ -122,17 +122,17 @@ export function registerGetMarkdown(
       {
         title: "Get Entity Markdown",
         description:
-          "Returns rendered markdown content for an entity by external ID. When collection is omitted all allowed collections are searched.",
+          "Get the full readable markdown content of a note, issue, commit, or document by its ID. Use this when you need to read or quote the complete text. Optionally specify a collection. Prefer this over entity_get_data when the goal is to read content rather than inspect metadata.",
         inputSchema: {
-          externalId: z.string().describe("External ID of the entity"),
+          id: z.string().describe("The item ID, as returned by entity_search"),
           collection: z
             .string()
             .optional()
-            .describe("Collection to search in. Omit to search all allowed collections."),
+            .describe("Collection to look in. Omit to search all collections."),
         },
         annotations: { readOnlyHint: true },
       },
-      async (args) => handleGetMarkdown(args.collection, args.externalId, options),
+      async (args) => handleGetMarkdown(args.collection, args.id, options),
     );
   }
 }
