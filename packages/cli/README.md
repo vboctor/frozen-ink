@@ -1,6 +1,6 @@
 # @vboctor/fink
 
-**Frozen Ink CLI** — crawl, sync, search, and publish local data replicas from GitHub, Obsidian, Git repos, and MantisBT.
+**Frozen Ink CLI** — crawl, sync, search, and publish local data replicas from GitHub, Obsidian, Git repos, and MantisHub.
 
 Frozen Ink creates a unified, queryable, markdown-native workspace from your data sources. It stores everything in local SQLite with full-text search, renders Obsidian-compatible markdown, and optionally publishes to Cloudflare as a password-protected website with MCP access for AI tools.
 
@@ -98,7 +98,7 @@ All commands are also available in headless mode for scripting and CI:
 |---------|-------------|
 | `fink` | Launch interactive TUI |
 | `fink init` | Initialize `~/.frozenink/` |
-| `fink add <type>` | Add a collection (github, obsidian, git, mantisbt) |
+| `fink add <type>` | Add a collection (github, obsidian, git, mantishub) |
 | `fink sync <name\|"*">` | Sync one or all collections |
 | `fink sync <name> --full` | Full re-sync from scratch |
 | `fink status` | Show sync status |

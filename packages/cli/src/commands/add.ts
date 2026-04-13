@@ -10,7 +10,7 @@ import {
   addCollection,
   getCollectionDbPath,
 } from "@frozenink/core";
-import { createDefaultRegistry, MantisBTCrawler } from "@frozenink/crawlers";
+import { createDefaultRegistry, MantisHubCrawler } from "@frozenink/crawlers";
 
 export const addCommand = new Command("add")
   .description("Add a new collection")
@@ -22,13 +22,13 @@ export const addCommand = new Command("add")
   .option("--repo <repo>", "Repository in owner/repo format (for github)")
   .option("--path <path>", "Path to local directory (for obsidian, git)")
   .option("--include-diffs", "Include commit diffs (for git)")
-  .option("--url <url>", "Base URL (for mantisbt)")
-  .option("--project-name <name>", "Project name (for mantisbt)")
+  .option("--url <url>", "Base URL (for mantishub)")
+  .option("--project-name <name>", "Project name (for mantishub)")
   .option("--max <count>", "Maximum entities per type to sync (applies to issues and PRs independently)", parseInt)
   .option("--max-issues <count>", "Maximum issues to sync (for github)", parseInt)
   .option("--max-prs <count>", "Maximum pull requests to sync (for github)", parseInt)
   .option("--open-only", "Only sync open issues/PRs, delete closed ones (for github)")
-  .option("--sync-entities <types>", "Comma-separated entity types to sync: issues,pages,users (for mantisbt)")
+  .option("--sync-entities <types>", "Comma-separated entity types to sync: issues,pages,users (for mantishub)")
   .action(async (crawlerType: string, opts: Record<string, string>) => {
     ensureInitialized();
 
@@ -97,9 +97,9 @@ export const addCommand = new Command("add")
       const vaultPath = resolve(opts.path);
       credentials.vaultPath = vaultPath;
       config.vaultPath = vaultPath;
-    } else if (crawlerType === "mantisbt") {
+    } else if (crawlerType === "mantishub") {
       if (!opts.url) {
-        console.error("MantisBT crawler requires --url <base-url>");
+        console.error("MantisHub crawler requires --url <base-url>");
         process.exit(1);
       }
       config.url = opts.url;
@@ -147,12 +147,12 @@ export const addCommand = new Command("add")
       process.exit(1);
     }
 
-    // Resolve MantisBT project name → ID and persist both
+    // Resolve MantisHub project name → ID and persist both
     const project = config.project as { id?: number; name?: string } | undefined;
-    if (crawlerType === "mantisbt" && project?.name) {
+    if (crawlerType === "mantishub" && project?.name) {
       try {
         await crawler.initialize(config, credentials);
-        const resolved = await (crawler as MantisBTCrawler).resolveProjectName(project.name);
+        const resolved = await (crawler as MantisHubCrawler).resolveProjectName(project.name);
         config.project = { id: resolved.id, name: resolved.name };
         console.log(`  Resolved project "${resolved.name}" → ID ${resolved.id}`);
       } catch (err) {
@@ -171,8 +171,8 @@ export const addCommand = new Command("add")
     // Create markdown output directory
     mkdirSync(join(collectionDir, "content"), { recursive: true });
 
-    // For MantisBT, don't store url in credentials (it's already in config)
-    if (crawlerType === "mantisbt") {
+    // For MantisHub, don't store url in credentials (it's already in config)
+    if (crawlerType === "mantishub") {
       delete credentials.url;
       delete credentials.baseUrl;
     }

@@ -26,7 +26,7 @@ import {
   gitHubTheme,
   obsidianTheme,
   gitTheme,
-  mantisBTTheme,
+  mantisHubTheme,
 } from "@frozenink/crawlers";
 import { startStdioServer } from "@frozenink/mcp";
 import { eq, desc } from "drizzle-orm";
@@ -40,7 +40,7 @@ function createThemeEngine(): ThemeEngine {
   themeEngine.register(gitHubTheme);
   themeEngine.register(obsidianTheme);
   themeEngine.register(gitTheme);
-  themeEngine.register(mantisBTTheme);
+  themeEngine.register(mantisHubTheme);
   return themeEngine;
 }
 

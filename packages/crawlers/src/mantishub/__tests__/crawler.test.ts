@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import { MantisBTCrawler } from "../crawler";
-import type { MantisBTIssue } from "../types";
+import { MantisHubCrawler } from "../crawler";
+import type { MantisHubIssue } from "../types";
 
-function sampleIssue(overrides: Partial<MantisBTIssue> = {}): MantisBTIssue {
+function sampleIssue(overrides: Partial<MantisHubIssue> = {}): MantisHubIssue {
   return {
     id: 1,
     summary: "Sample issue",
@@ -40,7 +40,7 @@ const SINGLE_ISSUE_RE = /\/api\/rest\/issues\/(\d+)$/;
 function routingFetch(
   listFn: (url: string) => Promise<Response>,
 ): (input: string | URL | Request) => Promise<Response> {
-  let lastPage: MantisBTIssue[] = [];
+  let lastPage: MantisHubIssue[] = [];
   return async (input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input.toString();
     const singleMatch = url.match(SINGLE_ISSUE_RE);
@@ -53,18 +53,18 @@ function routingFetch(
     // Clone and peek at the body to track the last page
     const cloned = res.clone();
     try {
-      const data = (await cloned.json()) as { issues?: MantisBTIssue[] };
+      const data = (await cloned.json()) as { issues?: MantisHubIssue[] };
       lastPage = data.issues ?? [];
     } catch { /* ignore */ }
     return res;
   };
 }
 
-describe("MantisBTCrawler", () => {
-  let crawler: MantisBTCrawler;
+describe("MantisHubCrawler", () => {
+  let crawler: MantisHubCrawler;
 
   beforeEach(async () => {
-    crawler = new MantisBTCrawler();
+    crawler = new MantisHubCrawler();
     await crawler.initialize(
       { baseUrl: "https://mantis.example.com" },
       { token: "test-token" },

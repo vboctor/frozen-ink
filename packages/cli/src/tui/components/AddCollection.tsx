@@ -11,7 +11,7 @@ import {
   addCollection,
   isValidCollectionKey,
 } from "@frozenink/core";
-import { createDefaultRegistry, MantisBTCrawler } from "@frozenink/crawlers";
+import { createDefaultRegistry, MantisHubCrawler } from "@frozenink/crawlers";
 import { SelectInput, type SelectItem } from "./SelectInput.js";
 import { TextInput } from "./TextInput.js";
 import { MultiSelectInput } from "./MultiSelectInput.js";
@@ -29,11 +29,11 @@ type Step =
   | "obsidian-path"
   | "git-path"
   | "git-include-diffs"
-  | "mantisbt-url"
-  | "mantisbt-token"
-  | "mantisbt-sync-entities"
-  | "mantisbt-project-name"
-  | "mantisbt-max"
+  | "mantishub-url"
+  | "mantishub-token"
+  | "mantishub-sync-entities"
+  | "mantishub-project-name"
+  | "mantishub-max"
   | "confirm"
   | "validating"
   | "sync-prompt"
@@ -58,8 +58,8 @@ function getStepsForCrawler(type: string): Step[] {
       return [...base, "obsidian-path", "confirm"];
     case "git":
       return [...base, "git-path", "git-include-diffs", "confirm"];
-    case "mantisbt":
-      return [...base, "mantisbt-url", "mantisbt-token", "mantisbt-sync-entities", "mantisbt-project-name", "mantisbt-max", "confirm"];
+    case "mantishub":
+      return [...base, "mantishub-url", "mantishub-token", "mantishub-sync-entities", "mantishub-project-name", "mantishub-max", "confirm"];
     default:
       return [...base, "confirm"];
   }
@@ -192,7 +192,7 @@ export function AddCollection({
         }
         nextStep();
         break;
-      case "mantisbt-url":
+      case "mantishub-url":
         if (!val) { setError("URL is required"); return; }
         setData((d) => ({
           ...d,
@@ -201,18 +201,18 @@ export function AddCollection({
         }));
         nextStep();
         break;
-      case "mantisbt-token":
+      case "mantishub-token":
         setData((d) => ({ ...d, credentials: { ...d.credentials, token: val || "" } }));
         nextStep();
         break;
-      case "mantisbt-project-name": {
+      case "mantishub-project-name": {
         if (val) {
           setData((d) => ({ ...d, config: { ...d.config, project: { name: val } } }));
         }
         nextStep();
         break;
       }
-      case "mantisbt-max": {
+      case "mantishub-max": {
         if (val) {
           const n = parseInt(val, 10);
           if (isNaN(n) || n < 1) { setError("Enter a positive number or leave blank"); return; }
@@ -243,11 +243,11 @@ export function AddCollection({
       const valid = await crawler.validateCredentials(data.credentials);
       if (!valid) { setError("Credential validation failed"); setStep("error"); return; }
 
-      // Resolve MantisBT project name → ID and persist both
+      // Resolve MantisHub project name → ID and persist both
       const project = data.config.project as { id?: number; name?: string } | undefined;
-      if (data.crawlerType === "mantisbt" && project?.name) {
+      if (data.crawlerType === "mantishub" && project?.name) {
         await crawler.initialize(data.config, data.credentials);
-        const resolved = await (crawler as MantisBTCrawler).resolveProjectName(project.name);
+        const resolved = await (crawler as MantisHubCrawler).resolveProjectName(project.name);
         data.config.project = { id: resolved.id, name: resolved.name };
       }
 
@@ -257,9 +257,9 @@ export function AddCollection({
       getCollectionDb(getCollectionDbPath(data.name));
       mkdirSync(join(dir, "content"), { recursive: true });
 
-      // For MantisBT, don't store url in credentials (it's already in config)
+      // For MantisHub, don't store url in credentials (it's already in config)
       const creds = { ...data.credentials };
-      if (data.crawlerType === "mantisbt") {
+      if (data.crawlerType === "mantishub") {
         delete creds.url;
         delete creds.baseUrl;
       }
@@ -344,13 +344,13 @@ export function AddCollection({
         {step === "git-include-diffs" && (
           <TextInput label="Include commit diffs? (y/N)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
         )}
-        {step === "mantisbt-url" && (
-          <TextInput label="MantisBT base URL" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} placeholder="https://mantis.example.com" />
+        {step === "mantishub-url" && (
+          <TextInput label="MantisHub base URL" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} placeholder="https://mantis.example.com" />
         )}
-        {step === "mantisbt-token" && (
+        {step === "mantishub-token" && (
           <TextInput label="API token (optional)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
         )}
-        {step === "mantisbt-sync-entities" && (
+        {step === "mantishub-sync-entities" && (
           <MultiSelectInput
             label="Entity types to sync"
             items={[
@@ -361,10 +361,10 @@ export function AddCollection({
             onSubmit={handleSyncEntitiesSubmit}
           />
         )}
-        {step === "mantisbt-project-name" && (
+        {step === "mantishub-project-name" && (
           <TextInput label="Project name (blank for all)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
         )}
-        {step === "mantisbt-max" && (
+        {step === "mantishub-max" && (
           <TextInput label="Max entities (blank for unlimited)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
         )}
 
@@ -372,7 +372,7 @@ export function AddCollection({
           <Box flexDirection="column">
             <Text bold>Summary</Text>
             <Text>  Crawler: <Text color="cyan">{data.crawlerType}</Text></Text>
-            {data.crawlerType === "mantisbt" && !!data.config.url && (
+            {data.crawlerType === "mantishub" && !!data.config.url && (
               <Text>  URL:     <Text color="cyan">{String(data.config.url)}</Text></Text>
             )}
             <Text>  Name:    <Text color="cyan">{data.name}</Text></Text>

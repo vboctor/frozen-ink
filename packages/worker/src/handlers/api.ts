@@ -15,13 +15,13 @@ import {
 import { searchEntities } from "../db/search";
 import { getR2Object, getMimeType } from "../storage/r2";
 import { ThemeEngine } from "@frozenink/core/theme";
-import { GitHubTheme, ObsidianTheme, GitTheme, MantisBTTheme } from "@frozenink/crawlers/themes";
+import { GitHubTheme, ObsidianTheme, GitTheme, MantisHubTheme } from "@frozenink/crawlers/themes";
 
 const themeEngine = new ThemeEngine();
 themeEngine.register(new GitHubTheme());
 themeEngine.register(new ObsidianTheme());
 themeEngine.register(new GitTheme());
-themeEngine.register(new MantisBTTheme());
+themeEngine.register(new MantisHubTheme());
 
 const api = new Hono<{ Bindings: Env }>();
 

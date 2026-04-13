@@ -3,14 +3,14 @@ import { renderDocsPage } from "./layout";
 export const managingCollectionsPage = renderDocsPage({
   title: "Managing Collections",
   description:
-    "Add, configure, sync, update, and remove Frozen Ink collections across GitHub, Obsidian, Git, and MantisBT sources.",
+    "Add, configure, sync, update, and remove Frozen Ink collections across GitHub, Obsidian, Git, and MantisHub sources.",
   activePath: "/docs/managing-collections",
   tocLinks: [
     { id: "what-is-a-collection", title: "What is a collection" },
     { id: "add-github", title: "GitHub collection" },
     { id: "add-obsidian", title: "Obsidian collection" },
     { id: "add-git", title: "Git collection" },
-    { id: "add-mantisbt", title: "MantisBT collection" },
+    { id: "add-mantishub", title: "MantisHub collection" },
     { id: "syncing", title: "Syncing" },
     { id: "daemon", title: "Background daemon" },
     { id: "updating", title: "Updating a collection" },
@@ -32,7 +32,7 @@ export const managingCollectionsPage = renderDocsPage({
   <p>A collection is a named, typed connection to one external data source. Each collection has:</p>
   <ul>
     <li>A <strong>name</strong> — your identifier, used in all CLI commands (e.g., <code>my-vault</code>)</li>
-    <li>A <strong>type</strong> — one of <code>github</code>, <code>obsidian</code>, <code>git</code>, <code>mantisbt</code></li>
+    <li>A <strong>type</strong> — one of <code>github</code>, <code>obsidian</code>, <code>git</code>, <code>mantishub</code></li>
     <li>Source-specific <strong>configuration</strong> — paths, tokens, repository names, etc.</li>
     <li>A <strong>directory</strong> at <code>~/.frozenink/collections/&lt;name&gt;/</code> containing:
       <ul>
@@ -127,16 +127,16 @@ export const managingCollectionsPage = renderDocsPage({
     </div>
   </div>
 
-  <h2 id="add-mantisbt">MantisBT collection</h2>
-  <p>A MantisBT collection syncs <strong>issues and attachments</strong> from a MantisBT or MantisHub instance via the REST API.</p>
+  <h2 id="add-mantishub">MantisHub collection</h2>
+  <p>A MantisHub collection syncs <strong>issues and attachments</strong> from a MantisHub or MantisHub instance via the REST API.</p>
 
-  <pre><code>fink add mantisbt \
+  <pre><code>fink add mantishub \
   <span class="flag">--name</span>       my-bugs \
   <span class="flag">--url</span>        https://your-mantis-instance.com \
   <span class="flag">--token</span>      your-api-token \
   <span class="flag">--project-id</span> 1</code></pre>
 
-  <p>Find your API token in MantisBT under <strong>My Account → API Tokens</strong>. The project ID is visible in the URL when you navigate to the project in the MantisBT web interface.</p>
+  <p>Find your API token in MantisHub under <strong>My Account → API Tokens</strong>. The project ID is visible in the URL when you navigate to the project in the MantisHub web interface.</p>
 
   <h2 id="syncing">Syncing</h2>
   <p>Syncing fetches the latest data from a collection's source and updates the local index:</p>

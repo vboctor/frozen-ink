@@ -85,9 +85,9 @@ fink add git --name my-repo --path ~/projects/my-project <span class="flag">--in
   <span class="flag">--owner</span> your-username \
   <span class="flag">--repo</span>  your-repo-name</code></pre>
 
-  <h3>MantisBT / MantisHub</h3>
-  <p>Syncs issues and attachments from a MantisBT or MantisHub instance:</p>
-  <pre><code>fink add mantisbt <span class="flag">--name</span> my-bugs \
+  <h3>MantisHub / MantisHub</h3>
+  <p>Syncs issues and attachments from a MantisHub or MantisHub instance:</p>
+  <pre><code>fink add mantishub <span class="flag">--name</span> my-bugs \
   <span class="flag">--url</span>   https://your-mantis-instance.com \
   <span class="flag">--token</span> your-api-token \
   <span class="flag">--project-id</span> 1</code></pre>

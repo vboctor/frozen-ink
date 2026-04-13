@@ -3,7 +3,7 @@
 ## What Is Frozen Ink?
 
 Frozen Ink is a local-first knowledge layer for technical work. It crawls sources like
-GitHub repositories, Obsidian vaults, Git repos, and MantisBT/MantisHub; syncs them into
+GitHub repositories, Obsidian vaults, Git repos, and MantisHub/MantisHub; syncs them into
 a local SQLite index; renders and serves everything through a web UI and MCP server for
 AI tools.
 
@@ -35,7 +35,7 @@ publishing to the cloud.
 ## Architecture
 
 ```text
-Data Sources (GitHub API, Obsidian Vault, Git Repo, MantisBT, ...)
+Data Sources (GitHub API, Obsidian Vault, Git Repo, MantisHub, ...)
         |
         v
   +-------------+
@@ -80,7 +80,7 @@ Each crawler syncs a different data source into Frozen Ink. See individual docs 
 | [GitHub](packages/crawlers/src/github/) | GitHub REST API | Issues, Pull Requests | [README](packages/crawlers/src/github/README.md) |
 | [Obsidian](packages/crawlers/src/obsidian/) | Local Obsidian vault | Notes, Attachments | [README](packages/crawlers/src/obsidian/README.md) |
 | [Git](packages/crawlers/src/git/) | Local Git repository | Commits, Branches, Tags | [README](packages/crawlers/src/git/README.md) |
-| MantisBT | MantisBT REST API | Issues, Attachments | — |
+| MantisHub | MantisHub REST API | Issues, Attachments | — |
 
 ## Install the CLI
 
@@ -269,7 +269,7 @@ Running `fink` with no arguments launches the **interactive TUI** with keyboard-
 |---------|-------------|
 | `fink` | Launch interactive TUI |
 | `fink init` | Initialize `~/.frozenink/` directory and config |
-| `fink add <type>` | Add a new collection (github, obsidian, git, mantisbt) |
+| `fink add <type>` | Add a new collection (github, obsidian, git, mantishub) |
 | `fink sync <name\|"*">` | Sync a collection or all (`"*"`) |
 | `fink status` | Show sync status for all collections |
 | `fink search <query>` | Full-text search across all collections |
@@ -445,7 +445,7 @@ See the [Desktop App](#desktop-app) section above.
 ```text
 packages/
   core/           Shared types, DB schemas, sync engine, search, config, compat layer, export
-  crawlers/       GitHub, Obsidian, Git, and MantisBT crawlers + markdown generators
+  crawlers/       GitHub, Obsidian, Git, and MantisHub crawlers + markdown generators
   mcp/            MCP server (tools + resources)
   cli/            CLI entry point (fink) + management API
   ui/             Vite + React web viewer (browse + manage modes)

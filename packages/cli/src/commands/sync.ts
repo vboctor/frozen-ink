@@ -14,7 +14,7 @@ import {
   entities,
 } from "@frozenink/core";
 import { sql } from "drizzle-orm";
-import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisBTTheme } from "@frozenink/crawlers";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme } from "@frozenink/crawlers";
 
 export const syncCommand = new Command("sync")
   .description("Sync collections")
@@ -51,7 +51,7 @@ export const syncCommand = new Command("sync")
     themeEngine.register(gitHubTheme);
     themeEngine.register(obsidianTheme);
     themeEngine.register(gitTheme);
-    themeEngine.register(mantisBTTheme);
+    themeEngine.register(mantisHubTheme);
 
     for (const col of collectionRows) {
       console.log(`Syncing "${col.name}" (${col.crawler})...`);

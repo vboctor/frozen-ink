@@ -1905,7 +1905,7 @@ body {
   margin-bottom: 12px;
 }
 
-/* ===== MantisBT-Style HTML View ===== */
+/* ===== MantisHub-Style HTML View ===== */
 
 .mt-issue-view {
   padding: 16px 24px 32px;
@@ -2320,7 +2320,7 @@ body {
   border-bottom: none;
 }
 
-/* Mobile adjustments for MantisBT view */
+/* Mobile adjustments for MantisHub view */
 @container (max-width: 500px) {
   .mt-issue-view { padding: 12px 16px 24px; }
   .mt-title { font-size: 18px; }

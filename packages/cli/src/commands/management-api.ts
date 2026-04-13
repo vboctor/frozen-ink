@@ -27,11 +27,11 @@ import {
 } from "@frozenink/core";
 import {
   createDefaultRegistry,
-  MantisBTCrawler,
+  MantisHubCrawler,
   gitHubTheme,
   obsidianTheme,
   gitTheme,
-  mantisBTTheme,
+  mantisHubTheme,
 } from "@frozenink/crawlers";
 import { desc, eq } from "drizzle-orm";
 
@@ -118,7 +118,7 @@ function createThemeEngine(): ThemeEngine {
   engine.register(gitHubTheme);
   engine.register(obsidianTheme);
   engine.register(gitTheme);
-  engine.register(mantisBTTheme);
+  engine.register(mantisHubTheme);
   return engine;
 }
 
@@ -177,11 +177,11 @@ export function handleManagementRequest(req: Request): Response | null {
       const description = (body.description as string) || undefined;
       const enabled = body.enabled !== false;
 
-      // Resolve MantisBT project name → ID and persist both
-      if (crawler === "mantisbt" && config.projectName && !config.projectId) {
+      // Resolve MantisHub project name → ID and persist both
+      if (crawler === "mantishub" && config.projectName && !config.projectId) {
         try {
           const registry = createDefaultRegistry();
-          const crawlerInstance = registry.get("mantisbt")!() as MantisBTCrawler;
+          const crawlerInstance = registry.get("mantishub")!() as MantisHubCrawler;
           await crawlerInstance.initialize(config, credentials);
           const resolved = await crawlerInstance.resolveProjectName(config.projectName as string);
           config.projectId = resolved.id;
