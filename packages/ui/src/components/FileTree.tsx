@@ -27,6 +27,9 @@ function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
         >
           <span className="tree-icon">{expanded ? "▼" : "▶"}</span>
           <span className="tree-name">{node.name}</span>
+          {node.count !== undefined && node.count > 0 && (
+            <span className="tree-count">({node.count.toLocaleString()})</span>
+          )}
         </button>
         {expanded && node.children && (
           <ul className="tree-children" role="group">

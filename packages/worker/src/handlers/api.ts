@@ -103,7 +103,9 @@ api.get("/api/collections/:name/tree", async (c) => {
   const prefix = `${name}/content/`;
 
   const listed = await c.env.BUCKET.list({ prefix });
-  const paths = listed.objects.map((o) => o.key.slice(prefix.length)).filter((p) => p.endsWith(".md"));
+  const mdPaths = listed.objects
+    .map((o) => o.key.slice(prefix.length))
+    .filter((p) => p.endsWith(".md"));
 
   // Fetch entity titles from D1 to display instead of raw filenames
   const titleByPath = new Map<string, string>();
@@ -122,8 +124,29 @@ api.get("/api/collections/:name/tree", async (c) => {
     // If title lookup fails, fall back to filenames
   }
 
-  // Build tree from paths
-  const tree = buildTreeFromPaths(paths, titleByPath);
+  // Derive unique folder paths from md paths and fetch each folder's yml config
+  // directly by key — avoids relying on R2 list pagination (yml files sort
+  // alphabetically after digit-prefixed md files and can fall beyond 1000-object limit).
+  const folderPaths = new Set<string>();
+  for (const mdPath of mdPaths) {
+    const parts = mdPath.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      folderPaths.add(parts.slice(0, i).join("/"));
+    }
+  }
+
+  const folderConfigs = new Map<string, { visible?: boolean; sort?: "ASC" | "DESC" }>();
+  await Promise.all(
+    [...folderPaths].map(async (folderPath) => {
+      const folderName = folderPath.split("/").pop()!;
+      const obj = await c.env.BUCKET.get(`${prefix}${folderPath}/${folderName}.yml`);
+      if (!obj) return;
+      folderConfigs.set(folderPath, parseFolderConfig(await obj.text()));
+    }),
+  );
+
+  // Build tree from paths with folder configs applied
+  const tree = buildTreeFromPaths(mdPaths, titleByPath, folderConfigs);
   return c.json(tree);
 });
 
@@ -278,14 +301,41 @@ api.get("/api/attachments/:collection/*", async (c) => {
   });
 });
 
-// Helper to build tree from flat file paths
-function buildTreeFromPaths(paths: string[], titleByPath: Map<string, string> = new Map()): object[] {
+/** Parse a minimal folder yml (visible/sort only). Works without js-yaml in the Worker runtime. */
+function parseFolderConfig(content: string): { visible?: boolean; sort?: "ASC" | "DESC" } {
+  const config: { visible?: boolean; sort?: "ASC" | "DESC" } = {};
+  for (const line of content.split("\n")) {
+    const m = line.match(/^(\w+):\s*(.+)$/);
+    if (!m) continue;
+    const [, key, val] = m;
+    if (key === "visible") config.visible = val.trim() !== "false";
+    if (key === "sort") config.sort = val.trim() === "DESC" ? "DESC" : "ASC";
+  }
+  return config;
+}
+
+// Helper to build tree from flat file paths, honoring folder yml configs
+function buildTreeFromPaths(
+  paths: string[],
+  titleByPath: Map<string, string> = new Map(),
+  folderConfigs: Map<string, { visible?: boolean; sort?: "ASC" | "DESC" }> = new Map(),
+): object[] {
   interface TreeNode {
     name: string;
     path: string;
     type: "directory" | "file";
     title?: string;
+    count?: number;
     children?: TreeNode[];
+  }
+
+  function countFilesInTree(nodes: TreeNode[]): number {
+    let n = 0;
+    for (const node of nodes) {
+      if (node.type === "file") n++;
+      else if (node.children) n += countFilesInTree(node.children);
+    }
+    return n;
   }
 
   const root: TreeNode[] = [];
@@ -316,12 +366,32 @@ function buildTreeFromPaths(paths: string[], titleByPath: Map<string, string> = 
     }
   }
 
-  // Sort: directories first, then files, alphabetical within each
-  function sortTree(nodes: TreeNode[]): TreeNode[] {
-    const dirs = nodes.filter((n) => n.type === "directory").sort((a, b) => a.name.localeCompare(b.name));
-    const files = nodes.filter((n) => n.type === "file").sort((a, b) => a.name.localeCompare(b.name));
+  // Sort: directories first (ASC), files per-folder config (ASC or DESC); prune hidden dirs
+  function sortTree(nodes: TreeNode[], parentPath: string = ""): TreeNode[] {
+    const config = parentPath ? folderConfigs.get(parentPath) : undefined;
+    const sortOrder = config?.sort ?? "ASC";
+
+    const dirs = nodes
+      .filter((n) => n.type === "directory")
+      .filter((n) => {
+        const childPath = parentPath ? `${parentPath}/${n.name}` : n.name;
+        return folderConfigs.get(childPath)?.visible !== false;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const files = nodes.filter((n) => n.type === "file");
+    if (sortOrder === "DESC") {
+      files.sort((a, b) => b.name.localeCompare(a.name));
+    } else {
+      files.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
     for (const dir of dirs) {
-      if (dir.children) dir.children = sortTree(dir.children);
+      if (dir.children) {
+        const childPath = parentPath ? `${parentPath}/${dir.name}` : dir.name;
+        dir.children = sortTree(dir.children, childPath);
+      }
+      dir.count = countFilesInTree(dir.children ?? []);
     }
     return [...dirs, ...files];
   }

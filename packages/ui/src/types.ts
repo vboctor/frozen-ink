@@ -15,6 +15,8 @@ export interface TreeNode {
   type: "file" | "directory";
   /** Human-readable entity title; falls back to name (without .md) if absent */
   title?: string;
+  /** Total number of entity files (recursive) in this directory; only present on directory nodes. */
+  count?: number;
   children?: TreeNode[];
 }
 

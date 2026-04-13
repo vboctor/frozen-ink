@@ -34,6 +34,8 @@ import {
   mantisHubTheme,
 } from "@frozenink/crawlers";
 import { desc, eq } from "drizzle-orm";
+import { prepareCollection } from "./prepare";
+import { createGenerateThemeEngine } from "./generate";
 
 // --- In-memory sync/publish/export progress tracking ---
 
@@ -517,6 +519,7 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
   const home = getFrozenInkHome();
   const registry = createDefaultRegistry();
   const themeEngine = createThemeEngine();
+  const prepareThemeEngine = createGenerateThemeEngine();
 
   syncProgress = {
     active: true,
@@ -536,6 +539,12 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
     for (const name of collectionNames) {
       const col = getCollection(name);
       if (!col) continue;
+
+      // Run prepare before incremental sync: schema migrations, folder ymls, stale markdown check
+      if (!full) {
+        syncProgress = { ...syncProgress, collectionName: name, status: `preparing ${name}` };
+        await prepareCollection(col, home, prepareThemeEngine, (msg) => console.log(`[prepare:${name}]`, msg));
+      }
 
       syncProgress = {
         ...syncProgress,

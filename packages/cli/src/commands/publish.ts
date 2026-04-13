@@ -53,6 +53,7 @@ const MIME_TYPES: Record<string, string> = {
   ".pdf": "application/pdf", ".json": "application/json",
   ".md": "text/markdown", ".txt": "text/plain", ".html": "text/html",
   ".css": "text/css", ".js": "application/javascript", ".ico": "image/x-icon",
+  ".yml": "text/yaml",
 };
 
 function getMimeType(filePath: string): string {

@@ -1,4 +1,4 @@
-import type { Theme, ThemeRenderContext } from "./interface";
+import type { Theme, ThemeRenderContext, FolderConfig } from "./interface";
 
 export class ThemeEngine {
   private themes = new Map<string, Theme>();
@@ -41,5 +41,11 @@ export class ThemeEngine {
     const theme = this.themes.get(context.crawlerType);
     if (!theme?.renderHtml) return null;
     return theme.renderHtml(context);
+  }
+
+  /** Return folder configs for the given crawler type, or empty object if none defined. */
+  getFolderConfigs(crawlerType: string): Record<string, FolderConfig> {
+    const theme = this.themes.get(crawlerType);
+    return theme?.folderConfigs?.() ?? {};
   }
 }

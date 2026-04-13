@@ -693,6 +693,14 @@ body {
   white-space: nowrap;
 }
 
+.tree-count {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* ===== Markdown View ===== */
 .markdown-view {
   max-width: 800px;

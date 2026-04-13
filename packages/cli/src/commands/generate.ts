@@ -21,6 +21,30 @@ import {
 import { eq } from "drizzle-orm";
 import { gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme } from "@frozenink/crawlers";
 
+/** Write <folder-name>.yml config files for folders matching the theme's folderConfigs(). */
+async function writeFolderConfigFiles(
+  themeEngine: ThemeEngine,
+  crawlerType: string,
+  storage: LocalStorageBackend,
+  basePath: string,
+): Promise<void> {
+  const configs = themeEngine.getFolderConfigs(crawlerType);
+  if (Object.keys(configs).length === 0) return;
+
+  // Use listDirs so empty directories (e.g. assets/ with no files yet) are also covered
+  const allDirs = await storage.listDirs!(basePath);
+
+  for (const dirPath of allDirs) {
+    const folderName = dirPath.split("/").pop()!;
+    if (!(folderName in configs)) continue;
+    const config = configs[folderName];
+    const lines: string[] = [];
+    if (config.visible === false) lines.push("visible: false");
+    if (config.sort === "DESC") lines.push("sort: DESC");
+    await storage.write(`${dirPath}/${folderName}.yml`, lines.join("\n") + "\n");
+  }
+}
+
 export function createGenerateThemeEngine(): ThemeEngine {
   const themeEngine = new ThemeEngine();
   themeEngine.register(gitHubTheme);
@@ -202,6 +226,9 @@ export async function generateCollection(
   }
 
   indexer.close();
+
+  // Write folder config yml files (visible/sort settings)
+  await writeFolderConfigFiles(themeEngine, col.crawler, storage, markdownBasePath);
 
   const renameNote = renamed > 0 ? `, ${renamed} renamed` : "";
   return `Generated ${generated} files from ${allEntities.length} entities${renameNote}`;

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { existsSync, readdirSync, statSync, readFileSync } from "fs";
-import { join, extname } from "path";
+import { join, extname, basename } from "path";
 import {
   getFrozenInkHome,
   getCollectionDb,
@@ -8,7 +8,6 @@ import {
   listCollections,
   getCollection,
   getCollectionDbPath,
-  updateCollection,
   entities,
   entityTags,
   tags,
@@ -22,7 +21,6 @@ import {
   resolveUiDist,
 } from "@frozenink/core";
 import {
-  createDefaultRegistry,
   gitHubTheme,
   obsidianTheme,
   gitTheme,
@@ -31,7 +29,7 @@ import {
 import { startStdioServer } from "@frozenink/mcp";
 import { eq, desc } from "drizzle-orm";
 import { handleManagementRequest, setAppMode } from "./management-api";
-import { generateCollection, createGenerateThemeEngine } from "./generate";
+import { prepareCollections } from "./prepare";
 
 const __moduleDir = getModuleDir(import.meta.url);
 
@@ -68,12 +66,48 @@ function getMimeType(filePath: string): string {
   return MIME_TYPES[ext] || "application/octet-stream";
 }
 
+/** Parse a folder yml file (visible/sort fields only). */
+function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | "DESC" } {
+  const folderName = basename(dirPath);
+  const ymlPath = join(dirPath, `${folderName}.yml`);
+  if (!existsSync(ymlPath)) return {};
+  try {
+    const content = readFileSync(ymlPath, "utf-8");
+    const config: { visible?: boolean; sort?: "ASC" | "DESC" } = {};
+    for (const line of content.split("\n")) {
+      const m = line.match(/^(\w+):\s*(.+)$/);
+      if (!m) continue;
+      const [, key, val] = m;
+      if (key === "visible") config.visible = val.trim() !== "false";
+      if (key === "sort") config.sort = val.trim() === "DESC" ? "DESC" : "ASC";
+    }
+    return config;
+  } catch {
+    return {};
+  }
+}
+
+/** Recursively count all file nodes in a built subtree. */
+function countFiles(nodes: object[]): number {
+  let n = 0;
+  for (const node of nodes) {
+    const typed = node as { type: string; children?: object[] };
+    if (typed.type === "file") n++;
+    else if (typed.children) n += countFiles(typed.children);
+  }
+  return n;
+}
+
 function buildFileTree(
   dirPath: string,
   titleByPath: Map<string, string>,
   basePath: string = "",
 ): object[] {
   if (!existsSync(dirPath)) return [];
+
+  // Read this directory's own config to determine sort order for its files
+  const ownConfig = basePath ? readFolderConfig(dirPath) : {};
+  const sortOrder = ownConfig.sort ?? "ASC";
 
   const entries = readdirSync(dirPath, { withFileTypes: true });
   const dirs: object[] = [];
@@ -82,11 +116,17 @@ function buildFileTree(
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
+      const childDirPath = join(dirPath, entry.name);
+      // Check child dir's visibility before including it
+      const childConfig = readFolderConfig(childDirPath);
+      if (childConfig.visible === false) continue;
+      const children = buildFileTree(childDirPath, titleByPath, relativePath);
       dirs.push({
         name: entry.name,
         path: relativePath,
         type: "directory",
-        children: buildFileTree(join(dirPath, entry.name), titleByPath, relativePath),
+        count: countFiles(children),
+        children,
       });
     } else if (entry.name.endsWith(".md")) {
       const node: Record<string, unknown> = {
@@ -100,7 +140,9 @@ function buildFileTree(
     }
   }
 
-  return [...dirs, ...files];
+  // Apply sort order to files (dirs always sort ASC alphabetically)
+  const sortedFiles = sortOrder === "DESC" ? files.slice().reverse() : files;
+  return [...dirs, ...sortedFiles];
 }
 
 function jsonResponse(data: unknown, status: number = 200): Response {
@@ -153,40 +195,6 @@ function tryServeStatic(
   return null;
 }
 
-/**
- * Check all enabled collections for minor-version upgrades and re-generate
- * markdown for any that are behind. Logs progress for each collection regenerated.
- */
-async function checkAndRegenerateCollections(home: string): Promise<void> {
-  const registry = createDefaultRegistry();
-  const themeEngine = createGenerateThemeEngine();
-  const collections = listCollections().filter((c) => c.enabled);
-
-  for (const col of collections) {
-    const factory = registry.get(col.crawler);
-    if (!factory) continue;
-
-    const crawlerVersion = factory().metadata.version ?? "1.0";
-    const collectionVersion = col.version ?? "1.0";
-
-    const [colMajor, colMinor] = collectionVersion.split(".").map(Number);
-    const [crwMajor, crwMinor] = crawlerVersion.split(".").map(Number);
-
-    // Only re-generate when same major but collection minor is older
-    if (colMajor !== crwMajor) continue;
-    if (colMinor >= crwMinor) continue;
-
-    console.log(
-      `Re-generating collection "${col.name}" (${col.crawler} schema ${collectionVersion} → ${crawlerVersion})...`,
-    );
-
-    const summary = await generateCollection(col, home, themeEngine);
-    if (summary) {
-      console.log(`  ${summary}`);
-      updateCollection(col.name, { version: crawlerVersion });
-    }
-  }
-}
 
 export function createApiServer(
   home: string,
@@ -827,7 +835,7 @@ export const serveCommand = new Command("serve")
     const config = loadConfig();
     const port = opts.port ? parseInt(opts.port, 10) : config.ui.port;
 
-    await checkAndRegenerateCollections(home);
+    await prepareCollections(home);
 
     if (opts.mcpOnly) {
       console.error("Starting Frozen Ink MCP server (STDIO)...");

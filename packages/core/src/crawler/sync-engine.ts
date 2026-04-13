@@ -12,8 +12,17 @@ import {
 } from "../db/collection-schema";
 import { SearchIndexer } from "../search/indexer";
 import type { Crawler, CrawlerEntityData, SyncCursor } from "./interface";
+import type { FolderConfig } from "../theme/interface";
 import type { ThemeEngine } from "../theme/engine";
 import type { StorageBackend } from "../storage/interface";
+
+/** Serialize a FolderConfig to yml content (only non-default fields). */
+function serializeFolderConfig(config: FolderConfig): string {
+  const lines: string[] = [];
+  if (config.visible === false) lines.push("visible: false");
+  if (config.sort === "DESC") lines.push("sort: DESC");
+  return lines.join("\n") + "\n";
+}
 
 /** Returns true if any path segment starts with "." (hidden dirs like .git, .obsidian). */
 function isToolPath(filePath: string): boolean {
@@ -280,6 +289,9 @@ export class SyncEngine {
 
       // Reconcile filesystem with DB
       await this.reconcile(crawlerType);
+
+      // Write folder config yml files (visible/sort settings)
+      await this.writeFolderConfigFiles(crawlerType);
 
       // Notify caller to update collection version in .config
       this.onVersionUpdate?.(currentVersion);
@@ -869,6 +881,27 @@ export class SyncEngine {
       if (!exists) {
         this.db.delete(assets).where(eq(assets.id, att.id)).run();
       }
+    }
+  }
+
+  /**
+   * Write <folder-name>.yml config files for all folders whose leaf name matches
+   * a key in the theme's folderConfigs(). Covers any depth (e.g. project/issues/).
+   */
+  private async writeFolderConfigFiles(crawlerType: string): Promise<void> {
+    const configs = this.themeEngine.getFolderConfigs(crawlerType);
+    if (Object.keys(configs).length === 0) return;
+
+    // Use listDirs to cover empty directories too (file-based listing misses them)
+    const allDirs = this.storage.listDirs
+      ? await this.storage.listDirs(this.markdownBasePath)
+      : [];
+
+    for (const dirPath of allDirs) {
+      const folderName = dirPath.split("/").pop()!;
+      if (!(folderName in configs)) continue;
+      const ymlPath = `${dirPath}/${folderName}.yml`;
+      await this.storage.write(ymlPath, serializeFolderConfig(configs[folderName]));
     }
   }
 
