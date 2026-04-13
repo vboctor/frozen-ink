@@ -411,6 +411,14 @@ export class GitHubTheme implements Theme {
     return `issues/${number}-${slug}.md`;
   }
 
+  folderConfigs() {
+    return {
+      issues: { sort: "DESC" as const },
+      "pull-requests": { sort: "DESC" as const },
+      assets: { visible: false },
+    };
+  }
+
   private renderIssue(context: ThemeRenderContext): string {
     const { entity } = context;
     const d = entity.data;

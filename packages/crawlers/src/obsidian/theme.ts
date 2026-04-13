@@ -48,6 +48,12 @@ export class ObsidianTheme implements Theme {
     return result;
   }
 
+  folderConfigs() {
+    return {
+      assets: { visible: false },
+    };
+  }
+
   getFilePath(context: ThemeRenderContext): string {
     // Preserve the original vault-relative path
     return context.entity.data.relativePath as string;

@@ -347,6 +347,13 @@ export class MantisHubTheme implements Theme {
     return this.renderIssue(context);
   }
 
+  folderConfigs() {
+    return {
+      issues: { sort: "DESC" as const },
+      assets: { visible: false },
+    };
+  }
+
   getFilePath(context: ThemeRenderContext): string {
     const d = context.entity.data;
 

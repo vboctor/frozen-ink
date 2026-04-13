@@ -1,3 +1,10 @@
+export interface FolderConfig {
+  /** Whether this folder is visible in the file tree (default: true). */
+  visible?: boolean;
+  /** Sort order for files in this folder (default: ASC). */
+  sort?: "ASC" | "DESC";
+}
+
 export interface ThemeRenderContext {
   entity: {
     externalId: string;
@@ -40,4 +47,11 @@ export interface Theme {
    * from the source API. Returns undefined if the theme cannot derive a title.
    */
   getTitle?(context: ThemeRenderContext): string | undefined;
+  /**
+   * Optional: return folder-level display configs keyed by folder name.
+   * Any folder whose leaf name matches a key inherits the associated config,
+   * regardless of depth (e.g. "issues" matches both "issues/" and "project/issues/").
+   * The sync engine writes these as <folder-name>.yml inside each matching folder.
+   */
+  folderConfigs?(): Record<string, FolderConfig>;
 }

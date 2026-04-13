@@ -43,6 +43,12 @@ export class GitTheme implements Theme {
     }
   }
 
+  folderConfigs() {
+    return {
+      assets: { visible: false },
+    };
+  }
+
   getFilePath(context: ThemeRenderContext): string {
     const { entity } = context;
     switch (entity.entityType) {

@@ -11,6 +11,8 @@ export interface StorageBackend {
   delete(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   list(prefix: string): Promise<string[]>;
+  /** List all subdirectories (recursively) under the given prefix. Paths are relative to the storage root. */
+  listDirs?(prefix: string): Promise<string[]>;
   /** Returns file metadata, or null if the file does not exist. */
   stat(path: string): Promise<FileStat | null>;
 }
