@@ -31,7 +31,7 @@ packages/
     github/               GitHub REST API crawler (issues, PRs)
     obsidian/             Local Obsidian vault crawler (notes, attachments)
     git/                  Local Git repo crawler (commits, branches, tags)
-    mantisbt/             MantisBT REST API crawler (issues, attachments)
+    mantishub/             MantisHub REST API crawler (issues, attachments)
     index.ts              createDefaultRegistry() + theme exports
 
   mcp/src/                MCP server
@@ -388,7 +388,7 @@ The worker implements MCP via direct JSON-RPC (not the SDK's StreamableHTTPServe
 | Changed crawler data, synced new entities | Full publish: `fink publish <collections...> --name <name>` |
 | Changed `packages/worker/src/**` (server logic, HTML rendering, routes) | Worker-only (after rebuild): see below |
 | Changed `packages/ui/src/**` (React components, CSS) | Worker-only (after rebuild): see below |
-| Changed `packages/crawlers/src/mantisbt/theme.ts` (HTML renderer) | Worker-only — HTML is rendered on-the-fly by the worker at request time, not pre-stored |
+| Changed `packages/crawlers/src/mantishub/theme.ts` (HTML renderer) | Worker-only — HTML is rendered on-the-fly by the worker at request time, not pre-stored |
 
 #### Build steps required before publishing
 

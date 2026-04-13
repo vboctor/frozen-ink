@@ -25,7 +25,7 @@ import {
   gitHubTheme,
   obsidianTheme,
   gitTheme,
-  mantisBTTheme,
+  mantisHubTheme,
 } from "@frozenink/crawlers";
 import { desc, sql } from "drizzle-orm";
 import { TextInput } from "./TextInput.js";
@@ -134,7 +134,7 @@ function getSourceDetails(crawler: string, config: Record<string, unknown>): Arr
       if (config.includeDiffs) details.push({ label: "Diffs", value: "included" });
       break;
     }
-    case "mantisbt": {
+    case "mantishub": {
       const url = (config.url ?? config.baseUrl) as string | undefined;
       if (url) details.push({ label: "URL", value: url });
       const project = config.project as { id?: number; name?: string } | undefined;
@@ -184,7 +184,7 @@ function getEditableFields(crawler: string): EditField[] {
         DESCRIPTION_FIELD,
         { key: "includeDiffs", label: "Include commit diffs", type: "boolean", configKey: "includeDiffs" },
       ];
-    case "mantisbt":
+    case "mantishub":
       return [
         { key: "title", label: "Display title", type: "text", configKey: "" },
         DESCRIPTION_FIELD,
@@ -575,7 +575,7 @@ export function CollectionList({
       themeEngine.register(gitHubTheme);
       themeEngine.register(obsidianTheme);
       themeEngine.register(gitTheme);
-      themeEngine.register(mantisBTTheme);
+      themeEngine.register(mantisHubTheme);
       const factory = registry.get(col.crawler);
       if (!factory) { setSyncProgress((p) => [...p, `No crawler for ${col.crawler}`]); setSyncStartTime(null); setMode("list"); return; }
       const crawler = factory();

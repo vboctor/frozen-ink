@@ -52,11 +52,11 @@ export const whatIsFrozenInkPage = renderDocsPage({
   <h2 id="core-concepts">Core concepts</h2>
 
   <h3 id="collections">Collections</h3>
-  <p>A <strong>collection</strong> is a named, configured connection to one data source. Each collection has a type (github, obsidian, git, mantisbt), a name you choose, and type-specific configuration (like a repository name, a vault path, or an API token).</p>
+  <p>A <strong>collection</strong> is a named, configured connection to one data source. Each collection has a type (github, obsidian, git, mantishub), a name you choose, and type-specific configuration (like a repository name, a vault path, or an API token).</p>
   <p>Each collection is stored as a subdirectory under <code>~/.frozenink/collections/&lt;name&gt;/</code>, containing its config file, SQLite database, rendered markdown, and attachments. Collections are isolated — syncing or removing one has no effect on the others.</p>
 
   <h3 id="entities">Entities</h3>
-  <p>An <strong>entity</strong> is an individual record within a collection — a GitHub issue, an Obsidian note, a Git commit, a MantisBT bug, and so on. Each entity has:</p>
+  <p>An <strong>entity</strong> is an individual record within a collection — a GitHub issue, an Obsidian note, a Git commit, a MantisHub bug, and so on. Each entity has:</p>
   <ul>
     <li><strong>External ID</strong> — the identifier in the source system (e.g., issue number, note filename)</li>
     <li><strong>Structured data</strong> — the raw fields as stored in the source (title, body, author, timestamps, labels, etc.)</li>
@@ -147,7 +147,7 @@ export const whatIsFrozenInkPage = renderDocsPage({
     <div class="feature-card">
       <div class="feature-card-icon">🧩</div>
       <h4>Source-agnostic</h4>
-      <p>Add new crawlers without changing the core. GitHub, Obsidian, Git, and MantisBT are the first four — more will follow.</p>
+      <p>Add new crawlers without changing the core. GitHub, Obsidian, Git, and MantisHub are the first four — more will follow.</p>
     </div>
   </div>
 

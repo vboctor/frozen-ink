@@ -186,7 +186,7 @@ function mtSidebarRow(label: string, value: string): string {
 
 function statusColor(status: { color?: string; name?: string }): string {
   if (status.color) return status.color;
-  // Fallback colors based on common MantisBT status names
+  // Fallback colors based on common MantisHub status names
   switch (status.name) {
     case "new": return "#fcbdbd";
     case "feedback": return "#e3b7eb";
@@ -337,8 +337,8 @@ function pageFilePath(name: string, projectName?: string, singleProject?: boolea
   return `${slugify(projectName)}/pages/${pagePart}`;
 }
 
-export class MantisBTTheme implements Theme {
-  crawlerType = "mantisbt";
+export class MantisHubTheme implements Theme {
+  crawlerType = "mantishub";
 
   render(context: ThemeRenderContext): string {
     if (context.entity.entityType === "user") return this.renderUserMd(context);
@@ -629,7 +629,7 @@ export class MantisBTTheme implements Theme {
     parts.push(mtSidebarRow("Updated", formatDateCompact(d.updatedAt as string)));
 
     if (context.entity.url) {
-      parts.push(`<div class="mt-sidebar-row mt-sidebar-link-row"><a class="mt-sidebar-link" href="${esc(context.entity.url)}" target="_blank" rel="noopener noreferrer">View in MantisBT &rarr;</a></div>`);
+      parts.push(`<div class="mt-sidebar-row mt-sidebar-link-row"><a class="mt-sidebar-link" href="${esc(context.entity.url)}" target="_blank" rel="noopener noreferrer">View in MantisHub &rarr;</a></div>`);
     }
 
     parts.push(`</div>`); // mt-sidebar-col
@@ -682,7 +682,7 @@ export class MantisBTTheme implements Theme {
     parts.push(`</div>`);
     parts.push(`</div>`);
     if (context.entity.url) {
-      parts.push(`<div style="margin-top:16px"><a class="mt-sidebar-link" href="${esc(context.entity.url)}" target="_blank" rel="noopener noreferrer">View profile in MantisBT &rarr;</a></div>`);
+      parts.push(`<div style="margin-top:16px"><a class="mt-sidebar-link" href="${esc(context.entity.url)}" target="_blank" rel="noopener noreferrer">View profile in MantisHub &rarr;</a></div>`);
     }
     parts.push(`</div>`);
     return parts.join("\n");
@@ -705,7 +705,7 @@ export class MantisBTTheme implements Theme {
       parts.push(`</div>`);
     }
     if (context.entity.url) {
-      parts.push(`<a class="mt-sidebar-link" href="${esc(context.entity.url)}" target="_blank" rel="noopener noreferrer">Open project in MantisBT &rarr;</a>`);
+      parts.push(`<a class="mt-sidebar-link" href="${esc(context.entity.url)}" target="_blank" rel="noopener noreferrer">Open project in MantisHub &rarr;</a>`);
     }
     parts.push(`</div>`);
     return parts.join("\n");

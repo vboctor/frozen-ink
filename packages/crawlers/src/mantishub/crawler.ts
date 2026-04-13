@@ -8,17 +8,17 @@ import type {
 } from "@frozenink/core";
 import { createCryptoHasher } from "@frozenink/core";
 import type {
-  MantisBTConfig,
-  MantisBTCredentials,
-  MantisBTEntityType,
-  MantisBTIssue,
-  MantisBTPage,
-  MantisBTPageFile,
-  MantisBTProject,
-  MantisBTUser,
+  MantisHubConfig,
+  MantisHubCredentials,
+  MantisHubEntityType,
+  MantisHubIssue,
+  MantisHubPage,
+  MantisHubPageFile,
+  MantisHubProject,
+  MantisHubUser,
 } from "./types";
 
-interface MantisBTSyncCursor extends SyncCursor {
+interface MantisHubSyncCursor extends SyncCursor {
   /** Page number for next fetch (1-based). */
   page?: number;
   /** Total entities fetched so far (for --max limiting). */
@@ -88,18 +88,18 @@ interface AttachmentUrlInfo {
   signedUrl?: string;
 }
 
-export class MantisBTCrawler implements Crawler {
+export class MantisHubCrawler implements Crawler {
   metadata: CrawlerMetadata = {
-    type: "mantisbt",
-    displayName: "MantisBT Issue Tracker",
+    type: "mantishub",
+    displayName: "MantisHub Issue Tracker",
     description:
-      "Crawls a MantisBT instance via its REST API, syncing issues from newest to oldest",
+      "Crawls a MantisHub instance via its REST API, syncing issues from newest to oldest",
     version: "3.2",
     configSchema: {
       url: {
         type: "string",
         required: true,
-        description: "Base URL of the MantisBT instance (e.g. https://mantisbt.org/bugs)",
+        description: "Base URL of the MantisHub instance (e.g. https://mantishub.org/bugs)",
       },
       project: {
         type: "object",
@@ -120,7 +120,7 @@ export class MantisBTCrawler implements Crawler {
   private projectId?: number;
   private maxEntities?: number;
   private mantisHubMode = false;
-  private syncEntities?: MantisBTEntityType[];
+  private syncEntities?: MantisHubEntityType[];
   private fetchFn: typeof fetch = globalThis.fetch;
   private assetFilter: AssetFilter | null = null;
 
@@ -137,7 +137,7 @@ export class MantisBTCrawler implements Crawler {
   }
 
   /** Accept both new field names and legacy field names for backward compat. */
-  private static resolveConfig(config: Record<string, unknown>): MantisBTConfig {
+  private static resolveConfig(config: Record<string, unknown>): MantisHubConfig {
     const url = (config.url ?? config.baseUrl) as string;
     const project = config.project as { id?: number; name?: string } | undefined;
     const projectId = project?.id ?? (config.projectId as number | undefined);
@@ -146,7 +146,7 @@ export class MantisBTCrawler implements Crawler {
       url,
       project: projectId || projectName ? { id: projectId, name: projectName } : undefined,
       maxEntities: config.maxEntities as number | undefined,
-      entities: (config.entities ?? config.syncEntities) as MantisBTEntityType[] | undefined,
+      entities: (config.entities ?? config.syncEntities) as MantisHubEntityType[] | undefined,
     };
   }
 
@@ -158,8 +158,8 @@ export class MantisBTCrawler implements Crawler {
     config: Record<string, unknown>,
     credentials: Record<string, unknown>,
   ): Promise<void> {
-    const cfg = MantisBTCrawler.resolveConfig(config);
-    const creds = credentials as unknown as MantisBTCredentials;
+    const cfg = MantisHubCrawler.resolveConfig(config);
+    const creds = credentials as unknown as MantisHubCredentials;
     this.baseUrl = cfg.url.replace(/\/+$/, "");
     this.token = creds.token ?? "";
     this.maxEntities = cfg.maxEntities;
@@ -196,7 +196,7 @@ export class MantisBTCrawler implements Crawler {
   }
 
   async sync(cursor: SyncCursor | null): Promise<SyncResult> {
-    const c = (cursor as MantisBTSyncCursor) ?? {};
+    const c = (cursor as MantisHubSyncCursor) ?? {};
 
     // Restore accumulated user/project data from cursor (survives across pages).
     if (cursor === null) {
@@ -247,7 +247,7 @@ export class MantisBTCrawler implements Crawler {
     }
 
     const response = await this.apiFetch(url);
-    const data = (await response.json()) as { issues: MantisBTIssue[] };
+    const data = (await response.json()) as { issues: MantisHubIssue[] };
     const issues = data.issues ?? [];
 
     issues.sort(
@@ -310,7 +310,7 @@ export class MantisBTCrawler implements Crawler {
     // and note attachments. Sequential to avoid overwhelming the server.
     const entities: CrawlerEntityData[] = [];
     for (const issue of issuesToProcess) {
-      let fullIssue: MantisBTIssue;
+      let fullIssue: MantisHubIssue;
       try {
         fullIssue = await this.fetchIssue(issue.id);
       } catch (err) {
@@ -351,7 +351,7 @@ export class MantisBTCrawler implements Crawler {
     };
   }
 
-  private async syncUsersAndProjects(c: MantisBTSyncCursor): Promise<SyncResult> {
+  private async syncUsersAndProjects(c: MantisHubSyncCursor): Promise<SyncResult> {
     const entities: CrawlerEntityData[] = [];
 
     // Fetch full user profiles; fall back to basic data on error.
@@ -420,7 +420,7 @@ export class MantisBTCrawler implements Crawler {
   async dispose(): Promise<void> {}
 
   /** Whether a given entity type should be synced based on the syncEntities config. */
-  private shouldSync(type: MantisBTEntityType): boolean {
+  private shouldSync(type: MantisHubEntityType): boolean {
     if (!this.syncEntities) return true; // default: sync everything applicable
     return this.syncEntities.includes(type);
   }
@@ -445,29 +445,29 @@ export class MantisBTCrawler implements Crawler {
         if (text.trim()) bodySnippet = ` — ${text.trim().slice(0, 300)}`;
       } catch { /* ignore body read errors */ }
       throw new Error(
-        `MantisBT API error: GET ${url} → ${response.status} ${response.statusText}${bodySnippet}`,
+        `MantisHub API error: GET ${url} → ${response.status} ${response.statusText}${bodySnippet}`,
       );
     }
     return response;
   }
 
-  private async fetchIssue(issueId: number): Promise<MantisBTIssue> {
+  private async fetchIssue(issueId: number): Promise<MantisHubIssue> {
     const url = `${this.baseUrl}/api/rest/issues/${issueId}`;
     const response = await this.apiFetch(url);
-    const data = (await response.json()) as { issues: MantisBTIssue[] };
+    const data = (await response.json()) as { issues: MantisHubIssue[] };
     return data.issues[0];
   }
 
-  private async fetchUser(userId: number): Promise<MantisBTUser> {
+  private async fetchUser(userId: number): Promise<MantisHubUser> {
     const url = `${this.baseUrl}/api/rest/users/${userId}`;
     const response = await this.apiFetch(url);
-    return (await response.json()) as MantisBTUser;
+    return (await response.json()) as MantisHubUser;
   }
 
-  private async fetchProjects(): Promise<MantisBTProject[]> {
+  private async fetchProjects(): Promise<MantisHubProject[]> {
     const url = `${this.baseUrl}/api/rest/projects`;
     const response = await this.apiFetch(url);
-    const data = (await response.json()) as { projects: MantisBTProject[] };
+    const data = (await response.json()) as { projects: MantisHubProject[] };
     return data.projects ?? [];
   }
 
@@ -476,8 +476,8 @@ export class MantisBTCrawler implements Crawler {
     return resolved.id;
   }
 
-  private flattenProjects(projects: MantisBTProject[]): MantisBTProject[] {
-    const result: MantisBTProject[] = [];
+  private flattenProjects(projects: MantisHubProject[]): MantisHubProject[] {
+    const result: MantisHubProject[] = [];
     for (const p of projects) {
       result.push(p);
       if ((p as any).subProjects?.length) {
@@ -487,7 +487,7 @@ export class MantisBTCrawler implements Crawler {
     return result;
   }
 
-  private buildUserEntity(user: MantisBTUser): CrawlerEntityData {
+  private buildUserEntity(user: MantisHubUser): CrawlerEntityData {
     const avatarUrl = user.avatar?.attr?.src ?? null;
     const displayName = user.real_name ? `${user.real_name} (@${user.name})` : user.name;
     return {
@@ -564,7 +564,7 @@ export class MantisBTCrawler implements Crawler {
    * Build the cursor/result for transitioning out of the pages phase.
    * Goes to users if enabled, otherwise finishes.
    */
-  private transitionFromPages(c: MantisBTSyncCursor): Pick<SyncResult, "nextCursor" | "hasMore" | "deletedExternalIds"> {
+  private transitionFromPages(c: MantisHubSyncCursor): Pick<SyncResult, "nextCursor" | "hasMore" | "deletedExternalIds"> {
     const serialized = {
       _users: Object.fromEntries(this.collectedUsers),
       _projects: c._projects ?? Object.fromEntries(this.collectedProjects),
@@ -614,7 +614,7 @@ export class MantisBTCrawler implements Crawler {
    * Pages phase: browse and fetch wiki pages from MantisHub instances.
    * Processes one project per sync call to avoid timeouts.
    */
-  private async syncPages(c: MantisBTSyncCursor): Promise<SyncResult> {
+  private async syncPages(c: MantisHubSyncCursor): Promise<SyncResult> {
     const projectIds = c._pagesProjectIds ?? [];
     if (projectIds.length === 0) {
       // No projects left — transition to users phase or finish.
@@ -712,13 +712,13 @@ export class MantisBTCrawler implements Crawler {
   private async fetchPage(
     projectId: number,
     pageName: string,
-  ): Promise<{ page: MantisBTPage; files: MantisBTPageFile[] }> {
+  ): Promise<{ page: MantisHubPage; files: MantisHubPageFile[] }> {
     const url = `${this.baseUrl}/api/rest/plugins/ApiX/projects/${projectId}/pages/update/${encodeURIComponent(pageName)}`;
     const response = await this.apiFetch(url);
     const data = (await response.json()) as {
       page_view: {
-        page: MantisBTPage;
-        files: MantisBTPageFile[];
+        page: MantisHubPage;
+        files: MantisHubPageFile[];
       };
     };
     return {
@@ -728,7 +728,7 @@ export class MantisBTCrawler implements Crawler {
   }
 
   /** Collect users from a page's created_by and updated_by fields. */
-  private collectUsersFromPage(page: MantisBTPage): void {
+  private collectUsersFromPage(page: MantisHubPage): void {
     if (page.created_by?.name) {
       this.collectedUsers.set(page.created_by.id, {
         id: page.created_by.id,
@@ -746,8 +746,8 @@ export class MantisBTCrawler implements Crawler {
   }
 
   private async buildPageEntity(
-    page: MantisBTPage,
-    files: MantisBTPageFile[],
+    page: MantisHubPage,
+    files: MantisHubPageFile[],
   ): Promise<CrawlerEntityData> {
     const hasher = createCryptoHasher("sha256");
     hasher.update(JSON.stringify({ page, files }));
@@ -830,7 +830,7 @@ export class MantisBTCrawler implements Crawler {
   }
 
   /** Collect users and projects from an issue into the accumulation maps. */
-  private collectUsersAndProjects(issue: MantisBTIssue): void {
+  private collectUsersAndProjects(issue: MantisHubIssue): void {
     if (issue.reporter?.name) {
       this.collectedUsers.set(issue.reporter.id, {
         id: issue.reporter.id,
@@ -871,7 +871,7 @@ export class MantisBTCrawler implements Crawler {
   // ── MantisHub ApiX fallback ──────────────────────────────────────
   //
   // MantisHub instances (detected by `.mantishub.` in the URL) expose the
-  // ApiX plugin at /api/rest/plugins/ApiX/. When the core MantisBT REST
+  // ApiX plugin at /api/rest/plugins/ApiX/. When the core MantisHub REST
   // API fails to download an attachment (e.g. cloud-stored files that
   // require session auth), we fall back to the ApiX IssueViewPage endpoint
   // which provides pre-signed download URLs. The ApiX call is only made
@@ -917,7 +917,7 @@ export class MantisBTCrawler implements Crawler {
     return urlMap;
   }
 
-  private async buildIssueEntity(issue: MantisBTIssue): Promise<CrawlerEntityData> {
+  private async buildIssueEntity(issue: MantisHubIssue): Promise<CrawlerEntityData> {
     const hasher = createCryptoHasher("sha256");
     hasher.update(JSON.stringify(issue));
     const contentHash = hasher.digest("hex");
@@ -951,7 +951,7 @@ export class MantisBTCrawler implements Crawler {
     // Download attachments; track storage paths that were successfully saved.
     // On MantisHub instances, signed URLs (via ApiX IssueViewPage) are fetched
     // upfront and used as the primary download method — more efficient than the
-    // MantisBT REST API which may not serve cloud-stored files. On plain MantisBT
+    // MantisHub REST API which may not serve cloud-stored files. On plain MantisHub
     // the REST API is used directly.
     const entityAttachments: CrawlerEntityData["attachments"] = [];
     const savedPaths = new Set<string>();
@@ -1086,11 +1086,11 @@ export class MantisBTCrawler implements Crawler {
   }
 
   /**
-   * Download an attachment via the core MantisBT REST API.
+   * Download an attachment via the core MantisHub REST API.
    *
    * Uses GET /api/rest/issues/{id}/files/{file_id} (operationId: IssueFileGet)
    * which returns JSON with base64-encoded content. Works for both issue-level
-   * and note-level attachments per the MantisBT OpenAPI spec.
+   * and note-level attachments per the MantisHub OpenAPI spec.
    *
    * If a download_url is available (e.g. from the issue response), tries that
    * first as a binary download, then falls back to the REST API endpoint.
@@ -1121,7 +1121,7 @@ export class MantisBTCrawler implements Crawler {
       }
     }
 
-    // Core MantisBT REST API (IssueFileGet - returns base64 JSON)
+    // Core MantisHub REST API (IssueFileGet - returns base64 JSON)
     const apiUrl = `${this.baseUrl}/api/rest/issues/${issueId}/files/${fileId}`;
     try {
       const res = await this.fetchFn(apiUrl, { headers });

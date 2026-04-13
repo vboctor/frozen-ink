@@ -40,7 +40,7 @@ export const claudeCoworkPage = renderDocsPage({
     <div class="feature-card">
       <div class="feature-card-icon">🗂️</div>
       <h4>All sources at once</h4>
-      <p>GitHub issues, Obsidian notes, Git commits, MantisBT tickets — all visible to Claude in the same session as soon as they're synced locally.</p>
+      <p>GitHub issues, Obsidian notes, Git commits, MantisHub tickets — all visible to Claude in the same session as soon as they're synced locally.</p>
     </div>
   </div>
 

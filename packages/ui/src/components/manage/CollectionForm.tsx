@@ -18,7 +18,7 @@ const CRAWLER_TYPES = [
   { id: "github", label: "GitHub", description: "Issues, PRs, and discussions from a GitHub repository" },
   { id: "obsidian", label: "Obsidian", description: "Notes from an Obsidian vault" },
   { id: "git", label: "Git", description: "Commits, branches, and tags from a local repository" },
-  { id: "mantisbt", label: "MantisBT", description: "Issues from a MantisBT instance" },
+  { id: "mantishub", label: "MantisHub", description: "Issues from a MantisHub instance" },
 ];
 
 export default function CollectionForm({ editName, editConfig, onSave, onCancel }: CollectionFormProps) {
@@ -233,10 +233,10 @@ function renderConfigFields(
       return field("vaultPath", "Vault Path", "/path/to/vault");
     case "git":
       return field("repoPath", "Repository Path", "/path/to/repo");
-    case "mantisbt":
+    case "mantishub":
       return (
         <>
-          {field("baseUrl", "MantisBT URL", "https://mantis.example.com")}
+          {field("baseUrl", "MantisHub URL", "https://mantis.example.com")}
           {field("projectName", "Project Name", "My Project")}
         </>
       );
@@ -267,7 +267,7 @@ function renderCredentialFields(
   switch (crawler) {
     case "github":
       return field("token", "GitHub Token", "ghp_...");
-    case "mantisbt":
+    case "mantishub":
       return field("token", "API Token", "your-api-token");
     case "obsidian":
     case "git":

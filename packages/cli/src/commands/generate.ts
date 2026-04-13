@@ -19,14 +19,14 @@ import {
   CollectionEntry,
 } from "@frozenink/core";
 import { eq } from "drizzle-orm";
-import { gitHubTheme, obsidianTheme, gitTheme, mantisBTTheme } from "@frozenink/crawlers";
+import { gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme } from "@frozenink/crawlers";
 
 export function createGenerateThemeEngine(): ThemeEngine {
   const themeEngine = new ThemeEngine();
   themeEngine.register(gitHubTheme);
   themeEngine.register(obsidianTheme);
   themeEngine.register(gitTheme);
-  themeEngine.register(mantisBTTheme);
+  themeEngine.register(mantisHubTheme);
   return themeEngine;
 }
 

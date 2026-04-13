@@ -10,7 +10,7 @@ import {
   gitHubTheme,
   obsidianTheme,
   gitTheme,
-  mantisBTTheme,
+  mantisHubTheme,
 } from "@frozenink/crawlers";
 import { TextInput } from "./TextInput.js";
 
@@ -96,7 +96,7 @@ export function ExportView({
         themeEngine.register(gitHubTheme);
         themeEngine.register(obsidianTheme);
         themeEngine.register(gitTheme);
-        themeEngine.register(mantisBTTheme);
+        themeEngine.register(mantisHubTheme);
       }
 
       await exportStaticSite({

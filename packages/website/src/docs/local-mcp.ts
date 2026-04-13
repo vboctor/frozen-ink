@@ -147,7 +147,7 @@ Authorization: Bearer secret123</code></pre>
       </tr>
       <tr>
         <td><code>entity_get_attachment</code></td>
-        <td>Retrieves a binary attachment (image, PDF, etc.) for a specific entity. Useful for accessing files embedded in Obsidian notes or attached to MantisBT issues.</td>
+        <td>Retrieves a binary attachment (image, PDF, etc.) for a specific entity. Useful for accessing files embedded in Obsidian notes or attached to MantisHub issues.</td>
       </tr>
     </tbody>
   </table>

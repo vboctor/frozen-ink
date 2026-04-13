@@ -169,7 +169,7 @@ fink search "payment gateway timeout"
   <p>Results are ranked by relevance and labeled with their collection, so you immediately know whether you're looking at a GitHub issue, an Obsidian note, or a Git commit.</p>
 
   <h2 id="archival">Historical archival</h2>
-  <p><strong>Situation:</strong> Your team is migrating away from MantisBT to a new bug tracker. You want to preserve a complete, searchable record of all historical issues before decommissioning the old system.</p>
+  <p><strong>Situation:</strong> Your team is migrating away from MantisHub to a new bug tracker. You want to preserve a complete, searchable record of all historical issues before decommissioning the old system.</p>
 
   <div class="steps">
     <div class="step">

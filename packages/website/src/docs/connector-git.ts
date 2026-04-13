@@ -105,9 +105,9 @@ fink daemon start</code></pre>
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Obsidian Connector</span>
     </a>
-    <a href="/docs/connectors/mantisbt" class="docs-pagination-card next">
+    <a href="/docs/connectors/mantishub" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">MantisBT Connector</span>
+      <span class="docs-pagination-title">MantisHub Connector</span>
     </a>
   </div>
   `,

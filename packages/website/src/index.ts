@@ -20,7 +20,7 @@ import { desktopAppPage } from "./docs/desktop-app";
 import { connectorGithubPage } from "./docs/connector-github";
 import { connectorObsidianPage } from "./docs/connector-obsidian";
 import { connectorGitPage } from "./docs/connector-git";
-import { connectorMantisbtPage } from "./docs/connector-mantisbt";
+import { connectorMantishubPage } from "./docs/connector-mantishub";
 
 const DOC_PAGES: Record<string, string> = {
   "/docs": gettingStartedPage,
@@ -38,7 +38,7 @@ const DOC_PAGES: Record<string, string> = {
   "/docs/connectors/github": connectorGithubPage,
   "/docs/connectors/obsidian": connectorObsidianPage,
   "/docs/connectors/git": connectorGitPage,
-  "/docs/connectors/mantisbt": connectorMantisbtPage,
+  "/docs/connectors/mantishub": connectorMantishubPage,
 };
 
 export default {

@@ -6,7 +6,7 @@ const CRAWLER_LABELS: Record<string, string> = {
   github: "GitHub",
   obsidian: "Obsidian",
   git: "Git",
-  mantisbt: "MantisBT",
+  mantishub: "MantisHub",
 };
 
 interface CollectionListProps {
