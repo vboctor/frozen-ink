@@ -148,6 +148,7 @@ export async function publishCollections(
     createR2Bucket,
     putR2Object,
     deleteR2Object,
+    listR2Objects,
     deployWorker,
     generateWranglerToml,
     writeTempFile,
@@ -504,15 +505,21 @@ export async function publishCollections(
         onProgress("r2-upload", `${uploadCount}/${toUpload.length} files uploaded`);
       }
     });
-    // All keys (uploaded + skipped) are in the current set
     const allKeys = new Set(fileSizes.keys());
     onProgress("r2-upload", `Uploaded ${uploadCount} files to R2${skippedCount > 0 ? ` (${skippedCount} unchanged)` : ""}`);
 
-    if (isUpdate && existingR2Manifest.size > 0) {
-      const staleKeys = [...existingR2Manifest.keys()].filter((key) => !allKeys.has(key));
-      if (staleKeys.length > 0) {
-        onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
-        await runConcurrent(staleKeys, 5, async (key) => deleteR2Object(r2BucketName, key));
+    // Stale cleanup: list actual R2 objects (source of truth) and delete any not in current set
+    if (isUpdate) {
+      onProgress("r2-cleanup", "Checking for stale R2 files...");
+      try {
+        const remoteKeys = await listR2Objects(r2BucketName);
+        const staleKeys = remoteKeys.filter((key) => !allKeys.has(key));
+        if (staleKeys.length > 0) {
+          onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
+          await runConcurrent(staleKeys, 5, async (key) => deleteR2Object(r2BucketName, key));
+        }
+      } catch {
+        onProgress("r2-cleanup", "Warning: could not list R2 objects for stale cleanup");
       }
     }
 
