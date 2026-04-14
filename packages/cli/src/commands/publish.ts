@@ -343,9 +343,9 @@ export async function publishCollections(
       }
     });
     await flushManifestCheckpoint();
-    onProgress("r2-upload", `Uploaded ${uploadCount} files to R2${skippedCount > 0 ? ` (${skippedCount} unchanged)` : ""}`);
 
     // Stale cleanup via R2 list (source of truth)
+    let deletedCount = 0;
     if (isUpdate) {
       const allKeys = new Set(fileSizes.keys());
       onProgress("r2-cleanup", "Checking for stale R2 files...");
@@ -355,11 +355,18 @@ export async function publishCollections(
         if (staleKeys.length > 0) {
           onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
           await runConcurrent(staleKeys, 3, async (key) => deleteR2Object(r2BucketName, key));
+          deletedCount = staleKeys.length;
         }
       } catch {
         onProgress("r2-cleanup", "Warning: could not list R2 objects for stale cleanup");
       }
     }
+
+    const totalFiles = uploads.length;
+    const parts = [`${uploadCount} uploaded`];
+    if (deletedCount > 0) parts.push(`${deletedCount} deleted`);
+    if (skippedCount > 0) parts.push(`${skippedCount} unchanged`);
+    onProgress("r2-upload", `${parts.join(", ")} out of ${totalFiles} total`);
   }
 
   // --- Phase 3: D1 rebuild (destructive — done last to minimize downtime) ---
