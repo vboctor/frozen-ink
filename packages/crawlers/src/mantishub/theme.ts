@@ -468,7 +468,7 @@ export class MantisHubTheme implements Theme {
       const crumbs = [projectHtml, category ? esc(category.name) : null, esc(padId(d.id as number))].filter(Boolean);
       parts.push(`<div class="mt-breadcrumb">${crumbs.join(" &rsaquo; ")}</div>`);
     }
-    parts.push(`<h1 class="mt-title">${esc(d.summary as string)}</h1>`);
+    parts.push(`<h1 class="mt-title">${textToHtml(d.summary as string, lookup, projectId, projectNameToId)}</h1>`);
 
     // Tags as badges
     const tags = context.entity.tags ?? [];
@@ -498,6 +498,14 @@ export class MantisHubTheme implements Theme {
     if (d.additionalInformation) {
       parts.push(`<h3 class="mt-subsection-title">Additional Information</h3>`);
       parts.push(`<div class="mt-description">${textToHtml(d.additionalInformation as string, lookup, projectId, projectNameToId)}</div>`);
+    }
+
+    // Text custom fields
+    const customFields = d.customFields as Array<{ id: number; name: string; value: string }> | undefined;
+    for (const cf of customFields ?? []) {
+      if (!cf.value) continue;
+      parts.push(`<h3 class="mt-subsection-title">${esc(cf.name)}</h3>`);
+      parts.push(`<div class="mt-description">${textToHtml(cf.value, lookup, projectId, projectNameToId)}</div>`);
     }
 
     // Issue-level attachments
@@ -994,6 +1002,13 @@ export class MantisHubTheme implements Theme {
         "### Additional Information\n\n" +
           linkifyContent(d.additionalInformation as string, lookup, projectId, projectNameToId),
       );
+    }
+
+    // Text custom fields
+    const customFields = d.customFields as Array<{ id: number; name: string; value: string }> | undefined;
+    for (const cf of customFields ?? []) {
+      if (!cf.value) continue;
+      sections.push(`### ${cf.name}\n\n${linkifyContent(cf.value, lookup, projectId, projectNameToId)}`);
     }
 
     // Relationships — label: "00042 Title" (no # prefix)

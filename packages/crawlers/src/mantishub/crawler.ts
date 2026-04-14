@@ -1076,6 +1076,11 @@ export class MantisHubCrawler implements Crawler {
           }),
         })),
         relationships: issue.relationships ?? [],
+        customFields: (issue.custom_fields ?? []).map((cf) => ({
+          id: cf.field.id,
+          name: cf.field.name,
+          value: cf.value,
+        })),
         _projectNameToId: this.getProjectNameToId(),
         _singleProject: !!this.projectId,
       },
