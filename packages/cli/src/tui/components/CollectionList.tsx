@@ -483,7 +483,9 @@ export function CollectionList({
   const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
   const [syncElapsedMs, setSyncElapsedMs] = useState(0);
   const [editingCollection, setEditingCollection] = useState("");
-  const [publishProgress, setPublishProgress] = useState<string[]>([]);
+  const [publishLog, setPublishLog] = useState<string[]>([]);
+  const [publishStatus, setPublishStatus] = useState("");
+  const [publishLastStep, setPublishLastStep] = useState("");
   const [publishError, setPublishError] = useState("");
   const [publishStartTime, setPublishStartTime] = useState<number | null>(null);
   const [publishElapsedMs, setPublishElapsedMs] = useState(0);
@@ -498,19 +500,32 @@ export function CollectionList({
     const removePassword = opts?.removePassword;
     const forcePublic = !password && !removePassword && !isUpdate;
     setEditingCollection(name);
-    setPublishProgress([]);
+    setPublishLog([]);
+    setPublishStatus("");
+    setPublishLastStep("");
     setPublishError("");
     setPublishStartTime(Date.now());
     setMode("publishing");
+    let lastStep = "";
     publishCollections(
       { collectionName: name, password, removePassword, forcePublic },
-      (step, detail) => setPublishProgress((p) => [...p, `[${step}] ${detail}`]),
+      (step, detail) => {
+        if (step !== lastStep && lastStep) {
+          setPublishLog((log) => [...log, `[${lastStep}] done`]);
+        }
+        lastStep = step;
+        setPublishLastStep(step);
+        setPublishStatus(detail);
+      },
     ).then(() => {
+      if (lastStep) setPublishLog((log) => [...log, `[${lastStep}] done`]);
+      setPublishStatus("");
       setPublishStartTime(null);
       setMessage(`Published "${name}"`);
       setMode("publish-done");
       refresh();
     }).catch((err) => {
+      setPublishStatus("");
       setPublishStartTime(null);
       setPublishError(err instanceof Error ? err.message : String(err));
       setMode("publish-done");
@@ -739,17 +754,28 @@ export function CollectionList({
         const publishState = getCollectionPublishState(editingCollection);
         if (publishState) {
           setMode("unpublishing");
-          setPublishProgress([]);
+          setPublishLog([]);
+          setPublishStatus("");
+          setPublishLastStep("");
           setPublishError("");
           setPublishStartTime(Date.now());
+          let lastStep = "";
           unpublishCollection(editingCollection, publishState, (step, detail) => {
-            setPublishProgress((p) => [...p, `[${step}] ${detail}`]);
+            if (step !== lastStep && lastStep) {
+              setPublishLog((log) => [...log, `[${lastStep}] done`]);
+            }
+            lastStep = step;
+            setPublishLastStep(step);
+            setPublishStatus(detail);
           }).then(() => {
+            if (lastStep) setPublishLog((log) => [...log, `[${lastStep}] done`]);
+            setPublishStatus("");
             setPublishStartTime(null);
             setMessage(`Unpublished "${editingCollection}". Local data preserved.`);
             setMode("publish-done");
             refresh();
           }).catch((err) => {
+            setPublishStatus("");
             setPublishStartTime(null);
             setPublishError(err instanceof Error ? err.message : String(err));
             setMode("publish-done");
@@ -760,7 +786,9 @@ export function CollectionList({
       }
     } else if (mode === "publish-done") {
       if (key.return || key.escape) {
-        setPublishProgress([]);
+        setPublishLog([]);
+        setPublishStatus("");
+        setPublishLastStep("");
         setPublishError("");
         setMessage("");
         setMode("list");
@@ -880,7 +908,8 @@ export function CollectionList({
       <Box flexDirection="column" paddingY={1}>
         <Text bold color="yellow">{label} "{editingCollection}"... ({formatElapsed(publishElapsedMs)})</Text>
         <Box flexDirection="column" marginLeft={1} marginTop={1}>
-          {publishProgress.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
+          {publishLog.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
+          {publishStatus && <Text color="cyan">{publishStatus}</Text>}
         </Box>
       </Box>
     );
@@ -895,7 +924,7 @@ export function CollectionList({
           <Text color="green" bold>{message}</Text>
         )}
         <Box flexDirection="column" marginLeft={1} marginTop={1}>
-          {publishProgress.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
+          {publishLog.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
           {publishError && <Text color="red">{publishError}</Text>}
         </Box>
         <Box marginTop={1}><Text dimColor>Press Enter to continue</Text></Box>
