@@ -49,6 +49,30 @@ export class GitTheme implements Theme {
     };
   }
 
+  agentsMarkdown(options: { title: string; description?: string; config?: Record<string, unknown> }): string {
+    const { title, description } = options;
+    const lines: string[] = [];
+    lines.push(`# ${title}`);
+    lines.push("");
+    if (description) {
+      lines.push(description);
+    } else {
+      lines.push("This collection is synced from a Git repository.");
+    }
+    lines.push("");
+    lines.push("## Entity Types");
+    lines.push("");
+    lines.push("### Commits (`commits/`)");
+    lines.push("Git commits with full metadata including author, date, changed files, and diffs. Each commit is stored as `commits/{hash}-{subject}.md`.");
+    lines.push("");
+    lines.push("### Branches (`branches/`)");
+    lines.push("Git branches with their latest commit reference. Each branch is stored as `branches/{name}.md`.");
+    lines.push("");
+    lines.push("### Tags (`tags/`)");
+    lines.push("Git tags marking specific releases or points in history. Each tag is stored as `tags/{name}.md`.");
+    return lines.join("\n") + "\n";
+  }
+
   getFilePath(context: ThemeRenderContext): string {
     const { entity } = context;
     switch (entity.entityType) {

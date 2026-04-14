@@ -54,6 +54,24 @@ export class ObsidianTheme implements Theme {
     };
   }
 
+  agentsMarkdown(options: { title: string; description?: string }): string {
+    const { title, description } = options;
+    const lines: string[] = [];
+    lines.push(`# ${title}`);
+    lines.push("");
+    if (description) {
+      lines.push(description);
+    } else {
+      lines.push("This collection is synced from an Obsidian vault. Notes preserve their original vault folder structure.");
+    }
+    lines.push("");
+    lines.push("## Content");
+    lines.push("");
+    lines.push("### Notes");
+    lines.push("Markdown notes from the vault, with Obsidian-style wikilinks converted to standard Markdown links. The folder hierarchy matches the original vault layout.");
+    return lines.join("\n") + "\n";
+  }
+
   getFilePath(context: ThemeRenderContext): string {
     // Preserve the original vault-relative path
     return context.entity.data.relativePath as string;

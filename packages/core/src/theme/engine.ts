@@ -48,4 +48,20 @@ export class ThemeEngine {
     const theme = this.themes.get(crawlerType);
     return theme?.folderConfigs?.() ?? {};
   }
+
+  /** Return the root config for the given crawler type, or empty object if none defined. */
+  getRootConfig(crawlerType: string): FolderConfig {
+    const theme = this.themes.get(crawlerType);
+    return theme?.rootConfig?.() ?? {};
+  }
+
+  /** Generate AGENTS.md content for the given crawler type. Returns null if not supported. */
+  agentsMarkdown(
+    crawlerType: string,
+    options: { title: string; description?: string; config?: Record<string, unknown> },
+  ): string | null {
+    const theme = this.themes.get(crawlerType);
+    if (!theme?.agentsMarkdown) return null;
+    return theme.agentsMarkdown(options);
+  }
 }

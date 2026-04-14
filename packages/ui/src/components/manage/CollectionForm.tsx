@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface CollectionFormProps {
   /** If provided, editing existing collection; else creating new */
@@ -35,15 +35,38 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [discardPrompt, setDiscardPrompt] = useState(false);
 
-  // ESC dismisses the form
+  function hasUnsavedChanges(): boolean {
+    if (!editName) return false; // creating new — no prior state to compare
+    return (
+      title !== (editConfig?.title ?? "") ||
+      description !== (editConfig?.description ?? "") ||
+      JSON.stringify(config) !== JSON.stringify(configToStrings(editConfig?.config ?? {})) ||
+      JSON.stringify(credentials) !== JSON.stringify(configToStrings(editConfig?.credentials ?? {}))
+    );
+  }
+
+  function handleCancel() {
+    if (hasUnsavedChanges()) {
+      setDiscardPrompt(true);
+    } else {
+      onCancel();
+    }
+  }
+
+  // Keep a ref to always call the latest handleCancel without re-registering the listener
+  const handleCancelRef = useRef(handleCancel);
+  handleCancelRef.current = handleCancel;
+
+  // ESC dismisses the form (with confirmation if there are unsaved changes)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") handleCancelRef.current();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onCancel]);
+  }, []); // register once on mount
 
   function configToStrings(obj: Record<string, unknown>): Record<string, string> {
     const result: Record<string, string> = {};
@@ -99,6 +122,25 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
     }
   };
 
+  if (discardPrompt) {
+    return (
+      <div className="manage-panel">
+        <div className="manage-panel-header">
+          <h2>Discard changes?</h2>
+        </div>
+        <p className="manage-panel-subtitle">You have unsaved changes. Do you want to save or discard them?</p>
+        <div className="form-actions">
+          <button className="btn btn-secondary" onClick={() => setDiscardPrompt(false)}>Keep editing</button>
+          <button className="btn btn-secondary" onClick={onCancel}>Discard</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+        {error && <div className="form-error">{error}</div>}
+      </div>
+    );
+  }
+
   if (step === 1) {
     return (
       <div className="manage-panel">
@@ -127,7 +169,7 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
     <div className="manage-panel">
       <div className="manage-panel-header">
         <h2>{editName ? `Edit: ${editName}` : `New ${CRAWLER_TYPES.find((c) => c.id === crawler)?.label} Collection`}</h2>
-        <button className="btn btn-sm" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-sm" onClick={handleCancel}>Cancel</button>
       </div>
 
       <div className="form-group">
@@ -177,7 +219,7 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
       {error && <div className="form-error">{error}</div>}
 
       <div className="form-actions">
-        <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-secondary" onClick={handleCancel}>Cancel</button>
         <button
           className="btn btn-primary"
           onClick={handleSubmit}

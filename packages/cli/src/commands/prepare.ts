@@ -9,6 +9,7 @@ import {
   ThemeEngine,
   LocalStorageBackend,
   CollectionEntry,
+  type FolderConfig,
   entities,
   entityTags,
   tags,
@@ -69,8 +70,20 @@ function makeResolveWikilink(colDb: ColDb, basePath: string): (target: string) =
   };
 }
 
+/** Serialize a FolderConfig to yml content (only non-default fields). */
+function serializeFolderConfig(config: FolderConfig): string {
+  const lines: string[] = [];
+  if (config.visible === false) lines.push("visible: false");
+  if (config.sort === "DESC") lines.push("sort: DESC");
+  if (config.hide && config.hide.length > 0) {
+    lines.push(`hide: [${config.hide.join(", ")}]`);
+  }
+  return lines.join("\n") + "\n";
+}
+
 /**
  * Write <folder-name>.yml config files for folders matching the theme's folderConfigs().
+ * Also writes root content.yml merging theme rootConfig with collection-level hide list.
  * Only writes when the file is missing or its content has changed.
  * Returns true if any file was written.
  */
@@ -79,35 +92,104 @@ async function writeFolderConfigFiles(
   crawlerType: string,
   storage: LocalStorageBackend,
   basePath: string,
+  collectionHide: string[] = [],
 ): Promise<boolean> {
   const configs = themeEngine.getFolderConfigs(crawlerType);
-  if (Object.keys(configs).length === 0) return false;
-
-  // Use listDirs so empty directories (e.g. assets/ with no files yet) are also covered
-  const allDirs = await storage.listDirs!(basePath);
   let wrote = false;
 
-  for (const dirPath of allDirs) {
-    const folderName = dirPath.split("/").pop()!;
-    if (!(folderName in configs)) continue;
+  if (Object.keys(configs).length > 0) {
+    // Use listDirs so empty directories (e.g. assets/ with no files yet) are also covered
+    const allDirs = await storage.listDirs!(basePath);
 
-    const config = configs[folderName];
-    const lines: string[] = [];
-    if (config.visible === false) lines.push("visible: false");
-    if (config.sort === "DESC") lines.push("sort: DESC");
-    const ymlContent = lines.join("\n") + "\n";
-    const ymlPath = `${dirPath}/${folderName}.yml`;
+    for (const dirPath of allDirs) {
+      const folderName = dirPath.split("/").pop()!;
+      if (!(folderName in configs)) continue;
 
-    // Skip if already up to date
-    try {
-      const existing = await storage.read(ymlPath);
-      if (existing === ymlContent) continue;
-    } catch { /* file doesn't exist yet */ }
+      const ymlContent = serializeFolderConfig(configs[folderName]);
+      const ymlPath = `${dirPath}/${folderName}.yml`;
 
-    await storage.write(ymlPath, ymlContent);
-    wrote = true;
+      // Skip if already up to date
+      try {
+        const existing = await storage.read(ymlPath);
+        if (existing === ymlContent) continue;
+      } catch { /* file doesn't exist yet */ }
+
+      await storage.write(ymlPath, ymlContent);
+      wrote = true;
+    }
   }
+
+  // Write root content.yml merging theme rootConfig with collection-level hide patterns
+  const themeRootConfig = themeEngine.getRootConfig(crawlerType);
+  const mergedHide = [
+    ...(themeRootConfig.hide ?? []),
+    ...collectionHide.filter((p) => !(themeRootConfig.hide ?? []).includes(p)),
+  ];
+  const rootConfig = { ...themeRootConfig, ...(mergedHide.length > 0 ? { hide: mergedHide } : {}) };
+  const hasRootConfig = Object.keys(rootConfig).length > 0;
+  if (hasRootConfig) {
+    const rootYmlContent = serializeFolderConfig(rootConfig);
+    const rootYmlPath = `${basePath}/content.yml`;
+    try {
+      const existing = await storage.read(rootYmlPath);
+      if (existing !== rootYmlContent) {
+        await storage.write(rootYmlPath, rootYmlContent);
+        wrote = true;
+      }
+    } catch {
+      await storage.write(rootYmlPath, rootYmlContent);
+      wrote = true;
+    }
+  }
+
   return wrote;
+}
+
+/** Write AGENTS.md and CLAUDE.md to the collection root (outside content/). Only writes when content has changed. */
+async function writeAgentFiles(
+  themeEngine: ThemeEngine,
+  col: CollectionEntry & { name: string },
+  storage: LocalStorageBackend,
+  log: Log,
+): Promise<void> {
+  const agentsContent = themeEngine.agentsMarkdown(col.crawler, {
+    title: col.title ?? col.name,
+    description: col.description,
+    config: col.config as Record<string, unknown>,
+  });
+
+  if (agentsContent === null) return;
+
+  const claudeContent =
+    "See [AGENTS.md](AGENTS.md) for full project context, architecture, schemas, conventions, and navigation guide.\n";
+
+  let changed = false;
+
+  const agentsPath = "AGENTS.md";
+  try {
+    const existing = await storage.read(agentsPath);
+    if (existing !== agentsContent) {
+      await storage.write(agentsPath, agentsContent);
+      changed = true;
+    }
+  } catch {
+    await storage.write(agentsPath, agentsContent);
+    changed = true;
+  }
+
+  const claudePath = "CLAUDE.md";
+  try {
+    const existing = await storage.read(claudePath);
+    if (existing !== claudeContent) {
+      await storage.write(claudePath, claudeContent);
+      changed = true;
+    }
+  } catch {
+    await storage.write(claudePath, claudeContent);
+    changed = true;
+  }
+
+  if (changed) log(`  AGENTS.md and CLAUDE.md updated`);
 }
 
 /**
@@ -224,9 +306,13 @@ export async function prepareCollection(
   const storage = new LocalStorageBackend(collectionDir);
   const basePath = "content";
 
-  // Step 1: Write folder yml files
-  const ymlUpdated = await writeFolderConfigFiles(themeEngine, col.crawler, storage, basePath);
+  // Step 1: Write folder yml files and root content.yml (incorporating collection-level hide)
+  const collectionHide = col.hide ?? [];
+  const ymlUpdated = await writeFolderConfigFiles(themeEngine, col.crawler, storage, basePath, collectionHide);
   if (ymlUpdated) log(`  Folder config files updated`);
+
+  // Step 1b: Always write AGENTS.md and CLAUDE.md (at collection root, outside content/)
+  await writeAgentFiles(themeEngine, col, storage, log);
 
   // Step 2: Sample check — skip if theme is not registered
   if (!themeEngine.has(col.crawler)) return;
@@ -239,7 +325,6 @@ export async function prepareCollection(
 
   const totalMismatches = titleMismatches + markdownMismatches;
   if (totalMismatches === 0) {
-    log(`  Up to date (${sampled} sample${sampled === 1 ? "" : "s"} checked)`);
     return;
   }
 

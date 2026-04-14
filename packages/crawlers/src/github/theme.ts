@@ -419,6 +419,36 @@ export class GitHubTheme implements Theme {
     };
   }
 
+  agentsMarkdown(options: { title: string; description?: string; config?: Record<string, unknown> }): string {
+    const { title, description, config } = options;
+    const owner = config?.owner as string | undefined;
+    const repo = config?.repo as string | undefined;
+    const repoRef = owner && repo ? ` **${owner}/${repo}**` : "";
+
+    const lines: string[] = [];
+    lines.push(`# ${title}`);
+    lines.push("");
+    if (description) {
+      // Use the user-provided description as-is
+      lines.push(description);
+    } else {
+      // Fall back to a generic description when none is set
+      lines.push(`This collection is synced from the GitHub repository${repoRef}.`);
+    }
+    lines.push("");
+    lines.push("## Entity Types");
+    lines.push("");
+    lines.push("### Issues (`issues/`)");
+    lines.push("GitHub Issues representing bugs, feature requests, and tasks. Each issue is stored as a Markdown file named `{number}-{slug}.md`. Files include frontmatter with state, labels, and assignees, the original description, and all comments.");
+    lines.push("");
+    lines.push("### Pull Requests (`pull-requests/`)");
+    lines.push("GitHub Pull Requests representing proposed code changes. Each PR is stored as a Markdown file named `{number}-{slug}.md`. Files include frontmatter with state, base/head branches, and reviewers, the description, review comments, and check run results.");
+    lines.push("");
+    lines.push("### Users (`users/`)");
+    lines.push("GitHub user profiles referenced by issues and pull requests. Each user is stored as `users/{username}.md`.");
+    return lines.join("\n") + "\n";
+  }
+
   private renderIssue(context: ThemeRenderContext): string {
     const { entity } = context;
     const d = entity.data;

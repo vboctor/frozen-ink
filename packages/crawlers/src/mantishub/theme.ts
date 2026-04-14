@@ -354,6 +354,36 @@ export class MantisHubTheme implements Theme {
     };
   }
 
+  agentsMarkdown(options: { title: string; description?: string; config?: Record<string, unknown> }): string {
+    const { title, description, config } = options;
+    const baseUrl = config?.baseUrl as string | undefined;
+    const hostRef = baseUrl ? ` at **${baseUrl}**` : "";
+
+    const lines: string[] = [];
+    lines.push(`# ${title}`);
+    lines.push("");
+    if (description) {
+      lines.push(description);
+    } else {
+      lines.push(`This collection is synced from a MantisHub instance${hostRef}.`);
+    }
+    lines.push("");
+    lines.push("## Entity Types");
+    lines.push("");
+    lines.push("### Issues (`issues/`)");
+    lines.push("Issues represent a feature request, a task, or a bug report. Each issue is stored as a Markdown file with frontmatter containing status, priority, severity, category, and reporter. Files include the full description, notes, and references to attachments.");
+    lines.push("");
+    lines.push("### Projects (`projects/`)");
+    lines.push("Projects are containers for issues and wiki pages. A set of users generally have visibility and contribute to a project. Each project is stored as `projects/{name}.md`.");
+    lines.push("");
+    lines.push("### Users (`users/`)");
+    lines.push("These are user profile pages and are references from issues and wiki pages where such users are referenced. Each user is stored as `users/{name}.md`.");
+    lines.push("");
+    lines.push("### Pages (`pages/`)");
+    lines.push("Pages are wiki pages associated with projects. Each page is stored as `pages/{name}.md`.");
+    return lines.join("\n") + "\n";
+  }
+
   getFilePath(context: ThemeRenderContext): string {
     const d = context.entity.data;
 
