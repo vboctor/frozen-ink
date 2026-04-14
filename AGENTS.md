@@ -48,11 +48,9 @@ packages/
     tui/                         Interactive TUI (Ink + React)
       index.tsx                  Entry point, renders the Ink app
       components/App.tsx         Main app shell with keyboard navigation
-      components/Dashboard.tsx   Status overview (collections + deployments)
-      components/CollectionList.tsx  Collection CRUD (enable/disable, rename, delete, edit title)
+      components/CollectionList.tsx  Collection CRUD (enable/disable, rename, delete, edit title, publish/unpublish)
       components/AddCollection.tsx   Step-by-step collection creation wizard
       components/SyncView.tsx    Sync with real-time progress
-      components/PublishView.tsx  Publish wizard (collection-scoped)
       components/ExportView.tsx  Export to markdown/HTML
       components/SettingsView.tsx Settings management (sync interval, concurrency, retries, log level)
       components/SearchView.tsx  Full-text search
@@ -128,7 +126,7 @@ The CLI includes an interactive TUI built with Ink (React for terminals). It pro
 | Collection CRUD | CollectionList + CollectionForm | CollectionList + AddCollection |
 | Enable/disable collections | Toggle in CollectionList | [t] key in CollectionList |
 | Sync with progress | SyncPanel + SyncProgress | SyncView with real-time output |
-| Publish wizard | PublishPanel | PublishView (collection-scoped) |
+| Publish/unpublish | PublishPanel | [p]/[u] keys in CollectionList |
 | Export markdown/HTML | ExportPanel | ExportView |
 | Settings (sync, logging) | SettingsPanel | SettingsView |
 | Publish status | CollectionList (Published column) | CollectionList (Published column) |
@@ -136,7 +134,7 @@ The CLI includes an interactive TUI built with Ink (React for terminals). It pro
 | Rename/delete collections | CollectionList actions | [r]/[x] keys in CollectionList |
 | Edit title | CollectionForm | [n] key in CollectionList |
 
-**Navigation**: Keyboard shortcuts `[d]`ashboard, `[c]`ollections, `[a]`dd, `[s]`ync, `[p]`ublish, `[e]`xport, `[f]`ind/search, `[v]` published, `[g]` settings. ESC goes back, `q` quits.
+**Navigation**: Keyboard shortcuts `[c]`ollections, `[s]`ync, `[f]`ind/search, `[g]` settings. Within Collections: `[p]`ublish, `[u]`npublish, `[s]`ync, `[e]`xport, `[m]`cp. ESC goes back, `q` quits.
 
 **Architecture**: The TUI uses Ink 7 with React 19 to render terminal UI components. Each screen is a standalone React component in `packages/cli/src/tui/components/`. The TUI reuses the same core logic as the CLI commands (e.g., `publishCollections()`, `unpublishCollection()`, `exportStaticSite()`).
 

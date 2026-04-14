@@ -8,6 +8,8 @@ import {
   getCollection,
   getCollectionDb,
   getCollectionDbPath,
+  getCollectionPublishState,
+  clearCollectionPublishState,
   getFrozenInkHome,
   updateCollection,
   removeCollection,
@@ -32,6 +34,8 @@ import { AddCollection } from "./AddCollection.js";
 import { ExportView } from "./ExportView.js";
 import { SearchView } from "./SearchView.js";
 import { McpConfigView } from "./McpConfigView.js";
+import { publishCollections, type PublishOptions } from "../../commands/publish.js";
+import { unpublishCollection } from "../../commands/unpublish.js";
 import type { Screen } from "./App.js";
 
 type Mode =
@@ -43,7 +47,10 @@ type Mode =
   | "mcp"
   | "confirm-delete"
   | "confirm-full-sync"
-  | "syncing";
+  | "syncing"
+  | "publishing"
+  | "confirm-unpublish"
+  | "unpublishing";
 
 // Fixed-width columns
 const W_CHECK = 6;
@@ -51,7 +58,7 @@ const W_NAME = 20;
 const W_TITLE = 22;
 const W_TYPE = 12;
 const W_ENTITIES = 10;
-const W_PUBLISHED = 10;
+const W_PUBLISHED = 14;
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -473,6 +480,8 @@ export function CollectionList({
   const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
   const [syncElapsedMs, setSyncElapsedMs] = useState(0);
   const [editingCollection, setEditingCollection] = useState("");
+  const [publishProgress, setPublishProgress] = useState<string[]>([]);
+  const [publishError, setPublishError] = useState("");
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
@@ -662,6 +671,47 @@ export function CollectionList({
       if (input === "e" && current) { setEditingCollection(current.name); setMode("export"); }
       if (input === "f" && current) { setEditingCollection(current.name); setMode("search"); }
       if (input === "m" && current) { setEditingCollection(current.name); setMode("mcp"); }
+      if (input === "p" && current) {
+        setEditingCollection(current.name);
+        setPublishProgress([]);
+        setPublishError("");
+        setMode("publishing");
+        publishCollections(
+          { collectionName: current.name, forcePublic: true },
+          (step, detail) => setPublishProgress((p) => [...p, `[${step}] ${detail}`]),
+        ).then(() => {
+          setMessage(`Published "${current.name}"`);
+          setMode("list");
+          refresh();
+        }).catch((err) => {
+          setPublishError(err instanceof Error ? err.message : String(err));
+        });
+      }
+      if (input === "u" && current?.publish) {
+        setMode("confirm-unpublish");
+      }
+    } else if (mode === "confirm-unpublish") {
+      if (input === "y" && current) {
+        const publishState = getCollectionPublishState(current.name);
+        if (publishState) {
+          setMode("unpublishing");
+          setPublishProgress([]);
+          setPublishError("");
+          unpublishCollection(current.name, publishState, (step, detail) => {
+            setPublishProgress((p) => [...p, `[${step}] ${detail}`]);
+          }).then(() => {
+            setMessage(`Unpublished "${current.name}". Local data preserved.`);
+            setMode("list");
+            refresh();
+          }).catch((err) => {
+            setPublishError(err instanceof Error ? err.message : String(err));
+            setMode("list");
+          });
+        }
+      } else {
+        setMessage("");
+        setMode("list");
+      }
     } else if (mode === "confirm-full-sync") {
       if (input === "y" && current) {
         startSync(undefined, "full");
@@ -720,6 +770,27 @@ export function CollectionList({
     return <McpConfigView collectionName={editingCollection} onDone={() => { setMode("list"); refresh(); }} />;
   }
 
+  if (mode === "publishing" || mode === "unpublishing") {
+    const label = mode === "publishing" ? "Publishing" : "Unpublishing";
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        <Text bold color="yellow">{label}...</Text>
+        <Box flexDirection="column" marginLeft={1} marginTop={1}>
+          {publishProgress.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
+          {publishError && <Text color="red">Error: {publishError}</Text>}
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === "confirm-unpublish") {
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        <Text color="red">Unpublish "{current?.name}"? This removes the Cloudflare worker, D1 database, and R2 bucket. Local data is preserved. (y/N)</Text>
+      </Box>
+    );
+  }
+
   if (mode === "syncing") {
     return (
       <Box flexDirection="column" paddingY={1}>
@@ -766,11 +837,11 @@ export function CollectionList({
 
       {/* Table rows */}
       <Box flexDirection="column" marginLeft={1}>
-        {collections.map((col: { name: string; title?: string; crawler: string; enabled: boolean; publish?: unknown }, i: number) => {
+        {collections.map((col: { name: string; title?: string; crawler: string; enabled: boolean; publish?: { publishedAt: string } }, i: number) => {
           const stats = getRowStats(col.name);
           const selected = i === cursor;
           const checkbox = col.enabled ? "[x] " : "[ ] ";
-          const published = col.publish ? "yes" : "";
+          const publishedLabel = col.publish ? formatRelative(new Date(col.publish.publishedAt)) : "—";
           return (
             <Box key={col.name}>
               <Text color={selected ? "cyan" : undefined}>{selected ? "❯ " : "  "}</Text>
@@ -779,7 +850,7 @@ export function CollectionList({
               <Text dimColor>{pad(col.title || "", W_TITLE)}</Text>
               <Text dimColor>{pad(col.crawler, W_TYPE)}</Text>
               <Text color={!col.enabled ? "gray" : undefined}>{pad(stats.entityCount, W_ENTITIES)}</Text>
-              <Text color={published ? "green" : undefined}>{pad(published, W_PUBLISHED)}</Text>
+              <Text color={col.publish ? "green" : "gray"}>{pad(publishedLabel, W_PUBLISHED)}</Text>
               <Text dimColor>{stats.lastSync}</Text>
             </Box>
           );
@@ -842,6 +913,8 @@ export function CollectionList({
       <Box marginTop={1} gap={2}>
         <Text dimColor>[Enter] Edit</Text>
         <Text dimColor>[s] Sync</Text>
+        <Text dimColor>[p] Publish</Text>
+        {current?.publish && <Text dimColor>[u] Unpublish</Text>}
         <Text dimColor>[f] Search</Text>
         <Text dimColor>[e] Export</Text>
         <Text dimColor>[m] MCP</Text>

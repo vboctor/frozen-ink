@@ -78,14 +78,9 @@ The TUI provides keyboard-driven access to all features:
 
 | Key | Screen |
 |-----|--------|
-| `d` | Dashboard (overview) |
-| `c` | Collections (manage) |
-| `a` | Add collection |
-| `s` | Sync |
-| `p` | Publish to Cloudflare |
-| `e` | Export |
+| `c` | Collections (manage, publish, sync, export) |
+| `s` | Sync all |
 | `f` | Search |
-| `v` | Published collections |
 | `g` | Settings |
 | `ESC` | Go back |
 | `q` | Quit |
