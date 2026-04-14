@@ -507,18 +507,23 @@ export function CollectionList({
     setPublishStartTime(Date.now());
     setMode("publishing");
     let lastStep = "";
+    let lastDetail = "";
+    const addLogEntry = (entry: string) => {
+      setPublishLog((log) => log[log.length - 1] === entry ? log : [...log, entry]);
+    };
     publishCollections(
       { collectionName: name, password, removePassword, forcePublic },
       (step, detail) => {
         if (step !== lastStep && lastStep) {
-          setPublishLog((log) => [...log, `[${lastStep}] done`]);
+          addLogEntry(`[${lastStep}] ${lastDetail} ✓`);
         }
         lastStep = step;
+        lastDetail = detail;
         setPublishLastStep(step);
         setPublishStatus(detail);
       },
     ).then(() => {
-      if (lastStep) setPublishLog((log) => [...log, `[${lastStep}] done`]);
+      if (lastStep) addLogEntry(`[${lastStep}] ${lastDetail} ✓`);
       setPublishStatus("");
       setPublishStartTime(null);
       setMessage(`Published "${name}"`);
@@ -758,15 +763,20 @@ export function CollectionList({
         setPublishError("");
         setPublishStartTime(Date.now());
         let lastStep = "";
+        let lastDetail = "";
+        const addLogEntry = (entry: string) => {
+          setPublishLog((log) => log[log.length - 1] === entry ? log : [...log, entry]);
+        };
         unpublishCollection(editingCollection, (step, detail) => {
           if (step !== lastStep && lastStep) {
-            setPublishLog((log) => [...log, `[${lastStep}] done`]);
+            addLogEntry(`[${lastStep}] ${lastDetail} ✓`);
           }
           lastStep = step;
+          lastDetail = detail;
           setPublishLastStep(step);
           setPublishStatus(detail);
         }).then(() => {
-          if (lastStep) setPublishLog((log) => [...log, `[${lastStep}] done`]);
+          if (lastStep) addLogEntry(`[${lastStep}] ${lastDetail} ✓`);
           setPublishStatus("");
           setPublishStartTime(null);
           setMessage(`Unpublished "${editingCollection}". Local data preserved.`);

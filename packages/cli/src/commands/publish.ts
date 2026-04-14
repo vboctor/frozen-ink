@@ -60,6 +60,25 @@ function getMimeType(filePath: string): string {
   return MIME_TYPES[extname(filePath).toLowerCase()] || "application/octet-stream";
 }
 
+async function hashDbFiles(dbPath: string): Promise<string> {
+  const files = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`];
+  const chunks: Uint8Array[] = [];
+  for (const file of files) {
+    if (existsSync(file)) chunks.push(readFileSync(file));
+  }
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const combined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  const hashBuf = await crypto.subtle.digest("SHA-256", combined);
+  return Array.from(new Uint8Array(hashBuf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 async function runConcurrent<T>(
   items: T[],
   concurrency: number,
@@ -147,7 +166,9 @@ export async function publishCollections(
     executeD1Command,
     createR2Bucket,
     putR2Object,
-    deleteR2Object,
+    putR2String,
+    getR2String,
+    deleteR2Objects,
     listR2Objects,
     deployWorker,
     generateWranglerToml,
@@ -289,6 +310,7 @@ export async function publishCollections(
     for (const colName of collectionNames) {
       const collectionDir = join(home, "collections", colName);
       for (const file of collectFiles(join(collectionDir, "content"))) {
+        if (file.relativePath.endsWith(".md") || file.relativePath.endsWith(".yml")) continue;
         uploads.push({ r2Key: `${colName}/content/${file.relativePath}`, fullPath: file.fullPath });
       }
     }
@@ -351,10 +373,10 @@ export async function publishCollections(
       onProgress("r2-cleanup", "Checking for stale R2 files...");
       try {
         const remoteKeys = await listR2Objects(r2BucketName);
-        const staleKeys = remoteKeys.filter((key) => !allKeys.has(key));
+        const staleKeys = remoteKeys.filter((key) => !allKeys.has(key) && !key.endsWith("/db-digest"));
         if (staleKeys.length > 0) {
           onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
-          await runConcurrent(staleKeys, 3, async (key) => deleteR2Object(r2BucketName, key));
+          await deleteR2Objects(r2BucketName, staleKeys);
           deletedCount = staleKeys.length;
         }
       } catch {
@@ -371,8 +393,23 @@ export async function publishCollections(
 
   // --- Phase 3: D1 rebuild (destructive — done last to minimize downtime) ---
 
+  let dbDigest = "";
   if (!workerOnly) {
-    onProgress("export", "Building database export...");
+    const dbPath = getCollectionDbPath(collectionName);
+    dbDigest = await hashDbFiles(dbPath);
+
+    let remoteDigest: string | null = null;
+    if (isUpdate) {
+      try {
+        remoteDigest = await getR2String(r2BucketName, `${collectionName}/db-digest`);
+      } catch { /* ignore — treat as no digest */ }
+    }
+    const skipD1 = isUpdate && remoteDigest === dbDigest;
+
+    if (skipD1) {
+      onProgress("d1-build", `Database unchanged (digest match) — skipping D1 rebuild`);
+    } else {
+    onProgress("d1-build", "Building D1 payload...");
     const schemaSql: string[] = [];
 
     schemaSql.push("DROP TABLE IF EXISTS entities_fts;");
@@ -475,7 +512,7 @@ export async function publishCollections(
         schemaSql.push(`INSERT INTO assets (collection_name, entity_id, filename, mime_type, storage_path) VALUES ('${escapeSQL(colName)}', ${remoteId}, '${escapeSQL(att.filename)}', '${escapeSQL(att.mimeType)}', '${escapeSQL(att.storagePath)}');`);
       }
 
-      onProgress("export", `Exported "${colName}": ${allEntities.length} entities`);
+      onProgress("d1-build", `Built "${colName}": ${allEntities.length} entities`);
     }
 
     onProgress("d1-upload", "Uploading schema and data to D1...");
@@ -546,6 +583,8 @@ export async function publishCollections(
         cleanupTempFile(batchFile);
       }
     }
+    await putR2String(r2BucketName, `${collectionName}/db-digest`, dbDigest);
+    } // else: D1 rebuild
   }
 
   if (!workerUrl) {
@@ -560,6 +599,7 @@ export async function publishCollections(
     mcpUrl,
     password: { protected: passwordProtected, hash: passwordHash || undefined },
     publishedAt: new Date().toISOString(),
+    ...(dbDigest ? { dbDigest } : {}),
   });
 
   onProgress("done", "Publish completed");

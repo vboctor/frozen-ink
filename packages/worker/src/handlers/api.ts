@@ -12,9 +12,11 @@ import {
   getBacklinks,
   getOutgoingLinks,
 } from "../db/client";
+import type { Entity } from "../db/client";
 import { searchEntities } from "../db/search";
 import { getR2Object, getMimeType } from "../storage/r2";
 import { ThemeEngine } from "@frozenink/core/theme";
+import type { ThemeRenderContext } from "@frozenink/core/theme";
 import { GitHubTheme, ObsidianTheme, GitTheme, MantisHubTheme } from "@frozenink/crawlers/themes";
 
 const themeEngine = new ThemeEngine();
@@ -22,6 +24,45 @@ themeEngine.register(new GitHubTheme());
 themeEngine.register(new ObsidianTheme());
 themeEngine.register(new GitTheme());
 themeEngine.register(new MantisHubTheme());
+
+export async function buildRenderContext(
+  db: D1Database,
+  collectionName: string,
+  crawlerType: string,
+  entity: Entity,
+): Promise<ThemeRenderContext> {
+  const [tags, allEntities] = await Promise.all([
+    getEntityTags(db, collectionName, entity.id),
+    db.prepare("SELECT external_id, markdown_path FROM entities WHERE collection_name = ?")
+      .bind(collectionName)
+      .all<{ external_id: string; markdown_path: string | null }>()
+      .then((r) => r.results ?? []),
+  ]);
+
+  const entityPathMap = new Map<string, string>();
+  for (const row of allEntities) {
+    if (!row.markdown_path) continue;
+    const prefix = "content/";
+    const rel = row.markdown_path.startsWith(prefix) ? row.markdown_path.slice(prefix.length) : row.markdown_path;
+    entityPathMap.set(row.external_id, rel.endsWith(".md") ? rel.slice(0, -3) : rel);
+  }
+
+  const data = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
+
+  return {
+    entity: {
+      externalId: entity.external_id,
+      entityType: entity.entity_type,
+      title: entity.title,
+      data,
+      url: entity.url ?? undefined,
+      tags,
+    },
+    collectionName,
+    crawlerType,
+    lookupEntityPath: (externalId) => entityPathMap.get(externalId),
+  };
+}
 
 const api = new Hono<{ Bindings: Env }>();
 
@@ -60,38 +101,8 @@ api.get("/api/collections/:name/html/*", async (c) => {
   const entity = await getEntityByMarkdownPath(c.env.DB, name, decoded);
   if (!entity) return c.text("Entity not found", 404);
 
-  const [tags, allEntities] = await Promise.all([
-    getEntityTags(c.env.DB, name, entity.id),
-    c.env.DB.prepare("SELECT external_id, markdown_path FROM entities WHERE collection_name = ?")
-      .bind(name)
-      .all<{ external_id: string; markdown_path: string | null }>()
-      .then((r) => r.results ?? []),
-  ]);
-
-  // Build synchronous externalId → relative path map for cross-reference resolution
-  const entityPathMap = new Map<string, string>();
-  for (const row of allEntities) {
-    if (!row.markdown_path) continue;
-    const prefix = "content/";
-    const rel = row.markdown_path.startsWith(prefix) ? row.markdown_path.slice(prefix.length) : row.markdown_path;
-    entityPathMap.set(row.external_id, rel.endsWith(".md") ? rel.slice(0, -3) : rel);
-  }
-
-  const data = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
-
-  const html = themeEngine.renderHtml({
-    entity: {
-      externalId: entity.external_id,
-      entityType: entity.entity_type,
-      title: entity.title,
-      data,
-      url: entity.url ?? undefined,
-      tags,
-    },
-    collectionName: name,
-    crawlerType: col.crawler_type,
-    lookupEntityPath: (externalId) => entityPathMap.get(externalId),
-  });
+  const ctx = await buildRenderContext(c.env.DB, name, col.crawler_type, entity);
+  const html = themeEngine.renderHtml(ctx);
   if (!html) return c.text("HTML rendering failed", 500);
 
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
@@ -100,66 +111,59 @@ api.get("/api/collections/:name/html/*", async (c) => {
 // GET /api/collections/:name/tree
 api.get("/api/collections/:name/tree", async (c) => {
   const name = c.req.param("name");
-  const prefix = `${name}/content/`;
+  const col = await getCollection(c.env.DB, name);
 
-  // Fetch root config (content/content.yml) for collection-root-level settings (e.g. hide list)
-  const rootConfigObj = await c.env.BUCKET.get(`${prefix}content.yml`);
-  const rootConfig = rootConfigObj ? parseFolderConfig(await rootConfigObj.text()) : {};
-  const rootHide = rootConfig.hide ?? [];
+  const { results } = await c.env.DB.prepare(
+    "SELECT markdown_path, title FROM entities WHERE collection_name = ? AND markdown_path IS NOT NULL",
+  ).bind(name).all<{ markdown_path: string; title: string }>();
 
-  const listed = await c.env.BUCKET.list({ prefix });
-  const mdPaths = listed.objects
-    .map((o) => o.key.slice(prefix.length))
-    .filter((p) => p.endsWith(".md"))
-    // Apply root-level hide patterns to files at the root (no subdirectory)
-    .filter((p) => {
-      const parts = p.split("/");
-      if (parts.length === 1 && rootHide.length > 0) {
-        return !matchesHidePattern(rootHide, parts[0]);
-      }
-      return true;
-    });
-
-  // Fetch entity titles from D1 to display instead of raw filenames
   const titleByPath = new Map<string, string>();
-  try {
-    const { results } = await c.env.DB.prepare(
-      "SELECT markdown_path, title FROM entities WHERE collection_name = ? AND markdown_path IS NOT NULL AND title IS NOT NULL",
-    ).bind(name).all<{ markdown_path: string; title: string }>();
-    const mdPrefix = "content/";
-    for (const row of results ?? []) {
-      const rel = row.markdown_path.startsWith(mdPrefix)
-        ? row.markdown_path.slice(mdPrefix.length)
+  const contentPrefix = "content/";
+  const mdPaths = (results ?? [])
+    .map((row) => {
+      const rel = row.markdown_path.startsWith(contentPrefix)
+        ? row.markdown_path.slice(contentPrefix.length)
         : row.markdown_path;
-      titleByPath.set(rel, row.title);
-    }
-  } catch {
-    // If title lookup fails, fall back to filenames
-  }
+      if (row.title) titleByPath.set(rel, row.title);
+      return rel;
+    })
+    .filter((p) => p.endsWith(".md"));
 
-  // Derive unique folder paths from md paths and fetch each folder's yml config
-  // directly by key — avoids relying on R2 list pagination (yml files sort
-  // alphabetically after digit-prefixed md files and can fall beyond 1000-object limit).
-  const folderPaths = new Set<string>();
-  for (const mdPath of mdPaths) {
-    const parts = mdPath.split("/");
-    for (let i = 1; i < parts.length; i++) {
-      folderPaths.add(parts.slice(0, i).join("/"));
-    }
-  }
-
+  // Derive folder configs from the theme instead of R2-stored yml files
   const folderConfigs = new Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] }>();
-  await Promise.all(
-    [...folderPaths].map(async (folderPath) => {
-      const folderName = folderPath.split("/").pop()!;
-      const obj = await c.env.BUCKET.get(`${prefix}${folderPath}/${folderName}.yml`);
-      if (!obj) return;
-      folderConfigs.set(folderPath, parseFolderConfig(await obj.text()));
-    }),
-  );
+  const rootConfig: { hide?: string[] } = {};
+  if (col?.crawler_type) {
+    const themeFolderConfigs = themeEngine.getFolderConfigs(col.crawler_type);
+    const themeRootConfig = themeEngine.getRootConfig(col.crawler_type);
+    if (themeRootConfig.hide) rootConfig.hide = themeRootConfig.hide;
 
-  // Build tree from paths with folder configs applied
-  const tree = buildTreeFromPaths(mdPaths, titleByPath, folderConfigs);
+    // Map folder-name-based configs to actual folder paths found in the entity paths
+    const folderPaths = new Set<string>();
+    for (const mdPath of mdPaths) {
+      const parts = mdPath.split("/");
+      for (let i = 1; i < parts.length; i++) {
+        folderPaths.add(parts.slice(0, i).join("/"));
+      }
+    }
+    for (const folderPath of folderPaths) {
+      const folderName = folderPath.split("/").pop()!;
+      if (themeFolderConfigs[folderName]) {
+        folderConfigs.set(folderPath, themeFolderConfigs[folderName]);
+      }
+    }
+  }
+
+  // Apply root-level hide patterns to files at the root (no subdirectory)
+  const rootHide = rootConfig.hide ?? [];
+  const filteredPaths = mdPaths.filter((p) => {
+    const parts = p.split("/");
+    if (parts.length === 1 && rootHide.length > 0) {
+      return !matchesHidePattern(rootHide, parts[0]);
+    }
+    return true;
+  });
+
+  const tree = buildTreeFromPaths(filteredPaths, titleByPath, folderConfigs);
   return c.json(tree);
 });
 
@@ -175,14 +179,19 @@ api.get("/api/collections/:name/default-file", async (c) => {
 // GET /api/collections/:name/markdown/*
 api.get("/api/collections/:name/markdown/*", async (c) => {
   const name = c.req.param("name");
+  const col = await getCollection(c.env.DB, name);
+  if (!col?.crawler_type) return c.text("Collection not found", 404);
+
   const filePath = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/markdown/`, "");
   const decoded = decodeURIComponent(filePath);
 
-  const r2Key = `${name}/content/${decoded}`;
-  const obj = await getR2Object(c.env.BUCKET, r2Key);
-  if (!obj) return c.text("File not found", 404);
+  const entity = await getEntityByMarkdownPath(c.env.DB, name, decoded);
+  if (!entity) return c.text("File not found", 404);
 
-  return new Response(obj.body, {
+  const ctx = await buildRenderContext(c.env.DB, name, col.crawler_type, entity);
+  const markdown = themeEngine.render(ctx);
+
+  return new Response(markdown, {
     headers: { "Content-Type": "text/markdown; charset=utf-8" },
   });
 });
@@ -327,29 +336,6 @@ function matchesHidePattern(patterns: string[], filename: string): boolean {
     );
     return re.test(filename);
   });
-}
-
-/** Parse a minimal folder yml (visible/sort/hide). Works without js-yaml in the Worker runtime. */
-function parseFolderConfig(content: string): { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] } {
-  const config: { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] } = {};
-  for (const line of content.split("\n")) {
-    const m = line.match(/^(\w+):\s*(.+)$/);
-    if (!m) continue;
-    const [, key, val] = m;
-    if (key === "visible") config.visible = val.trim() !== "false";
-    if (key === "sort") config.sort = val.trim() === "DESC" ? "DESC" : "ASC";
-    if (key === "hide") {
-      // Parse inline YAML array: [item1, item2] or ["item1", "item2"]
-      const arrayMatch = val.trim().match(/^\[(.+)\]$/);
-      if (arrayMatch) {
-        config.hide = arrayMatch[1]
-          .split(",")
-          .map((s) => s.trim().replace(/^["']|["']$/g, ""))
-          .filter(Boolean);
-      }
-    }
-  }
-  return config;
 }
 
 // Helper to build tree from flat file paths, honoring folder yml configs

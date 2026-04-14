@@ -225,6 +225,37 @@ export async function putR2Object(
   }
 }
 
+export async function putR2String(
+  bucket: string,
+  key: string,
+  content: string,
+  contentType: string = "text/plain",
+): Promise<void> {
+  const { apiToken, accountId } = await getCredentials();
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
+  const res = await fetchWithRetry(url, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": contentType },
+    body: content,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`R2 upload failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
+  }
+}
+
+export async function getR2String(bucket: string, key: string): Promise<string | null> {
+  const { apiToken, accountId } = await getCredentials();
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
+  const res = await fetchWithRetry(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) return null;
+  return res.text();
+}
+
 export async function deleteR2Object(bucket: string, key: string): Promise<void> {
   const { apiToken, accountId } = await getCredentials();
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
@@ -232,6 +263,28 @@ export async function deleteR2Object(bucket: string, key: string): Promise<void>
     method: "DELETE",
     headers: { Authorization: `Bearer ${apiToken}` },
   });
+}
+
+export async function deleteR2Objects(bucket: string, keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  const { apiToken, accountId } = await getCredentials();
+  const BATCH_SIZE = 1000;
+  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+    const batch = keys.slice(i, i + BATCH_SIZE);
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects`;
+    const res = await fetchWithRetry(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ keys: batch }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`R2 batch delete failed: ${res.status} ${text.slice(0, 200)}`);
+    }
+  }
 }
 
 export async function listR2Objects(bucket: string): Promise<string[]> {

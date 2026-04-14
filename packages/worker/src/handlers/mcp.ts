@@ -1,12 +1,22 @@
 import type { Env } from "../types";
 import {
   getCollections,
+  getCollection,
   getEntityByExternalId,
   getEntityTags,
   getEntityCount,
 } from "../db/client";
 import { searchEntities } from "../db/search";
 import { getR2Object } from "../storage/r2";
+import { ThemeEngine } from "@frozenink/core/theme";
+import { GitHubTheme, ObsidianTheme, GitTheme, MantisHubTheme } from "@frozenink/crawlers/themes";
+import { buildRenderContext } from "./api";
+
+const themeEngine = new ThemeEngine();
+themeEngine.register(new GitHubTheme());
+themeEngine.register(new ObsidianTheme());
+themeEngine.register(new GitTheme());
+themeEngine.register(new MantisHubTheme());
 
 /**
  * Handle MCP requests using JSON-RPC over HTTP.
@@ -160,14 +170,16 @@ async function callTool(
   }
 
   if (name === "entity_get_data") {
-    const entity = await getEntityByExternalId(env.DB, args.collection as string, args.externalId as string);
+    const collectionName = args.collection as string;
+    const entity = await getEntityByExternalId(env.DB, collectionName, args.externalId as string);
     if (!entity) return [{ type: "text", text: JSON.stringify({ error: "Entity not found" }) }];
 
-    const tags = await getEntityTags(env.DB, args.collection as string, entity.id);
+    const col = await getCollection(env.DB, collectionName);
+    const tags = await getEntityTags(env.DB, collectionName, entity.id);
     let markdown: string | null = null;
-    if (entity.markdown_path) {
-      const obj = await getR2Object(env.BUCKET, `${args.collection}/${entity.markdown_path}`);
-      if (obj) markdown = await new Response(obj.body).text();
+    if (entity.markdown_path && col?.crawler_type) {
+      const ctx = await buildRenderContext(env.DB, collectionName, col.crawler_type, entity);
+      markdown = themeEngine.render(ctx);
     }
     return [{
       type: "text",
@@ -180,17 +192,19 @@ async function callTool(
   }
 
   if (name === "entity_get_markdown") {
-    const entity = await getEntityByExternalId(env.DB, args.collection as string, args.externalId as string);
+    const collectionName = args.collection as string;
+    const entity = await getEntityByExternalId(env.DB, collectionName, args.externalId as string);
     if (!entity?.markdown_path) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
 
-    const obj = await getR2Object(env.BUCKET, `${args.collection}/${entity.markdown_path}`);
-    if (!obj) return [{ type: "text", text: JSON.stringify({ error: "Markdown not found" }) }];
+    const col = await getCollection(env.DB, collectionName);
+    if (!col?.crawler_type) return [{ type: "text", text: JSON.stringify({ error: "Collection not found" }) }];
 
-    const md = await new Response(obj.body).text();
+    const ctx = await buildRenderContext(env.DB, collectionName, col.crawler_type, entity);
+    const md = themeEngine.render(ctx);
     return [{
       type: "text",
       text: JSON.stringify({
-        collection: args.collection, externalId: entity.external_id,
+        collection: collectionName, externalId: entity.external_id,
         title: entity.title, markdownPath: entity.markdown_path, markdown: md,
         updatedAt: entity.updated_at,
       }),

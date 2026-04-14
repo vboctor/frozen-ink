@@ -20,6 +20,7 @@ const publishStateSchema = z.object({
     hash: z.string().optional(),
   }).optional(),
   publishedAt: z.string(),
+  dbDigest: z.string().optional(),
 });
 
 const collectionEntrySchema = z.object({
