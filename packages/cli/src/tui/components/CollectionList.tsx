@@ -871,15 +871,20 @@ export function CollectionList({
   }
 
   if (mode === "publish-password") {
-    const isUpdate = !!getCollectionPublishState(editingCollection);
-    const hint = isUpdate
-      ? "Enter a new password, or leave blank to keep the current setting."
-      : "Enter a password to protect access, or leave blank for public.";
+    const existingState = getCollectionPublishState(editingCollection);
+    const isProtected = !!existingState?.password?.protected;
     return (
       <Box flexDirection="column" paddingY={1}>
         <Text bold>Publish: {editingCollection}</Text>
         <Box marginTop={1} flexDirection="column">
-          <Text dimColor>{hint}</Text>
+          {existingState ? (
+            <>
+              <Text dimColor>Currently: {isProtected ? "password protected" : "public (no password)"}</Text>
+              <Text dimColor>Leave blank to keep current setting, or enter a new password.</Text>
+            </>
+          ) : (
+            <Text dimColor>Enter a password to protect access, or leave blank for public.</Text>
+          )}
           <Box marginTop={1}>
             <TextInput label="Password" value={inputValue} onChange={setInputValue} onSubmit={handlePublishPasswordSubmit} mask />
           </Box>
