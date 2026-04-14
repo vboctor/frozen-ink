@@ -23,6 +23,7 @@ import {
 const __moduleDir = getModuleDir(import.meta.url);
 import { eq } from "drizzle-orm";
 import { assertInitialPublishConfirmation } from "./publish-policy";
+import { createGenerateThemeEngine } from "./generate";
 
 function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 8);
@@ -178,7 +179,8 @@ export async function publishCollections(
 
   await checkWranglerAuth();
 
-  const { collectionName, workerOnly = false, removePassword = false, forcePublic = false } = options;
+  const { collectionName, removePassword = false, forcePublic = false } = options;
+  let { workerOnly = false } = options;
   const workerName = collectionName;
   const password = options.password?.trim();
   if (password && removePassword) {
@@ -196,6 +198,12 @@ export async function publishCollections(
 
   const existingPublish = getCollectionPublishState(collectionName);
   const isUpdate = !!existingPublish;
+
+  // Password-only changes on existing deployments only need a worker redeploy
+  if (isUpdate && !workerOnly && (password || removePassword)) {
+    workerOnly = true;
+    onProgress("info", "Password change — deploying worker only");
+  }
 
   if (workerOnly && !existingPublish) {
     throw new Error(`Collection "${collectionName}" has not been published. --worker-only only works for published collections.`);
@@ -455,8 +463,14 @@ export async function publishCollections(
       schemaSql.push(`INSERT INTO r2_manifest (key, size) VALUES ('${escapeSQL(key)}', ${size});`);
     }
 
-    let entityIdOffset = 0;
+    const themeEngine = createGenerateThemeEngine();
     const MAX_DATA_LEN = 50000;
+    const MAX_FTS_CONTENT = 8000;
+
+    // FTS table created alongside other tables, populated inline with entities
+    schemaSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(collection_name UNINDEXED, entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
+
+    let entityIdOffset = 0;
 
     for (const colName of collectionNames) {
       const col = getCollection(colName)!;
@@ -469,6 +483,30 @@ export async function publishCollections(
       const allEntities = colDb.select().from(entities).all();
       const entityIdMap = new Map<number, number>();
 
+      // Pre-build tag lookup and per-entity tag names for FTS
+      const tagNameCache: Record<number, string> = {};
+      const entityTagMap = new Map<number, string[]>();
+      for (const et of colDb.select().from(entityTags).all()) {
+        let tagName = tagNameCache[et.tagId];
+        if (!tagName) {
+          const [tagRow] = colDb.select().from(tags).where(eq(tags.id, et.tagId)).all();
+          tagName = tagRow?.name ?? `tag_${et.tagId}`;
+          tagNameCache[et.tagId] = tagName;
+        }
+        const existing = entityTagMap.get(et.entityId) ?? [];
+        existing.push(tagName);
+        entityTagMap.set(et.entityId, existing);
+      }
+
+      // Build entity path lookup for theme cross-reference resolution
+      const entityPathMap = new Map<string, string>();
+      for (const e of allEntities) {
+        if (!e.markdownPath) continue;
+        const prefix = "content/";
+        const rel = e.markdownPath.startsWith(prefix) ? e.markdownPath.slice(prefix.length) : e.markdownPath;
+        entityPathMap.set(e.externalId, rel.endsWith(".md") ? rel.slice(0, -3) : rel);
+      }
+
       for (const entity of allEntities) {
         entityIdOffset++;
         entityIdMap.set(entity.id, entityIdOffset);
@@ -476,27 +514,46 @@ export async function publishCollections(
         if (data.length > MAX_DATA_LEN) data = data.slice(0, MAX_DATA_LEN);
 
         schemaSql.push(`INSERT INTO entities (id, collection_name, external_id, entity_type, title, data, markdown_path, url, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(colName)}', '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.markdownPath ? `'${escapeSQL(entity.markdownPath)}'` : "NULL"}, ${entity.url ? `'${escapeSQL(entity.url)}'` : "NULL"}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "NULL"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "NULL"});`);
+
+        // Generate FTS content from theme engine (same as worker on-demand rendering)
+        const entityTags_ = entityTagMap.get(entity.id) ?? [];
+        let ftsContent = "";
+        if (entity.markdownPath && themeEngine.has(col.crawler)) {
+          try {
+            const parsedData = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
+            ftsContent = themeEngine.render({
+              entity: {
+                externalId: entity.externalId,
+                entityType: entity.entityType,
+                title: entity.title,
+                data: parsedData,
+                url: entity.url ?? undefined,
+                tags: entityTags_,
+              },
+              collectionName: colName,
+              crawlerType: col.crawler,
+              lookupEntityPath: (id) => entityPathMap.get(id),
+            });
+          } catch { /* fall back to empty content */ }
+        }
+        if (ftsContent.length > MAX_FTS_CONTENT) ftsContent = ftsContent.slice(0, MAX_FTS_CONTENT);
+
+        schemaSql.push(`INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES ('${escapeSQL(colName)}', ${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(ftsContent)}', '${escapeSQL(entityTags_.join(" "))}');`);
       }
 
-      const tagNameCache: Record<number, string> = {};
+      // Write entity_tags and tags using the pre-built lookup
       const remoteTagNameToId: Record<string, number> = {};
       let remoteTagIdCounter = 0;
       for (const et of colDb.select().from(entityTags).all()) {
         const remoteId = entityIdMap.get(et.entityId);
         if (!remoteId) continue;
-        let tagName = tagNameCache[et.tagId];
-        if (!tagName) {
-          const [tagRow] = colDb.select().from(tags).where(eq(tags.id, et.tagId)).all();
-          tagName = tagRow?.name ?? `tag_${et.tagId}`;
-          tagNameCache[et.tagId] = tagName;
-        }
+        const tagName = tagNameCache[et.tagId];
         if (!remoteTagNameToId[tagName]) {
           remoteTagIdCounter++;
           remoteTagNameToId[tagName] = remoteTagIdCounter;
           schemaSql.push(`INSERT INTO tags (id, name) VALUES (${remoteTagIdCounter}, '${escapeSQL(tagName)}');`);
         }
-        const remoteTagId = remoteTagNameToId[tagName];
-        schemaSql.push(`INSERT INTO entity_tags (collection_name, entity_id, tag_id) VALUES ('${escapeSQL(colName)}', ${remoteId}, ${remoteTagId});`);
+        schemaSql.push(`INSERT INTO entity_tags (collection_name, entity_id, tag_id) VALUES ('${escapeSQL(colName)}', ${remoteId}, ${remoteTagNameToId[tagName]});`);
       }
 
       for (const link of colDb.select().from(links).all()) {
@@ -515,69 +572,19 @@ export async function publishCollections(
       onProgress("d1-build", `Built "${colName}": ${allEntities.length} entities`);
     }
 
-    onProgress("d1-upload", "Uploading schema and data to D1...");
-    const schemaFile = writeTempFile(schemaSql.join("\n"), ".sql");
-    try {
-      await executeD1File(d1DatabaseName, schemaFile);
-    } finally {
-      cleanupTempFile(schemaFile);
-    }
-
-    onProgress("fts", "Building search index...");
-    const MAX_FTS_CONTENT = 8000;
-    const ftsSql: string[] = [];
-    ftsSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(collection_name UNINDEXED, entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
-
-    let ftsBuilt = 0;
-    for (const colName of collectionNames) {
-      const dbPath = getCollectionDbPath(colName);
-      const colDb = getCollectionDb(dbPath);
-      const allEntities = colDb.select().from(entities).all();
-      const ftsTotal = allEntities.length;
-      const collectionDir = join(home, "collections", colName);
-
-      for (const entity of allEntities) {
-        let content = "";
-        if (entity.markdownPath) {
-          const mdPath = join(collectionDir, entity.markdownPath);
-          if (existsSync(mdPath)) {
-            content = readFileSync(mdPath, "utf-8");
-          }
-        }
-        if (content.length > MAX_FTS_CONTENT) {
-          content = content.slice(0, MAX_FTS_CONTENT);
-        }
-        const entityTagNames = colDb.select().from(entityTags)
-          .where(eq(entityTags.entityId, entity.id))
-          .all()
-          .map((t: any) => {
-            const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
-            return tagRow?.name ?? "";
-          })
-          .filter(Boolean)
-          .join(" ");
-
-        ftsSql.push(`INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES ('${escapeSQL(colName)}', ${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(entityTagNames)}');`);
-        ftsBuilt++;
-        if (ftsBuilt % 500 === 0) {
-          onProgress("fts", `Building search index... ${ftsBuilt}/${ftsTotal} entities`);
-        }
-      }
-    }
-    onProgress("fts", `Built search index: ${ftsBuilt} entries`);
-
-    const ftsBatches = Math.ceil((ftsSql.length - 1) / 200);
-    onProgress("fts-upload", `Uploading search index to D1 (${ftsBatches} batches)...`);
-    const FTS_BATCH_SIZE = 200;
-    let ftsBatchCount = 0;
-    for (let i = 0; i < ftsSql.length; i += FTS_BATCH_SIZE) {
-      const batch = ftsSql.slice(i, i + FTS_BATCH_SIZE);
+    // Upload in batches (D1 has execution time limits on large SQL files)
+    const D1_BATCH_SIZE = 500;
+    const totalBatches = Math.ceil(schemaSql.length / D1_BATCH_SIZE);
+    onProgress("d1-upload", `Uploading to D1 (${totalBatches} batches)...`);
+    let batchCount = 0;
+    for (let i = 0; i < schemaSql.length; i += D1_BATCH_SIZE) {
+      const batch = schemaSql.slice(i, i + D1_BATCH_SIZE);
       const batchFile = writeTempFile(batch.join("\n"), ".sql");
       try {
         await executeD1File(d1DatabaseName, batchFile);
-        ftsBatchCount++;
-        if (ftsBatchCount % 5 === 0 || ftsBatchCount === ftsBatches) {
-          onProgress("fts-upload", `Uploading search index... ${ftsBatchCount}/${ftsBatches} batches`);
+        batchCount++;
+        if (batchCount % 5 === 0 || batchCount === totalBatches) {
+          onProgress("d1-upload", `Uploading to D1... ${batchCount}/${totalBatches} batches`);
         }
       } finally {
         cleanupTempFile(batchFile);

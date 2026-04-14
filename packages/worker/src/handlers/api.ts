@@ -73,6 +73,7 @@ api.get("/api/collections", async (c) => {
     collections.map(async (col) => ({
       name: col.name,
       title: col.title || col.name,
+      enabled: true,
       entityCount: await getEntityCount(c.env.DB, col.name),
     })),
   );
@@ -112,14 +113,23 @@ api.get("/api/collections/:name/html/*", async (c) => {
 api.get("/api/collections/:name/tree", async (c) => {
   const name = c.req.param("name");
   const col = await getCollection(c.env.DB, name);
-
-  const { results } = await c.env.DB.prepare(
-    "SELECT markdown_path, title FROM entities WHERE collection_name = ? AND markdown_path IS NOT NULL",
-  ).bind(name).all<{ markdown_path: string; title: string }>();
+  // D1 .all() returns max 5000 rows — paginate to fetch all entities
+  const allResults: Array<{ markdown_path: string; title: string }> = [];
+  const PAGE_SIZE = 5000;
+  let offset = 0;
+  for (;;) {
+    const { results } = await c.env.DB.prepare(
+      "SELECT markdown_path, title FROM entities WHERE collection_name = ? AND markdown_path IS NOT NULL LIMIT ? OFFSET ?",
+    ).bind(name, PAGE_SIZE, offset).all<{ markdown_path: string; title: string }>();
+    if (!results || results.length === 0) break;
+    allResults.push(...results);
+    if (results.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
 
   const titleByPath = new Map<string, string>();
   const contentPrefix = "content/";
-  const mdPaths = (results ?? [])
+  const mdPaths = allResults
     .map((row) => {
       const rel = row.markdown_path.startsWith(contentPrefix)
         ? row.markdown_path.slice(contentPrefix.length)
