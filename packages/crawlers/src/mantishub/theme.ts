@@ -153,6 +153,141 @@ function textToHtml(
   return html;
 }
 
+/**
+ * Convert markdown text to HTML, resolving MantisHub cross-entity references.
+ * Handles fenced code blocks, inline code, headings, bold/italic, unordered and
+ * ordered lists, blockquotes, markdown links, bare URLs, #issue refs, @mentions,
+ * and [[page]] / [[/project/page]] wiki links.
+ */
+function markdownToHtml(
+  text: string,
+  lookup?: Lookup,
+  projectId?: number,
+  projectNameToId?: Record<string, number>,
+): string {
+  let raw = text.replace(/\r\n/g, "\n");
+
+  // ── Step 1: extract fenced code blocks (their newlines are preserved via placeholder) ──
+  const codeBlocks: string[] = [];
+  raw = raw.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_m, langLine: string, code: string) => {
+    const idx = codeBlocks.length;
+    const lang = langLine.trim().split(/\s/)[0] || "";
+    // Escape the code content; newlines inside pre blocks are preserved via \x00PRENL\x00
+    const escapedCode = esc(code.replace(/\n$/, "")).replace(/\n/g, "\x00PRENL\x00");
+    const langClass = lang ? ` class="language-${esc(lang)}"` : "";
+    codeBlocks.push(`<pre class="mt-code-block"><code${langClass}>${escapedCode}</code></pre>`);
+    return `\x00CODEBLOCK${idx}\x00`;
+  });
+
+  // ── Step 2: extract markdown links [text](url) before escaping ──
+  const links: string[] = [];
+  raw = raw.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, (_m, linkText: string, url: string) => {
+    const idx = links.length;
+    links.push(`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(linkText)}</a>`);
+    return `\x00LINK${idx}\x00`;
+  });
+
+  // ── Step 3: resolve MantisHub page links before escaping (names may have &, <, >) ──
+  if (lookup) {
+    // Cross-project: [[/Project Name/page-name]]
+    raw = raw.replace(/\[\[\/(.+?)\/([\w-]+)\]\]/g, (_m, projName: string, pageName: string) => {
+      const pid = projectNameToId?.[projName];
+      const path = pid ? lookup(`page:${pid}:${pageName}`) : undefined;
+      if (!path) return `[[/${projName}/${pageName}]]`;
+      const idx = links.length;
+      links.push(`<a class="mt-page-link" href="#wikilink/${encodeURIComponent(path)}">${esc(projName)}/${esc(pageName)}</a>`);
+      return `\x00LINK${idx}\x00`;
+    });
+    // Same-project: [[page-name]]
+    raw = raw.replace(/\[\[([\w-]+)\]\]/g, (_m, pageName: string) => {
+      if (!projectId) return `[[${pageName}]]`;
+      const path = lookup(`page:${projectId}:${pageName}`);
+      if (!path) return `[[${pageName}]]`;
+      const idx = links.length;
+      links.push(`<a class="mt-page-link" href="#wikilink/${encodeURIComponent(path)}">${esc(pageName)}</a>`);
+      return `\x00LINK${idx}\x00`;
+    });
+  }
+
+  // ── Step 4: HTML-escape remaining text ──
+  let html = esc(raw);
+
+  // ── Step 5: restore code blocks and links ──
+  html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (_m, idx) => codeBlocks[parseInt(idx)]);
+  html = html.replace(/\x00LINK(\d+)\x00/g, (_m, idx) => links[parseInt(idx)]);
+
+  // ── Step 6: inline code (backticks survive esc; content inside is already escaped) ──
+  html = html.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+
+  // ── Step 7: bold and italic ──
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/(?<!\w)\*(.+?)\*(?!\w)/g, "<em>$1</em>");
+
+  // ── Step 8: issue refs (#1234) and @mentions ──
+  if (lookup) {
+    html = html.replace(/#(\d+)/g, (_m, id: string) => {
+      const path = lookup(`issue:${id}`);
+      if (!path) return `#${id}`;
+      return `<a class="mt-issue-ref" href="#wikilink/${encodeURIComponent(path)}">#${padId(parseInt(id))}</a>`;
+    });
+    html = html.replace(/@([a-zA-Z0-9_.-]+)/g, (_m, name: string) => {
+      const path = lookup(`user:${name}`);
+      if (!path) return `@${name}`;
+      return `<a class="mt-user-link" href="#wikilink/${encodeURIComponent(path)}">@${name}</a>`;
+    });
+  }
+
+  // ── Step 9: bare URLs (not already inside an href) ──
+  html = html.replace(
+    /(?<!="|>)(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
+  );
+
+  // ── Step 10: headings (### etc) ──
+  html = html.replace(/^(#{1,6})\s+(.+)$/gm, (_m, hashes: string, content: string) => {
+    return `<h${hashes.length} class="mt-md-h${hashes.length}">${content}</h${hashes.length}>`;
+  });
+
+  // ── Step 11: unordered lists (groups of "- ", "* ", or "+ " lines) ──
+  html = html.replace(/((?:^[ \t]*[-*+] .+(?:\n|$))+)/gm, (block) => {
+    const items = block.trim().split("\n")
+      .map((line) => { const m = line.match(/^[ \t]*[-*+] (.+)$/); return m ? `<li>${m[1]}</li>` : ""; })
+      .filter(Boolean).join("");
+    return `<ul class="mt-md-list">${items}</ul>`;
+  });
+
+  // ── Step 12: ordered lists (groups of "1. " lines) ──
+  html = html.replace(/((?:^[ \t]*\d+\. .+(?:\n|$))+)/gm, (block) => {
+    const items = block.trim().split("\n")
+      .map((line) => { const m = line.match(/^[ \t]*\d+\. (.+)$/); return m ? `<li>${m[1]}</li>` : ""; })
+      .filter(Boolean).join("");
+    return `<ol class="mt-md-list">${items}</ol>`;
+  });
+
+  // ── Step 13: blockquotes (">" becomes "&gt;" after escaping) ──
+  html = html.replace(/((?:^&gt; .+(?:\n|$))+)/gm, (block) => {
+    const content = block.trim().split("\n")
+      .map((line) => line.replace(/^&gt; /, "")).join("<br>");
+    return `<blockquote class="mt-md-blockquote">${content}</blockquote>`;
+  });
+
+  // ── Step 14: paragraphs (blank lines separate blocks) ──
+  html = html.replace(/\n\n+/g, "</p><p>");
+  html = `<p>${html}</p>`;
+  html = html.replace(/<p>\s*<\/p>/g, "");
+  // Unwrap block elements incorrectly wrapped in <p>
+  html = html.replace(/<p>(\s*<(?:h[1-6]|pre|ul|ol|blockquote)[ >])/g, "$1");
+  html = html.replace(/(<\/(?:h[1-6]|pre|ul|ol|blockquote)>\s*)<\/p>/g, "$1");
+
+  // ── Step 15: single newlines → <br> (within paragraphs) ──
+  html = html.replace(/\n/g, "<br>");
+
+  // ── Step 16: restore pre-block newlines (so code blocks stay as literal newlines) ──
+  html = html.replace(/\x00PRENL\x00/g, "\n");
+
+  return html;
+}
+
 /** Render a username as a link to the user entity, prefixed with @. */
 function mtUserLink(name: string, lookup?: Lookup): string {
   const path = lookup?.(`user:${name}`);
@@ -468,7 +603,7 @@ export class MantisHubTheme implements Theme {
       const crumbs = [projectHtml, category ? esc(category.name) : null, esc(padId(d.id as number))].filter(Boolean);
       parts.push(`<div class="mt-breadcrumb">${crumbs.join(" &rsaquo; ")}</div>`);
     }
-    parts.push(`<h1 class="mt-title">${textToHtml(d.summary as string, lookup, projectId, projectNameToId)}</h1>`);
+    parts.push(`<h1 class="mt-title">${markdownToHtml(d.summary as string, lookup, projectId, projectNameToId)}</h1>`);
 
     // Tags as badges
     const tags = context.entity.tags ?? [];
@@ -489,15 +624,15 @@ export class MantisHubTheme implements Theme {
     parts.push(`<h2 class="mt-section-title">Details</h2>`);
     parts.push(`<div class="mt-section-body">`);
     if (d.description) {
-      parts.push(`<div class="mt-description">${textToHtml(d.description as string, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`<div class="mt-description">${markdownToHtml(d.description as string, lookup, projectId, projectNameToId)}</div>`);
     }
     if (d.stepsToReproduce) {
       parts.push(`<h3 class="mt-subsection-title">Steps to Reproduce</h3>`);
-      parts.push(`<div class="mt-description">${textToHtml(d.stepsToReproduce as string, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`<div class="mt-description">${markdownToHtml(d.stepsToReproduce as string, lookup, projectId, projectNameToId)}</div>`);
     }
     if (d.additionalInformation) {
       parts.push(`<h3 class="mt-subsection-title">Additional Information</h3>`);
-      parts.push(`<div class="mt-description">${textToHtml(d.additionalInformation as string, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`<div class="mt-description">${markdownToHtml(d.additionalInformation as string, lookup, projectId, projectNameToId)}</div>`);
     }
 
     // Text custom fields
@@ -505,7 +640,7 @@ export class MantisHubTheme implements Theme {
     for (const cf of customFields ?? []) {
       if (!cf.value) continue;
       parts.push(`<h3 class="mt-subsection-title">${esc(cf.name)}</h3>`);
-      parts.push(`<div class="mt-description">${textToHtml(cf.value, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`<div class="mt-description">${markdownToHtml(cf.value, lookup, projectId, projectNameToId)}</div>`);
     }
 
     // Issue-level attachments
@@ -602,7 +737,7 @@ export class MantisHubTheme implements Theme {
           parts.push(`</div>`);
           parts.push(`<div class="mt-activity-body">`);
           parts.push(`<div class="mt-note-body ${borderClass}">`);
-          parts.push(`<div class="mt-note-text">${textToHtml(note.text, lookup, projectId, projectNameToId)}</div>`);
+          parts.push(`<div class="mt-note-text">${markdownToHtml(note.text, lookup, projectId, projectNameToId)}</div>`);
 
           // Note attachments
           if (note.attachments?.length) {

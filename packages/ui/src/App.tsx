@@ -100,9 +100,28 @@ function titleFromPath(file: string): string {
   );
 }
 
+/** Read the entity file path from the URL path, e.g. /issues/1234 → issues/1234.md */
+function parseUrlFile(): string | null {
+  const { pathname } = window.location;
+  if (pathname === "/" || pathname === "") return null;
+  return `${pathname.replace(/^\//, "")}.md`;
+}
+
+/** Convert an internal file path to a URL path, e.g. issues/1234.md → /issues/1234 */
+function fileToUrlPath(file: string): string {
+  return `/${file.replace(/\.md$/, "")}`;
+}
+
 interface NavEntry {
   collection: string;
   file: string;
+}
+
+interface BrowserHistoryState {
+  collection: string;
+  file: string;
+  navIndex: number;
+  notFound?: boolean;
 }
 
 function useIsMobile(breakpoint = 768) {
@@ -183,11 +202,24 @@ export default function App() {
   const navIndexRef = useRef(navIndex);
   navIndexRef.current = navIndex;
 
+  // URL-based routing state
+  const [fileNotFound, setFileNotFound] = useState(false);
+  // Pending URL navigation — parsed once from URL on mount, consumed by tree loading
+  const pendingUrlNavRef = useRef<{ file: string } | null | undefined>(undefined);
+  if (pendingUrlNavRef.current === undefined) {
+    const file = parseUrlFile();
+    pendingUrlNavRef.current = file ? { file } : null;
+  }
+  // Prevents double-initializing browser history (URL params vs. seeding effect)
+  const historyInitializedRef = useRef(false);
+
   // Derive the active file from the active tab
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const selectedFile = activeTab?.file ?? null;
 
   // Seed navigation history with the initial page so first navigation enables Back.
+  // Also initializes the browser history state and URL for non-URL-param load paths
+  // (saved tabs, default file). URL-param loads are handled in the tree loading effect.
   useEffect(() => {
     if (!selectedCollection || !selectedFile) return;
     setNavHistory((prev) => {
@@ -195,6 +227,14 @@ export default function App() {
       return [{ collection: selectedCollection, file: selectedFile }];
     });
     setNavIndex((prev) => (prev === -1 ? 0 : prev));
+    if (!historyInitializedRef.current) {
+      historyInitializedRef.current = true;
+      window.history.replaceState(
+        { collection: selectedCollection, file: selectedFile, navIndex: 0 } satisfies BrowserHistoryState,
+        "",
+        fileToUrlPath(selectedFile),
+      );
+    }
   }, [selectedCollection, selectedFile]);
 
   // Browse mode only shows enabled collections
@@ -340,22 +380,52 @@ export default function App() {
         setTreeLoading(false);
         setFileTree(tree);
 
-        // If a tab for this collection already exists, don't auto-open
+        // Flatten tree to get file list for validation
+        function flatten(nodes: TreeNode[]): string[] {
+          const out: string[] = [];
+          for (const n of nodes) {
+            if (n.type === "file") out.push(n.path);
+            if (n.children) out.push(...flatten(n.children));
+          }
+          return out;
+        }
+        const files = flatten(tree);
+
+        // If a tab for this collection already exists, don't auto-open.
+        // But still consume a pending URL nav if it matches.
         setTabs((currentTabs) => {
           if (currentTabs.some((t) => t.collection === collection)) {
             return currentTabs;
           }
 
-          // Flatten tree to get file list for validation
-          function flatten(nodes: TreeNode[]): string[] {
-            const out: string[] = [];
-            for (const n of nodes) {
-              if (n.type === "file") out.push(n.path);
-              if (n.children) out.push(...flatten(n.children));
+          // Check for a pending URL-based navigation (shared link / direct load)
+          const pendingNav = pendingUrlNavRef.current;
+          if (pendingNav) {
+            pendingUrlNavRef.current = null;
+            historyInitializedRef.current = true;
+            if (files.includes(pendingNav.file)) {
+              // File exists — open it and initialize browser history
+              const id = crypto.randomUUID();
+              setActiveTabId(id);
+              setNavHistory([{ collection, file: pendingNav.file }]);
+              setNavIndex(0);
+              window.history.replaceState(
+                { collection, file: pendingNav.file, navIndex: 0 } satisfies BrowserHistoryState,
+                "",
+                fileToUrlPath(pendingNav.file),
+              );
+              return [...currentTabs, { id, title: titleFromPath(pendingNav.file), collection, file: pendingNav.file }];
+            } else {
+              // File not found — show not-found state, keep URL as-is
+              setFileNotFound(true);
+              window.history.replaceState(
+                { collection, file: pendingNav.file, navIndex: -1, notFound: true } satisfies BrowserHistoryState,
+                "",
+                window.location.pathname,
+              );
+              return currentTabs;
             }
-            return out;
           }
-          const files = flatten(tree);
 
           // Restore saved tabs (filter out files that no longer exist)
           const saved = loadCollectionTabs(collection);
@@ -413,15 +483,22 @@ export default function App() {
       return;
     }
     setLoading(true);
+    setFileNotFound(false);
     fetch(
       `/api/collections/${encodeURIComponent(selectedCollection)}/markdown/${selectedFile}`,
     )
       .then((r) => {
-        if (!r.ok) throw new Error("Failed to load file");
+        if (!r.ok) throw new Error("not-found");
         return r.text();
       })
-      .then(setFileContent)
-      .catch(console.error)
+      .then((content) => {
+        setFileContent(content);
+        setFileNotFound(false);
+      })
+      .catch(() => {
+        setFileContent(null);
+        setFileNotFound(true);
+      })
       .finally(() => setLoading(false));
   }, [selectedCollection, selectedFile]);
 
@@ -507,6 +584,7 @@ export default function App() {
       const title = titleFromPath(file);
 
       setSelectedCollection(collection);
+      setFileNotFound(false);
 
       setTabs((prev) => {
         if (openNewTab || prev.length === 0) {
@@ -526,42 +604,29 @@ export default function App() {
         const trimmed = prev.slice(0, navIndexRef.current + 1);
         return [...trimmed, { collection, file }];
       });
-      setNavIndex((prev) => prev + 1);
+      const newIndex = navIndexRef.current + 1;
+      setNavIndex(newIndex);
+
+      // Sync URL with browser history
+      historyInitializedRef.current = true;
+      window.history.pushState(
+        { collection, file, navIndex: newIndex } satisfies BrowserHistoryState,
+        "",
+        fileToUrlPath(file),
+      );
     },
     [],
   );
 
   const navigateBack = useCallback(() => {
     if (navIndexRef.current <= 0) return;
-    const newIndex = navIndexRef.current - 1;
-    const entry = navHistory[newIndex];
-    setNavIndex(newIndex);
-    setSelectedCollection(entry.collection);
-    const tabId = activeTabIdRef.current;
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === tabId
-          ? { ...t, collection: entry.collection, file: entry.file, title: titleFromPath(entry.file) }
-          : t,
-      ),
-    );
-  }, [navHistory]);
+    window.history.back();
+  }, []);
 
   const navigateForward = useCallback(() => {
     if (navIndexRef.current >= navHistory.length - 1) return;
-    const newIndex = navIndexRef.current + 1;
-    const entry = navHistory[newIndex];
-    setNavIndex(newIndex);
-    setSelectedCollection(entry.collection);
-    const tabId = activeTabIdRef.current;
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.id === tabId
-          ? { ...t, collection: entry.collection, file: entry.file, title: titleFromPath(entry.file) }
-          : t,
-      ),
-    );
-  }, [navHistory]);
+    window.history.forward();
+  }, [navHistory.length]);
 
   const handleCloseTab = useCallback(
     (id: string) => {
@@ -581,6 +646,37 @@ export default function App() {
     },
     [],
   );
+
+  // Handle browser back/forward: restore state from the history entry
+  useEffect(() => {
+    const handler = (event: PopStateEvent) => {
+      const state = event.state as BrowserHistoryState | null;
+      if (!state?.collection || !state?.file) return;
+
+      const { collection, file, navIndex: idx, notFound } = state;
+
+      setSelectedCollection(collection);
+      setNavIndex(idx ?? 0);
+
+      if (notFound) {
+        setFileNotFound(true);
+        // Don't update active tab — the entity doesn't exist
+        return;
+      }
+
+      setFileNotFound(false);
+      const tabId = activeTabIdRef.current;
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId
+            ? { ...t, collection, file, title: titleFromPath(file) }
+            : t,
+        ),
+      );
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
 
   // Close menu on outside click
   useEffect(() => {
@@ -856,6 +952,13 @@ export default function App() {
             if (t) {
               setActiveTabId(id);
               setSelectedCollection(t.collection);
+              setFileNotFound(false);
+              // Reflect the newly active tab in the URL (replaceState — not a new nav entry)
+              window.history.replaceState(
+                { collection: t.collection, file: t.file, navIndex: navIndexRef.current } satisfies BrowserHistoryState,
+                "",
+                fileToUrlPath(t.file),
+              );
             }
           }}
           onClose={handleCloseTab}
@@ -983,10 +1086,10 @@ export default function App() {
       <div className="main-body">
         <div className="main-inner">
           {(loading || (viewMode === "html" && htmlLoading)) && <div className="loading">Loading...</div>}
-          {!loading && selectedFile && viewMode === "html" && htmlContent !== null && (
+          {!loading && !fileNotFound && selectedFile && viewMode === "html" && htmlContent !== null && (
             <HtmlView html={htmlContent} onWikilinkClick={handleWikilinkNavigate} />
           )}
-          {!loading && selectedFile && viewMode === "markdown" && fileContent !== null && (
+          {!loading && !fileNotFound && selectedFile && viewMode === "markdown" && fileContent !== null && (
             <MarkdownView
               content={fileContent}
               collection={selectedCollection || ""}
@@ -995,7 +1098,17 @@ export default function App() {
               onWikilinkClick={handleWikilinkNavigate}
             />
           )}
-          {!selectedFile && !loading && (
+          {!loading && fileNotFound && (
+            <div className="empty-state">
+              <p>Entity not found</p>
+              <p className="hint">
+                {isMobile
+                  ? "Tap the sidebar icon to browse files or use search."
+                  : "Select a file from the sidebar or press \u2318P to search."}
+              </p>
+            </div>
+          )}
+          {!selectedFile && !loading && !fileNotFound && (
             <div className="empty-state">
               <p>{isMobile ? "Tap the sidebar icon below to browse files" : "Select a file from the sidebar to view its contents"}</p>
               {!isMobile && (
