@@ -227,6 +227,27 @@ export async function deleteR2Object(bucket: string, key: string): Promise<void>
   });
 }
 
+export async function listR2Objects(bucket: string): Promise<string[]> {
+  const { apiToken, accountId } = await getCredentials();
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const params = new URLSearchParams({ per_page: "1000" });
+    if (cursor) params.set("cursor", cursor);
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects?${params}`;
+    const res = await fetchWithRetry(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiToken}` },
+    });
+    if (!res.ok) break;
+    const data = await res.json() as { result: Array<{ key: string }>; result_info?: { cursor?: string } };
+    for (const obj of data.result ?? []) keys.push(obj.key);
+    cursor = data.result_info?.cursor;
+    if (!cursor || (data.result ?? []).length === 0) break;
+  }
+  return keys;
+}
+
 export async function deleteR2Bucket(name: string): Promise<void> {
   await runWrangler(["r2", "bucket", "delete", name], { allowFailure: true });
 }

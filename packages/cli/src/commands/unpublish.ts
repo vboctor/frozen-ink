@@ -27,7 +27,7 @@ export type UnpublishProgressCallback = (step: string, detail: string) => void;
  */
 export async function unpublishCollection(
   collectionName: string,
-  publishState: PublishState,
+  _publishState: PublishState,
   onProgress: UnpublishProgressCallback = () => {},
 ): Promise<void> {
   const {
@@ -35,8 +35,8 @@ export async function unpublishCollection(
     deleteWorker,
     deleteR2Object,
     deleteR2Bucket,
+    listR2Objects,
     deleteD1,
-    executeD1Command,
   } = await import("./wrangler-api");
 
   await checkWranglerAuth();
@@ -45,43 +45,41 @@ export async function unpublishCollection(
   const d1DatabaseName = `${workerName}-db`;
   const r2BucketName = `${workerName}-files`;
 
-  // 1. Delete worker
-  onProgress("worker", `Deleting worker "${workerName}"...`);
+  // 1. Empty and delete R2 bucket
+  onProgress("r2", "Listing R2 objects...");
   try {
-    await deleteWorker(workerName);
-  } catch (err) {
-    onProgress("worker", `Warning: could not delete worker: ${err}`);
-  }
-
-  // 2. Try deleting R2 bucket (may fail if non-empty)
-  onProgress("r2", "Deleting R2 bucket...");
-  try {
-    await deleteR2Bucket(r2BucketName);
-  } catch {
-    // Bucket may need to be emptied first — try manifest-based cleanup
-    onProgress("r2", "R2 bucket not empty, emptying via manifest...");
-    try {
-      const manifestJson = await executeD1Command(d1DatabaseName, "SELECT key FROM r2_manifest");
-      const parsed = JSON.parse(manifestJson);
-      const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
-      if (Array.isArray(results)) {
-        for (const row of results as Array<{ key: string }>) {
-          await deleteR2Object(r2BucketName, row.key);
+    const keys = await listR2Objects(r2BucketName);
+    if (keys.length > 0) {
+      onProgress("r2", `Deleting ${keys.length} objects from R2...`);
+      let deleted = 0;
+      for (const key of keys) {
+        await deleteR2Object(r2BucketName, key);
+        deleted++;
+        if (deleted % 500 === 0) {
+          onProgress("r2", `${deleted}/${keys.length} objects deleted`);
         }
       }
-      await deleteR2Bucket(r2BucketName);
-      onProgress("r2", "R2 bucket deleted");
-    } catch {
-      onProgress("r2", `Warning: could not fully clean R2 bucket "${r2BucketName}". You may need to empty it via the Cloudflare dashboard.`);
     }
+    onProgress("r2", "Deleting R2 bucket...");
+    await deleteR2Bucket(r2BucketName);
+  } catch (err) {
+    onProgress("r2", `Warning: could not fully clean R2 bucket "${r2BucketName}": ${err}`);
   }
 
-  // 3. Delete D1 database
+  // 2. Delete D1 database
   onProgress("d1", "Deleting D1 database...");
   try {
     await deleteD1(d1DatabaseName);
   } catch (err) {
     onProgress("d1", `Warning: could not delete D1 database: ${err}`);
+  }
+
+  // 3. Delete worker
+  onProgress("worker", `Deleting worker "${workerName}"...`);
+  try {
+    await deleteWorker(workerName);
+  } catch (err) {
+    onProgress("worker", `Warning: could not delete worker: ${err}`);
   }
 
   // 4. Clear publish state from collection config
