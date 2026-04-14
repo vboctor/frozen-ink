@@ -5,7 +5,6 @@ import { join, basename } from "path";
 import {
   ensureInitialized,
   listCollections,
-  listSites,
   getCollection,
   getCollectionDb,
   getCollectionDbPath,
@@ -52,6 +51,7 @@ const W_NAME = 20;
 const W_TITLE = 22;
 const W_TYPE = 12;
 const W_ENTITIES = 10;
+const W_PUBLISHED = 10;
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -486,7 +486,6 @@ export function CollectionList({
 
   ensureInitialized();
   const collections = listCollections();
-  const allSites = listSites();
   const current = collections[cursor] ?? null;
 
   // Detail stats for selected collection
@@ -543,10 +542,6 @@ export function CollectionList({
       } catch { /* ignore */ }
     }
   }
-
-  const relatedSites = current
-    ? allSites.filter((d: { collections: string[] }) => d.collections.includes(current.name))
-    : [];
 
   const sourceDetails = current
     ? getSourceDetails(current.crawler, current.config as Record<string, unknown>)
@@ -765,15 +760,17 @@ export function CollectionList({
         <Text bold dimColor>{pad("Title", W_TITLE)}</Text>
         <Text bold dimColor>{pad("Type", W_TYPE)}</Text>
         <Text bold dimColor>{pad("Entities", W_ENTITIES)}</Text>
+        <Text bold dimColor>{pad("Published", W_PUBLISHED)}</Text>
         <Text bold dimColor>Last Sync</Text>
       </Box>
 
       {/* Table rows */}
       <Box flexDirection="column" marginLeft={1}>
-        {collections.map((col: { name: string; title?: string; crawler: string; enabled: boolean }, i: number) => {
+        {collections.map((col: { name: string; title?: string; crawler: string; enabled: boolean; publish?: unknown }, i: number) => {
           const stats = getRowStats(col.name);
           const selected = i === cursor;
           const checkbox = col.enabled ? "[x] " : "[ ] ";
+          const published = col.publish ? "yes" : "";
           return (
             <Box key={col.name}>
               <Text color={selected ? "cyan" : undefined}>{selected ? "❯ " : "  "}</Text>
@@ -782,6 +779,7 @@ export function CollectionList({
               <Text dimColor>{pad(col.title || "", W_TITLE)}</Text>
               <Text dimColor>{pad(col.crawler, W_TYPE)}</Text>
               <Text color={!col.enabled ? "gray" : undefined}>{pad(stats.entityCount, W_ENTITIES)}</Text>
+              <Text color={published ? "green" : undefined}>{pad(published, W_PUBLISHED)}</Text>
               <Text dimColor>{stats.lastSync}</Text>
             </Box>
           );
@@ -819,17 +817,15 @@ export function CollectionList({
           ) : (
             <Text dimColor>No sync runs yet</Text>
           )}
-          {relatedSites.length > 0 && (
+          {current.publish && (
             <Box flexDirection="column" marginTop={1}>
-              <Text dimColor bold>Sites:</Text>
-              {relatedSites.map((site: { name: string; url: string; password?: { protected: boolean } }) => (
-                <Box key={site.name} gap={1} marginLeft={1}>
-                  <Text>{site.name}</Text>
-                  <Text dimColor>→</Text>
-                  <Text color="blue">{site.url}</Text>
-                  <Text color={site.password?.protected ? "green" : "yellow"}>[{site.password?.protected ? "protected" : "public"}]</Text>
-                </Box>
-              ))}
+              <Text dimColor bold>Published:</Text>
+              <Box gap={1} marginLeft={1}>
+                <Text color="blue">{(current.publish as { url: string }).url}</Text>
+                <Text color={(current.publish as { password?: { protected: boolean } }).password?.protected ? "green" : "yellow"}>
+                  [{(current.publish as { password?: { protected: boolean } }).password?.protected ? "protected" : "public"}]
+                </Text>
+              </Box>
             </Box>
           )}
         </Box>

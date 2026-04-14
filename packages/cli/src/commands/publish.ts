@@ -8,8 +8,8 @@ import {
   ensureInitialized,
   getCollection,
   getCollectionDbPath,
-  addSite,
-  getSite,
+  getCollectionPublishState,
+  updateCollectionPublishState,
   entities,
   entityTags,
   tags,
@@ -78,8 +78,7 @@ async function runConcurrent<T>(
 // --- Reusable publish function ---
 
 export interface PublishOptions {
-  collectionNames: string[];
-  workerName: string;
+  collectionName: string;
   toolDescription?: string;
   password?: string;
   removePassword?: boolean;
@@ -92,7 +91,7 @@ export interface PublishResult {
   workerUrl: string;
   mcpUrl: string;
   toolDescription?: string;
-  collections: string[];
+  collectionName: string;
   isUpdate: boolean;
   workerOnly: boolean;
 }
@@ -109,13 +108,8 @@ async function hashPassword(password: string): Promise<string> {
   return `${salt}:${hashHex}`;
 }
 
-function deriveToolDescriptionFromCollections(collectionNames: string[]): string | undefined {
-  const descriptions = collectionNames
-    .map((name) => getCollection(name)?.mcpToolDescription?.trim())
-    .filter((value): value is string => !!value);
-
-  if (descriptions.length === 0) return undefined;
-  return descriptions.join(" | ");
+function deriveToolDescription(collectionName: string): string | undefined {
+  return getCollection(collectionName)?.mcpToolDescription?.trim() || undefined;
 }
 
 async function promptToolDescription(
@@ -162,53 +156,35 @@ export async function publishCollections(
 
   await checkWranglerAuth();
 
-  const { workerName, workerOnly = false, removePassword = false, forcePublic = false } = options;
+  const { collectionName, workerOnly = false, removePassword = false, forcePublic = false } = options;
+  const workerName = collectionName;
   let toolDescription = options.toolDescription?.trim() || undefined;
   const password = options.password?.trim();
   if (password && removePassword) {
     throw new Error("Cannot use --password and --remove-password together.");
   }
-  let collectionNames = [...options.collectionNames];
+  const collectionNames = [collectionName];
 
-  const existingSite = getSite(workerName);
-  const isUpdate = !!existingSite;
+  const existingPublish = getCollectionPublishState(collectionName);
+  const isUpdate = !!existingPublish;
 
-  if (workerOnly && !existingSite) {
-    throw new Error(`Site "${workerName}" not found. --worker-only only works for existing sites.`);
-  }
-
-  if (workerOnly && existingSite) {
-    collectionNames = existingSite.collections;
-    if (!toolDescription) {
-      toolDescription = existingSite.toolDescription;
-    }
+  if (workerOnly && !existingPublish) {
+    throw new Error(`Collection "${collectionName}" has not been published. --worker-only only works for published collections.`);
   }
 
   const home = getFrozenInkHome();
 
-  // Validate collections
+  // Validate collection
   if (!workerOnly) {
-    for (const name of collectionNames) {
-      const col = getCollection(name);
-      if (!col) throw new Error(`Collection "${name}" not found`);
-      const dbPath = getCollectionDbPath(name);
-      if (!existsSync(dbPath)) throw new Error(`Collection "${name}" database not found at ${dbPath}`);
-    }
+    const col = getCollection(collectionName);
+    if (!col) throw new Error(`Collection "${collectionName}" not found`);
+    const dbPath = getCollectionDbPath(collectionName);
+    if (!existsSync(dbPath)) throw new Error(`Collection "${collectionName}" database not found at ${dbPath}`);
   }
 
-  let d1DatabaseName: string;
-  let d1DatabaseId: string;
-  let r2BucketName: string;
-  if (workerOnly) {
-    const site = existingSite!;
-    d1DatabaseName = site.database.name || `${workerName}-db`;
-    d1DatabaseId = site.database.id;
-    r2BucketName = site.bucket.name;
-  } else {
-    d1DatabaseName = `${workerName}-db`;
-    d1DatabaseId = "";
-    r2BucketName = `${workerName}-files`;
-  }
+  let d1DatabaseName = `${workerName}-db`;
+  let d1DatabaseId = "";
+  let r2BucketName = `${workerName}-files`;
 
   // Password behavior:
   // - New password supplied: rotate hash.
@@ -219,11 +195,11 @@ export async function publishCollections(
     passwordHash = await hashPassword(password);
   } else if (removePassword) {
     passwordHash = "";
-  } else if (existingSite?.password?.hash) {
-    passwordHash = existingSite.password.hash;
-  } else if (isUpdate && existingSite?.password?.protected) {
+  } else if (existingPublish?.password?.hash) {
+    passwordHash = existingPublish.password.hash;
+  } else if (isUpdate && existingPublish?.password?.protected) {
     throw new Error(
-      `Site "${workerName}" is password protected but no reusable password hash is stored locally. ` +
+      `Collection "${collectionName}" is password protected but no reusable password hash is stored locally. ` +
       "Re-publish with --password <new-password> to rotate credentials or --remove-password to disable protection.",
     );
   }
@@ -276,7 +252,7 @@ export async function publishCollections(
     try {
       onProgress("r2-manifest", "Reading existing R2 manifest...");
       const manifestJson = await executeD1Command(
-        existingSite!.database.name || d1DatabaseName,
+        d1DatabaseName,
         "SELECT key FROM r2_manifest",
       );
       const parsed = JSON.parse(manifestJson);
@@ -520,14 +496,10 @@ export async function publishCollections(
   const mcpUrl = `${workerUrl}/mcp`;
   const passwordProtected = passwordHash.length > 0;
 
-  // Save site
-  addSite(workerName, {
+  // Save publish state on the collection
+  updateCollectionPublishState(collectionName, {
     url: workerUrl,
     mcpUrl,
-    toolDescription,
-    collections: collectionNames,
-    database: { type: "cloudflare-d1", id: d1DatabaseId, name: d1DatabaseName },
-    bucket: { type: "cloudflare-r2", name: r2BucketName },
     password: { protected: passwordProtected, hash: passwordHash || undefined },
     publishedAt: new Date().toISOString(),
   });
@@ -539,7 +511,7 @@ export async function publishCollections(
     workerUrl,
     mcpUrl,
     toolDescription,
-    collections: collectionNames,
+    collectionName,
     isUpdate,
     workerOnly,
   };
@@ -548,44 +520,37 @@ export async function publishCollections(
 // --- CLI command ---
 
 export const publishCommand = new Command("publish")
-  .description("Publish collections to Cloudflare as a password-protected website with MCP access")
-  .argument("[collections...]", "Collection names to publish")
+  .description("Publish a collection to Cloudflare as a password-protected website with MCP access")
+  .argument("<collection>", "Collection name to publish")
   .option("--password <password>", "Password to protect access")
   .option("--remove-password", "Explicitly remove password protection")
   .option("--public", "Explicitly allow public access on initial publish (skip confirmation prompt)")
   .option("--tool-description <description>", "Tool description advertised to MCP clients")
-  .option("--name <name>", "Worker name (default: fink-<first-collection>-<random>)")
-  .option("--worker-only", "Deploy worker code only (skip D1/R2 data upload); requires --name for an existing deployment")
-  .action(async (collectionNamesArg: string[], opts: {
+  .option("--worker-only", "Deploy worker code only (skip D1/R2 data upload)")
+  .action(async (collectionNameArg: string, opts: {
     password?: string;
     removePassword?: boolean;
     public?: boolean;
     toolDescription?: string;
-    name?: string;
     workerOnly?: boolean;
   }) => {
     try {
       ensureInitialized();
 
       const workerOnly = !!opts.workerOnly;
-      const collectionNames = collectionNamesArg ?? [];
+      const collectionName = collectionNameArg;
 
-      if (!workerOnly && collectionNames.length === 0) {
-        console.error("No collections specified. Provide at least one collection name.");
-        process.exit(1);
-      }
-      if (workerOnly && !opts.name) {
-        console.error("--worker-only requires --name <deployment-name>.");
+      if (!collectionName) {
+        console.error("No collection specified.");
         process.exit(1);
       }
 
-      const workerName = opts.name || `fink-${collectionNames[0]}-${randomSuffix()}`;
       let forcePublic = !!opts.public;
       let toolDescription = opts.toolDescription?.trim() || undefined;
 
       if (!forcePublic && !opts.password && !workerOnly) {
-        const existingSite = getSite(workerName);
-        const isInitialPublish = !existingSite;
+        const existingPublish = getCollectionPublishState(collectionName);
+        const isInitialPublish = !existingPublish;
         if (isInitialPublish && process.stdin.isTTY && process.stdout.isTTY) {
           console.warn("\nWARNING: No password was provided.");
           console.warn("This initial publish will make collection data publicly accessible.");
@@ -603,14 +568,13 @@ export const publishCommand = new Command("publish")
       }
 
       if (!workerOnly && !toolDescription) {
-        const derived = deriveToolDescriptionFromCollections(collectionNames);
+        const derived = deriveToolDescription(collectionName);
         toolDescription = await promptToolDescription(derived);
       }
 
       const result = await publishCollections(
         {
-          collectionNames,
-          workerName,
+          collectionName,
           toolDescription,
           password: opts.password,
           removePassword: opts.removePassword,
@@ -623,7 +587,7 @@ export const publishCommand = new Command("publish")
       const verb = result.workerOnly ? "Deployed" : (result.isUpdate ? "Updated" : "Published");
       const summary = result.workerOnly
         ? "latest worker code to Cloudflare (data unchanged)"
-        : `${result.collections.length} collection(s) to Cloudflare`;
+        : `collection "${result.collectionName}" to Cloudflare`;
       console.log(`\n${verb} ${summary}!\n`);
       console.log(`Worker:  ${result.workerName}`);
       console.log(`Website: ${result.workerUrl}`);

@@ -8,11 +8,19 @@ import { getFrozenInkHome } from "./loader";
 // --- Zod Schemas ---
 
 const assetsConfigSchema = z.object({
-  /** Allowed file extensions (with dot). Defaults to common image formats. */
   extensions: z.array(z.string()).optional(),
-  /** Maximum file size in KB. Defaults to 10240 (10 MB). */
   maxSize: z.number().optional(),
 }).optional();
+
+const publishStateSchema = z.object({
+  url: z.string(),
+  mcpUrl: z.string(),
+  password: z.object({
+    protected: z.boolean(),
+    hash: z.string().optional(),
+  }).optional(),
+  publishedAt: z.string(),
+});
 
 const collectionEntrySchema = z.object({
   title: z.string().optional(),
@@ -32,57 +40,9 @@ const collectionEntrySchema = z.object({
    * Example: ["draft.md", "*.wip"]
    */
   hide: z.array(z.string()).optional(),
+  publish: publishStateSchema.optional(),
 });
 
-/** Site config schema — immutable settings stored in <name>.yml */
-const siteConfigSchema = z.object({
-  url: z.string(),
-  mcpUrl: z.string(),
-  toolDescription: z.string().optional(),
-  collections: z.array(z.string()),
-  database: z.object({
-    type: z.string(),
-    id: z.string(),
-    name: z.string().optional(),
-  }),
-  bucket: z.object({
-    type: z.string(),
-    name: z.string(),
-  }),
-  password: z.object({
-    protected: z.boolean(),
-    hash: z.string().optional(),
-  }).optional(),
-});
-
-/** Site state schema — mutable state stored in state.yml */
-const siteStateSchema = z.object({
-  publishedAt: z.string(),
-});
-
-/** Combined site entry for backward compatibility */
-const siteEntrySchema = z.object({
-  url: z.string(),
-  mcpUrl: z.string(),
-  toolDescription: z.string().optional(),
-  collections: z.array(z.string()),
-  database: z.object({
-    type: z.string(),
-    id: z.string(),
-    name: z.string().optional(),
-  }),
-  bucket: z.object({
-    type: z.string(),
-    name: z.string(),
-  }),
-  password: z.object({
-    protected: z.boolean(),
-    hash: z.string().optional(),
-  }).optional(),
-  publishedAt: z.string(),
-});
-
-/** Legacy deployment schema — for migration from publish.yml */
 const legacyDeploymentEntrySchema = z.object({
   url: z.string(),
   mcpUrl: z.string(),
@@ -97,7 +57,6 @@ const legacyDeploymentEntrySchema = z.object({
   publishedAt: z.string(),
 });
 
-// Legacy context.yml schema (for migration)
 const frozenInkSchema = z.object({
   collections: z.record(collectionEntrySchema).default({}),
   deployments: z.record(legacyDeploymentEntrySchema).default({}),
@@ -107,9 +66,7 @@ const frozenInkSchema = z.object({
 
 export type CollectionEntry = z.infer<typeof collectionEntrySchema>;
 export type CollectionEntryInput = z.input<typeof collectionEntrySchema>;
-export type SiteEntry = z.infer<typeof siteEntrySchema>;
-/** @deprecated Use SiteEntry */
-export type DeploymentEntry = SiteEntry;
+export type PublishState = z.infer<typeof publishStateSchema>;
 export type FrozenInkYaml = z.infer<typeof frozenInkSchema>;
 
 // --- Paths ---
@@ -130,16 +87,10 @@ function getSiteConfigPath(name: string): string {
   return join(getSitesDir(), name, `${name}.yml`);
 }
 
-function getSiteStatePath(name: string): string {
-  return join(getSitesDir(), name, "state.yml");
-}
-
-/** Legacy publish.yml path */
 function getLegacyPublishPath(): string {
   return join(getFrozenInkHome(), "publish.yml");
 }
 
-/** Legacy context.yml path */
 function getLegacyContextPath(): string {
   return join(getFrozenInkHome(), "context.yml");
 }
@@ -161,39 +112,49 @@ function readYaml<T>(filePath: string): T | null {
   return (yaml.load(raw) as T) ?? null;
 }
 
-// --- Migration from legacy context.yml ---
+// --- Migration ---
 
-/**
- * Migrate legacy context.yml to per-collection .config files and publish.yml.
- * Safe to call multiple times — skips if already migrated.
- */
 export function migrateFromLegacyContext(): void {
   const legacyPath = getLegacyContextPath();
-  if (!existsSync(legacyPath)) return;
+  if (existsSync(legacyPath)) {
+    const raw = readFileSync(legacyPath, "utf-8");
+    const parsed = yaml.load(raw) as Record<string, unknown> | null;
+    if (parsed) {
+      const ctx = frozenInkSchema.parse(parsed);
 
-  const raw = readFileSync(legacyPath, "utf-8");
-  const parsed = yaml.load(raw) as Record<string, unknown> | null;
-  if (!parsed) return;
+      for (const [name, entry] of Object.entries(ctx.collections)) {
+        const configPath = getCollectionConfigPath(name);
+        const colDir = dirname(configPath);
+        if (!existsSync(colDir)) {
+          mkdirSync(colDir, { recursive: true });
+        }
+        const legacyConfigPath = join(colDir, ".config");
+        if (existsSync(legacyConfigPath) && !existsSync(configPath)) {
+          renameSync(legacyConfigPath, configPath);
+        } else if (!existsSync(configPath)) {
+          atomicWriteYaml(configPath, entry);
+        }
+      }
 
-  const ctx = frozenInkSchema.parse(parsed);
+      for (const [_name, dep] of Object.entries(ctx.deployments)) {
+        if (dep.collections.length > 0) {
+          const colName = dep.collections[0];
+          const col = getCollection(colName);
+          if (col && !col.publish) {
+            updateCollectionPublishState(colName, {
+              url: dep.url,
+              mcpUrl: dep.mcpUrl,
+              password: { protected: dep.passwordProtected, hash: dep.passwordHash },
+              publishedAt: dep.publishedAt,
+            });
+          }
+        }
+      }
 
-  // Migrate collections to per-collection config files
-  for (const [name, entry] of Object.entries(ctx.collections)) {
-    const configPath = getCollectionConfigPath(name);
-    const colDir = dirname(configPath);
-    if (!existsSync(colDir)) {
-      mkdirSync(colDir, { recursive: true });
-    }
-    // Migrate legacy .config -> <name>.yml
-    const legacyConfigPath = join(colDir, ".config");
-    if (existsSync(legacyConfigPath) && !existsSync(configPath)) {
-      renameSync(legacyConfigPath, configPath);
-    } else if (!existsSync(configPath)) {
-      atomicWriteYaml(configPath, entry);
+      try { unlinkSync(legacyPath); } catch { /* ignore */ }
     }
   }
 
-  // Also migrate any existing collections that only have .config files
   const collectionsDir = getCollectionsDir();
   if (existsSync(collectionsDir)) {
     for (const name of readdirSync(collectionsDir)) {
@@ -207,36 +168,15 @@ export function migrateFromLegacyContext(): void {
     }
   }
 
-  // Migrate deployments from context.yml to sites/ directory
-  for (const [name, dep] of Object.entries(ctx.deployments)) {
-    if (!existsSync(getSiteConfigPath(name))) {
-      addSite(name, {
-        url: dep.url,
-        mcpUrl: dep.mcpUrl,
-        toolDescription: dep.toolDescription,
-        collections: dep.collections,
-        database: { type: "cloudflare-d1", id: dep.d1DatabaseId, name: dep.d1DatabaseName },
-        bucket: { type: "cloudflare-r2", name: dep.r2BucketName },
-        password: { protected: dep.passwordProtected, hash: dep.passwordHash },
-        publishedAt: dep.publishedAt,
-      });
-    }
-  }
-
-  // Remove legacy context.yml
-  try { unlinkSync(legacyPath); } catch { /* ignore */ }
-
-  // Clean up legacy master.db files
   const home = getFrozenInkHome();
   for (const f of ["master.db", "master.db-wal", "master.db-shm"]) {
     try { unlinkSync(join(home, f)); } catch { /* ignore */ }
   }
 
-  // Migrate legacy publish.yml to sites/ directory
   migrateLegacyPublishYml();
+  migrateLegacySites();
 }
 
-/** Migrate legacy publish.yml to sites/ directory. Safe to call multiple times. */
 function migrateLegacyPublishYml(): void {
   const publishPath = getLegacyPublishPath();
   if (!existsSync(publishPath)) return;
@@ -244,40 +184,72 @@ function migrateLegacyPublishYml(): void {
   const data = readYaml<Record<string, unknown>>(publishPath);
   if (!data) return;
 
-  for (const [name, raw] of Object.entries(data)) {
-    if (existsSync(getSiteConfigPath(name))) continue;
+  for (const [_name, raw] of Object.entries(data)) {
     try {
       const dep = legacyDeploymentEntrySchema.parse(raw);
-      addSite(name, {
-        url: dep.url,
-        mcpUrl: dep.mcpUrl,
-        toolDescription: dep.toolDescription,
-        collections: dep.collections,
-        database: { type: "cloudflare-d1", id: dep.d1DatabaseId, name: dep.d1DatabaseName },
-        bucket: { type: "cloudflare-r2", name: dep.r2BucketName },
-        password: { protected: dep.passwordProtected, hash: dep.passwordHash },
-        publishedAt: dep.publishedAt,
-      });
+      if (dep.collections.length > 0) {
+        const colName = dep.collections[0];
+        const col = getCollection(colName);
+        if (col && !col.publish) {
+          updateCollectionPublishState(colName, {
+            url: dep.url,
+            mcpUrl: dep.mcpUrl,
+            password: { protected: dep.passwordProtected, hash: dep.passwordHash },
+            publishedAt: dep.publishedAt,
+          });
+        }
+      }
     } catch { /* skip invalid entries */ }
   }
 
-  // Remove legacy publish.yml
   try { unlinkSync(publishPath); } catch { /* ignore */ }
+}
+
+function migrateLegacySites(): void {
+  const sitesDir = getSitesDir();
+  if (!existsSync(sitesDir)) return;
+
+  try {
+    for (const name of readdirSync(sitesDir)) {
+      const dirPath = join(sitesDir, name);
+      try { if (!statSync(dirPath).isDirectory()) continue; } catch { continue; }
+      const configPath = join(dirPath, `${name}.yml`);
+      if (!existsSync(configPath)) continue;
+      try {
+        const configRaw = readFileSync(configPath, "utf-8");
+        const config = yaml.load(configRaw) as Record<string, unknown> | null;
+        if (!config) continue;
+        const stateRaw = readYaml<Record<string, unknown>>(join(dirPath, "state.yml"));
+        const publishedAt = (stateRaw?.publishedAt as string) ?? new Date().toISOString();
+        const collections = (config.collections as string[]) ?? [];
+        if (collections.length > 0) {
+          const colName = collections[0];
+          const col = getCollection(colName);
+          if (col && !col.publish) {
+            updateCollectionPublishState(colName, {
+              url: config.url as string,
+              mcpUrl: config.mcpUrl as string,
+              password: config.password as { protected: boolean; hash?: string } | undefined,
+              publishedAt,
+            });
+          }
+        }
+      } catch { /* skip invalid */ }
+    }
+  } catch { /* ignore */ }
+
+  try {
+    const { rmSync } = require("fs");
+    rmSync(sitesDir, { recursive: true, force: true });
+  } catch { /* ignore */ }
 }
 
 // --- Initialization ---
 
-/**
- * Ensure the Frozen Ink home directory is initialized.
- * Creates collections/ and sites/ directories if they don't exist.
- * Also runs legacy migrations. Safe to call multiple times.
- */
 export function ensureInitialized(): void {
   const home = getFrozenInkHome();
   mkdirSync(home, { recursive: true });
   mkdirSync(join(home, "collections"), { recursive: true });
-  mkdirSync(join(home, "sites"), { recursive: true });
-  // Create default frozenink.yml if it doesn't exist (and no legacy config.json)
   const configPath = join(home, "frozenink.yml");
   const legacyConfigPath = join(home, "config.json");
   if (!existsSync(configPath) && !existsSync(legacyConfigPath)) {
@@ -291,7 +263,7 @@ export function contextExists(): boolean {
   return existsSync(join(home, "collections"));
 }
 
-// --- Legacy compat: loadContext / saveContext ---
+// --- Legacy compat ---
 
 export function loadContext(): FrozenInkYaml {
   return {
@@ -305,8 +277,32 @@ export function loadContext(): FrozenInkYaml {
   };
 }
 
-export function saveContext(_ctx: FrozenInkYaml): void {
-  // No-op: kept for backward compat.
+export function saveContext(_ctx: FrozenInkYaml): void {}
+
+// --- Collection Publish State ---
+
+export function getCollectionPublishState(name: string): PublishState | null {
+  const col = getCollection(name);
+  return col?.publish ?? null;
+}
+
+export function updateCollectionPublishState(name: string, state: PublishState): void {
+  const existing = getCollection(name);
+  if (!existing) return;
+  const { name: _name, ...entry } = existing;
+  const updated = { ...entry, publish: state };
+  atomicWriteYaml(getCollectionConfigPath(name), updated);
+}
+
+export function clearCollectionPublishState(name: string): void {
+  const existing = getCollection(name);
+  if (!existing) return;
+  const { name: _name, publish: _publish, ...rest } = existing;
+  atomicWriteYaml(getCollectionConfigPath(name), rest);
+}
+
+export function listPublishedCollections(): Array<CollectionEntry & { name: string }> {
+  return listCollections().filter((c) => !!c.publish);
 }
 
 // --- Collection CRUD ---
@@ -367,7 +363,6 @@ export function addCollection(name: string, entry: CollectionEntryInput): void {
 }
 
 export function removeCollection(name: string): void {
-  // Only removes the config file; the caller is responsible for deleting the directory.
   const configPath = getCollectionConfigPath(name);
   try { unlinkSync(configPath); } catch { /* ignore */ }
 }
@@ -384,91 +379,8 @@ export function renameCollection(oldName: string, newName: string): void {
   const existing = getCollection(oldName);
   if (!existing) return;
   const { name: _name, ...entry } = existing;
-  // Write new config, remove old config
   const newDir = join(getCollectionsDir(), newName);
   mkdirSync(newDir, { recursive: true });
   atomicWriteYaml(getCollectionConfigPath(newName), entry);
   try { unlinkSync(getCollectionConfigPath(oldName)); } catch { /* ignore */ }
 }
-
-// --- Site CRUD (sites/<name>/) ---
-
-export function addSite(name: string, entry: SiteEntry): void {
-  const { publishedAt, ...config } = entry;
-  const siteDir = join(getSitesDir(), name);
-  mkdirSync(siteDir, { recursive: true });
-  atomicWriteYaml(getSiteConfigPath(name), config);
-  atomicWriteYaml(getSiteStatePath(name), { publishedAt });
-}
-
-export function removeSite(name: string): void {
-  const siteDir = join(getSitesDir(), name);
-  if (existsSync(siteDir)) {
-    const { rmSync } = require("fs");
-    rmSync(siteDir, { recursive: true, force: true });
-  }
-}
-
-export function getSite(nameOrUrl: string): (SiteEntry & { name: string }) | null {
-  // Try by name first
-  const configPath = getSiteConfigPath(nameOrUrl);
-  if (existsSync(configPath)) {
-    try {
-      const configRaw = readFileSync(configPath, "utf-8");
-      const config = yaml.load(configRaw) as Record<string, unknown> | null;
-      if (!config) return null;
-      const stateRaw = readYaml<Record<string, unknown>>(getSiteStatePath(nameOrUrl));
-      const publishedAt = (stateRaw?.publishedAt as string) ?? new Date().toISOString();
-      const parsed = siteEntrySchema.parse({ ...config, publishedAt });
-      return { ...parsed, name: nameOrUrl };
-    } catch { return null; }
-  }
-  // Try by URL
-  for (const site of listSites()) {
-    if (site.url === nameOrUrl || site.mcpUrl === nameOrUrl) {
-      return site;
-    }
-  }
-  return null;
-}
-
-export function listSites(): Array<SiteEntry & { name: string }> {
-  const sitesDir = getSitesDir();
-  if (!existsSync(sitesDir)) return [];
-
-  const results: Array<SiteEntry & { name: string }> = [];
-  try {
-    for (const name of readdirSync(sitesDir)) {
-      const dirPath = join(sitesDir, name);
-      try { if (!statSync(dirPath).isDirectory()) continue; } catch { continue; }
-      const configPath = join(dirPath, `${name}.yml`);
-      if (!existsSync(configPath)) continue;
-      try {
-        const configRaw = readFileSync(configPath, "utf-8");
-        const config = yaml.load(configRaw) as Record<string, unknown> | null;
-        if (!config) continue;
-        const stateRaw = readYaml<Record<string, unknown>>(join(dirPath, "state.yml"));
-        const publishedAt = (stateRaw?.publishedAt as string) ?? new Date().toISOString();
-        const parsed = siteEntrySchema.parse({ ...config, publishedAt });
-        results.push({ ...parsed, name });
-      } catch { /* skip invalid */ }
-    }
-  } catch { /* ignore */ }
-
-  return results.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export function updateSiteState(name: string, state: { publishedAt: string }): void {
-  atomicWriteYaml(getSiteStatePath(name), state);
-}
-
-// --- Deprecated aliases for backward compat ---
-
-/** @deprecated Use addSite */
-export const addDeployment = addSite;
-/** @deprecated Use removeSite */
-export const removeDeployment = removeSite;
-/** @deprecated Use getSite */
-export const getDeployment = getSite;
-/** @deprecated Use listSites */
-export const listDeployments = listSites;

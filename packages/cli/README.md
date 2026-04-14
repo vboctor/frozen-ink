@@ -85,7 +85,7 @@ The TUI provides keyboard-driven access to all features:
 | `p` | Publish to Cloudflare |
 | `e` | Export |
 | `f` | Search |
-| `v` | Deployments |
+| `v` | Published collections |
 | `g` | Settings |
 | `ESC` | Go back |
 | `q` | Quit |
@@ -121,33 +121,33 @@ All commands are also available in headless mode for scripting and CI:
 | `fink mcp list [--tool <tool>]` | Show MCP link status by collection |
 | `fink mcp serve --collection <name>` | MCP stdio entrypoint used by client tools |
 | `fink daemon start\|stop\|status` | Background sync daemon |
-| `fink publish <collections...>` | Publish to Cloudflare |
-| `fink unpublish <name>` | Remove a deployment |
+| `fink publish <collection>` | Publish to Cloudflare |
+| `fink unpublish <collection>` | Remove a published collection |
 | `fink tui` | Launch TUI explicitly |
 
 ## Publishing to Cloudflare
 
-Publish collections as a password-protected website with remote MCP access:
+Publish a collection as a password-protected website with remote MCP access:
 
 ```bash
 # Authenticate with Cloudflare first
 npx wrangler login
 
-# Publish
-fink publish my-repo my-notes --password secret123 --name my-site
+# Publish a collection (worker name = collection name)
+fink publish my-repo --password secret123
 
 # Update an existing deployment
-fink publish my-repo my-notes --password secret123 --name my-site
+fink publish my-repo
 
 # Remove
-fink unpublish my-site
+fink unpublish my-repo
 ```
 
-Published sites include:
+Published collections include:
 
 - Web UI for browsing synced data
 - Full-text search
-- MCP endpoint for AI assistants at `https://my-site.workers.dev/mcp`
+- MCP endpoint for AI assistants at `https://my-repo.workers.dev/mcp`
 
 ## MCP Server
 
@@ -214,12 +214,12 @@ All data is stored locally in `~/.frozenink/`:
 
 ```text
 ~/.frozenink/
-  config.json                # app configuration
-  context.yml                # collection registry + deployment metadata
+  frozenink.yml              # app configuration
   collections/
     <name>/
-      data.db                # SQLite database (entities, sync state, FTS5)
-      markdown/              # rendered markdown files
+      <name>.yml             # collection config (crawler, credentials, publish state)
+      db/data.db             # SQLite database (entities, sync state, FTS5)
+      content/               # rendered markdown files
       attachments/           # binary files (images, etc.)
 ```
 

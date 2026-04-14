@@ -250,6 +250,7 @@ export function createApiServer(
           crawlerType: r.crawler,
           enabled: r.enabled,
           syncInterval: r.syncInterval,
+          publish: r.publish,
         }));
         return jsonResponse(result);
       }

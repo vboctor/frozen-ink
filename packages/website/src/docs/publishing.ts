@@ -83,20 +83,14 @@ fink status</code></pre>
   </div>
 
   <h2 id="publish">Publishing</h2>
-  <p>The <code>fink publish</code> command uploads your collections to Cloudflare and deploys the Worker:</p>
+  <p>The <code>fink publish</code> command uploads a collection to Cloudflare and deploys the Worker:</p>
 
-  <pre><code><span class="cmt"># Publish a single collection</span>
+  <pre><code><span class="cmt"># Publish a collection</span>
 fink publish my-vault \
-  <span class="flag">--password</span> your-secret-password \
-  <span class="flag">--name</span>     my-vault-pub
+  <span class="flag">--password</span> your-secret-password</code></pre>
 
-<span class="cmt"># Publish multiple collections to one deployment</span>
-fink publish my-vault github-issues architecture-notes \
-  <span class="flag">--password</span> your-secret-password \
-  <span class="flag">--name</span>     team-knowledge</code></pre>
-
-  <p>The <code>--name</code> flag sets the Cloudflare Worker name and becomes part of your deployment URL:</p>
-  <pre><code>https://my-vault-pub.your-account.workers.dev</code></pre>
+  <p>The collection name becomes the Cloudflare Worker name and part of your deployment URL:</p>
+  <pre><code>https://my-vault.your-account.workers.dev</code></pre>
 
   <p>The publish command:</p>
   <ol>
@@ -104,7 +98,7 @@ fink publish my-vault github-issues architecture-notes \
     <li>Uploads all entity data and search indexes to D1</li>
     <li>Uploads attachments and UI assets to R2</li>
     <li>Deploys the Frozen Ink Worker to Cloudflare's edge</li>
-    <li>Saves deployment metadata to <code>~/.frozenink/sites/&lt;name&gt;/</code> for future updates</li>
+    <li>Saves publish state in the collection's config file for future updates</li>
   </ol>
 
   <div class="callout callout-tip">
@@ -126,41 +120,38 @@ fink publish my-vault github-issues architecture-notes \
     </div>
   </div>
 
-  <p>To change the password on an existing deployment, re-publish with the same <code>--name</code> and the new password:</p>
+  <p>To change the password on an existing deployment, re-publish with the new password:</p>
   <pre><code>fink publish my-vault \
-  <span class="flag">--password</span> new-stronger-password \
-  <span class="flag">--name</span>     my-vault-pub</code></pre>
+  <span class="flag">--password</span> new-stronger-password</code></pre>
 
   <h2 id="updating">Updating content</h2>
-  <p>To push updated content to an existing deployment, sync locally first, then re-publish with the same <code>--name</code>:</p>
+  <p>To push updated content to an existing deployment, sync locally first, then re-publish:</p>
   <pre><code><span class="cmt"># Pull latest data from source</span>
 fink sync my-vault
 
 <span class="cmt"># Re-upload to the existing deployment (updates D1 + R2 in-place)</span>
-fink publish my-vault \
-  <span class="flag">--password</span> your-secret-password \
-  <span class="flag">--name</span>     my-vault-pub</code></pre>
+fink publish my-vault</code></pre>
 
   <p>The Worker URL stays the same. Your team members just reload the page to see updated content.</p>
 
-  <h2 id="multiple-deployments">Multiple deployments</h2>
-  <p>You can have as many deployments as you want. Each <code>--name</code> creates an independent Worker with its own D1 database, R2 bucket, URL, and password:</p>
+  <h2 id="multiple-deployments">Multiple published collections</h2>
+  <p>Each collection can be published independently. Each published collection gets its own Worker, D1 database, R2 bucket, URL, and password:</p>
   <pre><code><span class="cmt"># Personal vault — private</span>
-fink publish my-vault <span class="flag">--password</span> personal123 <span class="flag">--name</span> my-personal-vault
+fink publish my-vault <span class="flag">--password</span> personal123
 
 <span class="cmt"># Team knowledge base — shared with team</span>
-fink publish github-issues architecture-notes <span class="flag">--password</span> team456 <span class="flag">--name</span> team-kb
+fink publish github-issues <span class="flag">--password</span> team456
 
 <span class="cmt"># Public-facing archive — no sensitive content</span>
-fink publish public-docs <span class="flag">--password</span> public789 <span class="flag">--name</span> company-docs</code></pre>
+fink publish public-docs <span class="flag">--password</span> public789</code></pre>
 
-  <p>View all your deployments:</p>
-  <pre><code>fink collections list   <span class="cmt"># shows deployment status per collection</span></code></pre>
+  <p>View all your collections and their publish status:</p>
+  <pre><code>fink collections list   <span class="cmt"># shows publish status per collection</span></code></pre>
 
   <h2 id="unpublishing">Unpublishing</h2>
   <p>Remove a deployment from Cloudflare completely:</p>
-  <pre><code>fink unpublish my-vault-pub</code></pre>
-  <p>This deletes the Cloudflare Worker, D1 database, and R2 bucket for that deployment. Your local data in <code>~/.frozenink/</code> is not affected.</p>
+  <pre><code>fink unpublish my-vault</code></pre>
+  <p>This deletes the Cloudflare Worker, D1 database, and R2 bucket for that collection's deployment. Your local data in <code>~/.frozenink/</code> is not affected.</p>
 
   <h2 id="what-runs-on-cloudflare">What runs on Cloudflare</h2>
   <p>The published deployment is a self-contained Cloudflare Worker that:</p>

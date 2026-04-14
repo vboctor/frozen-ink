@@ -6,8 +6,7 @@ const TEST_DIR = join(import.meta.dir, ".test-management-publish");
 
 type HandleManagementRequest = (req: Request) => Response | null;
 type SetPublishOverride = (fn: ((options: {
-  collectionNames: string[];
-  workerName: string;
+  collectionName: string;
   toolDescription?: string;
   password?: string;
   removePassword?: boolean;
@@ -38,10 +37,10 @@ beforeEach(async () => {
     removeCollection: () => {},
     updateCollection: () => {},
     renameCollection: () => {},
-    listSites: () => [],
-    removeSite: () => {},
-    listDeployments: () => [],
-    removeDeployment: () => {},
+    getCollectionPublishState: () => null,
+    updateCollectionPublishState: () => {},
+    clearCollectionPublishState: () => {},
+    listPublishedCollections: () => [],
     loadConfig: () => ({}),
     SyncEngine: class {},
     ThemeEngine: class { register() {} },
@@ -55,13 +54,22 @@ beforeEach(async () => {
     SearchIndexer: class { updateIndex() {} clearIndex() {} close() {} removeIndex() {} },
     isValidCollectionKey: () => true,
     contextExists: () => true,
+    ensureInitialized: () => {},
     migrateFromLegacyContext: () => {},
-    getSite: () => null,
-    addSite: () => {},
-    getDeployment: () => null,
-    addDeployment: () => {},
     configSchema: { parse: (x: any) => x },
     defaultConfig: {},
+    extractWikilinks: () => [],
+    frontmatter: () => "",
+    wikilink: () => "",
+    callout: () => "",
+    embed: () => "",
+    createCryptoHasher: () => ({ update: () => {}, digest: () => "" }),
+    openDatabase: () => ({}),
+    getModuleDir: () => "",
+    resolveWorkerBundle: () => "",
+    resolveUiDist: () => "",
+    isBun: true,
+    spawnProcess: () => ({ exitCode: 0 }),
   }));
 
   mock.module("@frozenink/crawlers", () => ({
@@ -108,12 +116,10 @@ describe("management API publish security options", () => {
     });
 
     const postRes = await call(
-      new Request("http://localhost/api/publish", {
+      new Request("http://localhost/api/collections/alpha/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          collections: ["alpha"],
-          name: "worker-alpha",
           toolDescription: "Alpha collection helper",
           password: "secret123",
           removePassword: false,
@@ -126,9 +132,7 @@ describe("management API publish security options", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(captured).toBeTruthy();
-    expect(captured?.collectionNames).toEqual(["alpha"]);
-    expect(captured?.workerName).toBe("worker-alpha");
-    expect(captured?.toolDescription).toBe("Alpha collection helper");
+    expect(captured?.collectionName).toBe("alpha");
     expect(captured?.password).toBe("secret123");
     expect(captured?.removePassword).toBe(false);
     expect(captured?.forcePublic).toBe(true);
@@ -146,10 +150,10 @@ describe("management API publish security options", () => {
     });
 
     await call(
-      new Request("http://localhost/api/publish", {
+      new Request("http://localhost/api/collections/alpha/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collections: ["alpha"], name: "worker-alpha" }),
+        body: JSON.stringify({}),
       }),
     );
 
