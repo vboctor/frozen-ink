@@ -388,10 +388,12 @@ export async function publishCollections(
     const ftsSql: string[] = [];
     ftsSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(collection_name UNINDEXED, entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
 
+    let ftsBuilt = 0;
     for (const colName of collectionNames) {
       const dbPath = getCollectionDbPath(colName);
       const colDb = getCollectionDb(dbPath);
       const allEntities = colDb.select().from(entities).all();
+      const ftsTotal = allEntities.length;
       const collectionDir = join(home, "collections", colName);
 
       for (const entity of allEntities) {
@@ -416,16 +418,27 @@ export async function publishCollections(
           .join(" ");
 
         ftsSql.push(`INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES ('${escapeSQL(colName)}', ${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(entityTagNames)}');`);
+        ftsBuilt++;
+        if (ftsBuilt % 500 === 0) {
+          onProgress("fts", `Building search index... ${ftsBuilt}/${ftsTotal} entities`);
+        }
       }
     }
+    onProgress("fts", `Built search index: ${ftsBuilt} entries`);
 
-    onProgress("fts-upload", "Uploading search index to D1...");
+    const ftsBatches = Math.ceil((ftsSql.length - 1) / 200);
+    onProgress("fts-upload", `Uploading search index to D1 (${ftsBatches} batches)...`);
     const FTS_BATCH_SIZE = 200;
+    let ftsBatchCount = 0;
     for (let i = 0; i < ftsSql.length; i += FTS_BATCH_SIZE) {
       const batch = ftsSql.slice(i, i + FTS_BATCH_SIZE);
       const batchFile = writeTempFile(batch.join("\n"), ".sql");
       try {
         await executeD1File(d1DatabaseName, batchFile);
+        ftsBatchCount++;
+        if (ftsBatchCount % 5 === 0 || ftsBatchCount === ftsBatches) {
+          onProgress("fts-upload", `Uploading search index... ${ftsBatchCount}/${ftsBatches} batches`);
+        }
       } finally {
         cleanupTempFile(batchFile);
       }
