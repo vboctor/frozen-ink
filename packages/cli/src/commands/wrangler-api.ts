@@ -184,15 +184,22 @@ export async function putR2Object(
   const { apiToken, accountId } = await getCredentials();
   const body = readFileSync(filePath);
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      ...(contentType ? { "Content-Type": contentType } : {}),
-    },
-    body,
-  });
-  if (!res.ok) {
+  const maxRetries = 5;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        ...(contentType ? { "Content-Type": contentType } : {}),
+      },
+      body,
+    });
+    if (res.ok) return;
+    if (res.status === 429 && attempt < maxRetries) {
+      const delay = Math.min(1000 * 2 ** attempt, 30000);
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
     const text = await res.text();
     throw new Error(`R2 upload failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
   }

@@ -456,7 +456,7 @@ export async function publishCollections(
     }
     if (uiUploads.length > 0) {
       onProgress("r2-upload", `Uploading ${uiUploads.length} UI asset(s) to R2...`);
-      await runConcurrent(uiUploads, 10, async ({ r2Key, fullPath }) => {
+      await runConcurrent(uiUploads, 5, async ({ r2Key, fullPath }) => {
         await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
       });
     }
@@ -478,12 +478,12 @@ export async function publishCollections(
     onProgress("r2-upload", `Uploading ${uploads.length} files to R2...`);
     const uploadedKeys = new Set<string>();
     let uploadCount = 0;
-    await runConcurrent(uploads, 10, async ({ r2Key, fullPath }) => {
+    await runConcurrent(uploads, 5, async ({ r2Key, fullPath }) => {
       await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
       uploadedKeys.add(r2Key);
       uploadCount++;
-      if (uploadCount % 50 === 0) {
-        onProgress("r2-upload", `${uploadCount}/${uploads.length} files uploaded...`);
+      if (uploadCount % 500 === 0 || uploadCount === uploads.length) {
+        onProgress("r2-upload", `${uploadCount}/${uploads.length} files uploaded`);
       }
     });
     onProgress("r2-upload", `Uploaded ${uploadCount} files to R2`);
@@ -492,7 +492,7 @@ export async function publishCollections(
       const staleKeys = [...existingR2Keys].filter((key) => !uploadedKeys.has(key));
       if (staleKeys.length > 0) {
         onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
-        await runConcurrent(staleKeys, 10, async (key) => deleteR2Object(r2BucketName, key));
+        await runConcurrent(staleKeys, 5, async (key) => deleteR2Object(r2BucketName, key));
       }
     }
 

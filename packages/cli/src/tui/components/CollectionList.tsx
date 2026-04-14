@@ -908,8 +908,8 @@ export function CollectionList({
       <Box flexDirection="column" paddingY={1}>
         <Text bold color="yellow">{label} "{editingCollection}"... ({formatElapsed(publishElapsedMs)})</Text>
         <Box flexDirection="column" marginLeft={1} marginTop={1}>
-          {publishLog.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
-          {publishStatus && <Text color="cyan">{publishStatus}</Text>}
+          {publishLog.map((line: string, i: number) => <Text key={i} dimColor>{line}</Text>)}
+          {publishLastStep && <Text color="cyan">[{publishLastStep}] {publishStatus}</Text>}
         </Box>
       </Box>
     );
