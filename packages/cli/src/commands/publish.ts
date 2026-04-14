@@ -158,12 +158,19 @@ export async function publishCollections(
 
   const { collectionName, workerOnly = false, removePassword = false, forcePublic = false } = options;
   const workerName = collectionName;
-  let toolDescription = options.toolDescription?.trim() || undefined;
   const password = options.password?.trim();
   if (password && removePassword) {
     throw new Error("Cannot use --password and --remove-password together.");
   }
   const collectionNames = [collectionName];
+
+  const col = getCollection(collectionName);
+  if (!col) throw new Error(`Collection "${collectionName}" not found`);
+
+  let toolDescription = options.toolDescription?.trim()
+    || col.description?.trim()
+    || col.mcpToolDescription?.trim()
+    || undefined;
 
   const existingPublish = getCollectionPublishState(collectionName);
   const isUpdate = !!existingPublish;
@@ -174,10 +181,8 @@ export async function publishCollections(
 
   const home = getFrozenInkHome();
 
-  // Validate collection
+  // Validate collection database
   if (!workerOnly) {
-    const col = getCollection(collectionName);
-    if (!col) throw new Error(`Collection "${collectionName}" not found`);
     const dbPath = getCollectionDbPath(collectionName);
     if (!existsSync(dbPath)) throw new Error(`Collection "${collectionName}" database not found at ${dbPath}`);
   }

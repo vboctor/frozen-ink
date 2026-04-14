@@ -4,7 +4,7 @@ import { formatTimestamp, type Collection, type PublishProgress } from "../../ty
 export default function PublishPanel() {
   const [collections, setCollections] = useState<Collection[]>([]);
 
-  // Publish state
+  // Form state — only applies to the "Publish a Collection" form at the bottom
   const [selectedCollection, setSelectedCollection] = useState("");
   const [password, setPassword] = useState("");
   const [removePassword, setRemovePassword] = useState(false);
@@ -26,8 +26,6 @@ export default function PublishPanel() {
 
   const publishedCollections = collections.filter((c) => c.publish);
 
-  // --- Auth ---
-
   const checkAuth = () => {
     setAuthError(null);
     fetch("/api/cloudflare/check-auth", { method: "POST" })
@@ -39,12 +37,13 @@ export default function PublishPanel() {
       .catch(() => setAuthChecked(false));
   };
 
-  // --- Publish ---
-
-  const handlePublish = (collectionName: string) => {
+  const doPublish = (
+    collectionName: string,
+    opts: { password?: string; removePassword?: boolean },
+  ) => {
     const col = collections.find((c) => c.name === collectionName);
     const isInitialPublish = !col?.publish;
-    const isPublicInitialPublish = isInitialPublish && !password && !removePassword;
+    const isPublicInitialPublish = isInitialPublish && !opts.password && !opts.removePassword;
     let forcePublic = false;
 
     if (isPublicInitialPublish) {
@@ -63,8 +62,8 @@ export default function PublishPanel() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        password: password || undefined,
-        removePassword: removePassword || undefined,
+        password: opts.password || undefined,
+        removePassword: opts.removePassword || undefined,
         forcePublic: forcePublic || undefined,
       }),
     }).catch(() => {});
@@ -77,11 +76,21 @@ export default function PublishPanel() {
         if (!data.active) {
           if (pollRef.current) clearInterval(pollRef.current);
           setPublishing(false);
-          // Refresh collections
           fetch("/api/collections").then((r) => r.json()).then(setCollections).catch(() => {});
         }
       } catch {}
     }, 1000);
+  };
+
+  const handleFormPublish = () => {
+    if (!selectedCollection) return;
+    doPublish(selectedCollection, { password, removePassword });
+    setPassword("");
+    setRemovePassword(false);
+  };
+
+  const handleRepublish = (collectionName: string) => {
+    doPublish(collectionName, {});
   };
 
   const handleUnpublish = async (collectionName: string) => {
@@ -92,7 +101,7 @@ export default function PublishPanel() {
 
     setError(null);
     try {
-      const res = await fetch(`/api/collections/${encodeURIComponent(collectionName)}/unpublish`, { method: "POST" });
+      const res = await fetch(`/api/collections/${encodeURIComponent(collectionName)}/publish`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Unpublish failed" }));
         setError(data.error || "Unpublish failed");
@@ -103,8 +112,6 @@ export default function PublishPanel() {
       setError(String(err));
     }
   };
-
-  // --- Render ---
 
   return (
     <div className="manage-panel">
@@ -122,7 +129,6 @@ export default function PublishPanel() {
       {authError && <div className="form-error" style={{ whiteSpace: "pre-wrap" }}>{authError}</div>}
       {error && <div className="form-error">{error}</div>}
 
-      {/* Progress */}
       {progress && (publishing || progress.error) && (
         <div className="sync-progress">
           <div className="sync-progress-header">
@@ -135,7 +141,6 @@ export default function PublishPanel() {
         </div>
       )}
 
-      {/* Published collections */}
       {publishedCollections.length > 0 && (
         <div className="preset-list">
           <h3>Published Collections</h3>
@@ -163,7 +168,7 @@ export default function PublishPanel() {
                 <div className="preset-card-actions">
                   <button
                     className="btn btn-sm btn-primary"
-                    onClick={() => handlePublish(col.name)}
+                    onClick={() => handleRepublish(col.name)}
                     disabled={publishing}
                   >
                     {publishing ? "Publishing..." : "Republish"}
@@ -196,7 +201,6 @@ export default function PublishPanel() {
         </div>
       )}
 
-      {/* Publish a new collection */}
       <div style={{ marginTop: 16 }}>
         <h3>Publish a Collection</h3>
         <div className="form-group">
@@ -240,7 +244,7 @@ export default function PublishPanel() {
 
         <button
           className="btn btn-primary"
-          onClick={() => handlePublish(selectedCollection)}
+          onClick={handleFormPublish}
           disabled={publishing || !selectedCollection}
         >
           {publishing ? "Publishing..." : "Publish"}
