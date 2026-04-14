@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join, extname } from "path";
 import { createInterface } from "readline";
 import {
@@ -251,22 +251,22 @@ export async function publishCollections(
 
   // --- Phase 2: Upload data ---
 
-  // Read R2 manifest BEFORE dropping D1 tables (needed for stale file cleanup later)
-  let existingR2Keys = new Set<string>();
+  // Read R2 manifest BEFORE dropping D1 tables (needed for skip-unchanged and stale cleanup)
+  const existingR2Manifest = new Map<string, number>();
   if (!workerOnly && isUpdate) {
     try {
       onProgress("r2-manifest", "Reading existing R2 manifest...");
       const manifestJson = await executeD1Command(
         d1DatabaseName,
-        "SELECT key FROM r2_manifest",
+        "SELECT key, size FROM r2_manifest",
       );
       const parsed = JSON.parse(manifestJson);
       const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
       if (Array.isArray(results)) {
-        for (const row of results) existingR2Keys.add(row.key);
+        for (const row of results) existingR2Manifest.set(row.key, row.size ?? -1);
       }
     } catch {
-      // Manifest table may not exist on old deployments
+      // Manifest table may not exist or lack size column on old deployments
     }
   }
 
@@ -309,7 +309,7 @@ export async function publishCollections(
   entity_id INTEGER NOT NULL, filename TEXT NOT NULL,
   mime_type TEXT NOT NULL, storage_path TEXT NOT NULL
 );`);
-    schemaSql.push("CREATE TABLE r2_manifest (key TEXT PRIMARY KEY);");
+    schemaSql.push("CREATE TABLE r2_manifest (key TEXT PRIMARY KEY, size INTEGER NOT NULL DEFAULT 0);");
     schemaSql.push("");
 
     let entityIdOffset = 0;
@@ -475,21 +475,41 @@ export async function publishCollections(
       }
     }
 
-    onProgress("r2-upload", `Uploading ${uploads.length} files to R2...`);
+    // Skip files whose size matches the existing manifest
+    const fileSizes = new Map<string, number>();
+    const toUpload: Array<{ r2Key: string; fullPath: string }> = [];
+    let skippedCount = 0;
+    for (const { r2Key, fullPath } of uploads) {
+      const localSize = statSync(fullPath).size;
+      fileSizes.set(r2Key, localSize);
+      if (existingR2Manifest.get(r2Key) === localSize) {
+        skippedCount++;
+      } else {
+        toUpload.push({ r2Key, fullPath });
+      }
+    }
+    if (skippedCount > 0) {
+      onProgress("r2-upload", `${skippedCount} unchanged files skipped, uploading ${toUpload.length}...`);
+    } else {
+      onProgress("r2-upload", `Uploading ${toUpload.length} files to R2...`);
+    }
+
     const uploadedKeys = new Set<string>();
     let uploadCount = 0;
-    await runConcurrent(uploads, 5, async ({ r2Key, fullPath }) => {
+    await runConcurrent(toUpload, 5, async ({ r2Key, fullPath }) => {
       await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
       uploadedKeys.add(r2Key);
       uploadCount++;
-      if (uploadCount % 500 === 0 || uploadCount === uploads.length) {
-        onProgress("r2-upload", `${uploadCount}/${uploads.length} files uploaded`);
+      if (uploadCount % 500 === 0 || uploadCount === toUpload.length) {
+        onProgress("r2-upload", `${uploadCount}/${toUpload.length} files uploaded`);
       }
     });
-    onProgress("r2-upload", `Uploaded ${uploadCount} files to R2`);
+    // All keys (uploaded + skipped) are in the current set
+    const allKeys = new Set(fileSizes.keys());
+    onProgress("r2-upload", `Uploaded ${uploadCount} files to R2${skippedCount > 0 ? ` (${skippedCount} unchanged)` : ""}`);
 
-    if (isUpdate && existingR2Keys.size > 0) {
-      const staleKeys = [...existingR2Keys].filter((key) => !uploadedKeys.has(key));
+    if (isUpdate && existingR2Manifest.size > 0) {
+      const staleKeys = [...existingR2Manifest.keys()].filter((key) => !allKeys.has(key));
       if (staleKeys.length > 0) {
         onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
         await runConcurrent(staleKeys, 5, async (key) => deleteR2Object(r2BucketName, key));
@@ -497,8 +517,8 @@ export async function publishCollections(
     }
 
     const manifestSql = ["DELETE FROM r2_manifest;"];
-    for (const key of uploadedKeys) {
-      manifestSql.push(`INSERT INTO r2_manifest (key) VALUES ('${escapeSQL(key)}');`);
+    for (const [key, size] of fileSizes) {
+      manifestSql.push(`INSERT INTO r2_manifest (key, size) VALUES ('${escapeSQL(key)}', ${size});`);
     }
     const manifestFile = writeTempFile(manifestSql.join("\n"), ".sql");
     try {
