@@ -3,6 +3,12 @@ export interface FolderConfig {
   visible?: boolean;
   /** Sort order for files in this folder (default: ASC). */
   sort?: "ASC" | "DESC";
+  /**
+   * Glob patterns matching filenames to hide within this folder.
+   * Wildcards: * matches any sequence of characters, ? matches one character.
+   * Example: ["AGENTS.md", "CLAUDE.md", "*.draft"]
+   */
+  hide?: string[];
 }
 
 export interface ThemeRenderContext {
@@ -54,4 +60,19 @@ export interface Theme {
    * The sync engine writes these as <folder-name>.yml inside each matching folder.
    */
   folderConfigs?(): Record<string, FolderConfig>;
+  /**
+   * Optional: return the config for the content root directory.
+   * Merged with collection-level hide patterns and written as content/content.yml
+   * during prepare. Use this to specify default visibility or sort settings.
+   */
+  rootConfig?(): FolderConfig;
+  /**
+   * Optional: generate the body of AGENTS.md for this collection.
+   * Called during prepare to create/update the AI guidance file.
+   */
+  agentsMarkdown?(options: {
+    title: string;
+    description?: string;
+    config?: Record<string, unknown>;
+  }): string;
 }

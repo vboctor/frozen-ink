@@ -66,20 +66,46 @@ function getMimeType(filePath: string): string {
   return MIME_TYPES[ext] || "application/octet-stream";
 }
 
-/** Parse a folder yml file (visible/sort fields only). */
-function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | "DESC" } {
+/** Returns true if `filename` matches any of the glob patterns. */
+function matchesHidePattern(patterns: string[], filename: string): boolean {
+  return patterns.some((pattern) => {
+    // Escape regex special chars except * and ?, then convert glob wildcards
+    const re = new RegExp(
+      "^" +
+        pattern
+          .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*/g, ".*")
+          .replace(/\?/g, ".") +
+        "$",
+    );
+    return re.test(filename);
+  });
+}
+
+/** Parse a folder yml file (visible/sort/hide fields). */
+function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] } {
   const folderName = basename(dirPath);
   const ymlPath = join(dirPath, `${folderName}.yml`);
   if (!existsSync(ymlPath)) return {};
   try {
     const content = readFileSync(ymlPath, "utf-8");
-    const config: { visible?: boolean; sort?: "ASC" | "DESC" } = {};
+    const config: { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] } = {};
     for (const line of content.split("\n")) {
       const m = line.match(/^(\w+):\s*(.+)$/);
       if (!m) continue;
       const [, key, val] = m;
       if (key === "visible") config.visible = val.trim() !== "false";
       if (key === "sort") config.sort = val.trim() === "DESC" ? "DESC" : "ASC";
+      if (key === "hide") {
+        // Parse inline YAML array: [item1, item2] or ["item1", "item2"]
+        const arrayMatch = val.trim().match(/^\[(.+)\]$/);
+        if (arrayMatch) {
+          config.hide = arrayMatch[1]
+            .split(",")
+            .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+            .filter(Boolean);
+        }
+      }
     }
     return config;
   } catch {
@@ -105,9 +131,10 @@ function buildFileTree(
 ): object[] {
   if (!existsSync(dirPath)) return [];
 
-  // Read this directory's own config to determine sort order for its files
-  const ownConfig = basePath ? readFolderConfig(dirPath) : {};
+  // Read this directory's own config (including root: content/content.yml)
+  const ownConfig = readFolderConfig(dirPath);
   const sortOrder = ownConfig.sort ?? "ASC";
+  const folderHide = ownConfig.hide ?? [];
 
   const entries = readdirSync(dirPath, { withFileTypes: true });
   const dirs: object[] = [];
@@ -129,6 +156,8 @@ function buildFileTree(
         children,
       });
     } else if (entry.name.endsWith(".md")) {
+      // Apply folder-level hide patterns
+      if (folderHide.length > 0 && matchesHidePattern(folderHide, entry.name)) continue;
       const node: Record<string, unknown> = {
         name: entry.name,
         path: relativePath,

@@ -223,6 +223,27 @@ export function handleManagementRequest(req: Request): Response | null {
       if (!col) return errorResponse("Collection not found", 404);
       const body = await readBody(req);
       updateCollection(name, body as any);
+      // Re-run prepare so AGENTS.md/CLAUDE.md and folder configs stay up to date
+      const updatedCol = getCollection(name);
+      if (updatedCol) {
+        const home = getFrozenInkHome();
+        const themeEngine = createGenerateThemeEngine();
+        await prepareCollection(updatedCol, home, themeEngine, (msg) => console.log(`[prepare:${name}]`, msg));
+      }
+      return jsonResponse({ ok: true });
+    });
+  }
+
+  // POST /api/collections/:name/prepare
+  const prepareColMatch = path.match(/^\/api\/collections\/([^/]+)\/prepare$/);
+  if (prepareColMatch && method === "POST") {
+    return handleAsync(async () => {
+      const name = decodeURIComponent(prepareColMatch[1]);
+      const col = getCollection(name);
+      if (!col) return errorResponse("Collection not found", 404);
+      const home = getFrozenInkHome();
+      const themeEngine = createGenerateThemeEngine();
+      await prepareCollection(col, home, themeEngine, (msg) => console.log(`[prepare:${name}]`, msg));
       return jsonResponse({ ok: true });
     });
   }

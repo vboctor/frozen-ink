@@ -21,6 +21,9 @@ function serializeFolderConfig(config: FolderConfig): string {
   const lines: string[] = [];
   if (config.visible === false) lines.push("visible: false");
   if (config.sort === "DESC") lines.push("sort: DESC");
+  if (config.hide && config.hide.length > 0) {
+    lines.push(`hide: [${config.hide.join(", ")}]`);
+  }
   return lines.join("\n") + "\n";
 }
 
@@ -828,6 +831,7 @@ export class SyncEngine {
       const diskMarkdownFiles = await this.storage.list(this.markdownBasePath);
       for (const diskPath of diskMarkdownFiles) {
         if (isToolPath(diskPath)) continue;
+        if (diskPath.endsWith(".yml")) continue;
         if (!dbMarkdownPaths.has(diskPath)) {
           try {
             await this.storage.delete(diskPath);
@@ -886,11 +890,11 @@ export class SyncEngine {
 
   /**
    * Write <folder-name>.yml config files for all folders whose leaf name matches
-   * a key in the theme's folderConfigs(). Covers any depth (e.g. project/issues/).
+   * a key in the theme's folderConfigs(). Also writes content.yml for the root config.
+   * Covers any depth (e.g. project/issues/).
    */
   private async writeFolderConfigFiles(crawlerType: string): Promise<void> {
     const configs = this.themeEngine.getFolderConfigs(crawlerType);
-    if (Object.keys(configs).length === 0) return;
 
     // Use listDirs to cover empty directories too (file-based listing misses them)
     const allDirs = this.storage.listDirs
@@ -903,6 +907,9 @@ export class SyncEngine {
       const ymlPath = `${dirPath}/${folderName}.yml`;
       await this.storage.write(ymlPath, serializeFolderConfig(configs[folderName]));
     }
+
+    // Root content.yml is written only by prepare (which merges theme rootConfig
+    // with collection-level hide patterns). The yml survives reconcile (skipped above).
   }
 
   private async deleteEntity(externalId: string): Promise<boolean> {

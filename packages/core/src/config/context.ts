@@ -26,6 +26,12 @@ const collectionEntrySchema = z.object({
   config: z.record(z.unknown()).default({}),
   credentials: z.record(z.unknown()).default({}),
   assets: assetsConfigSchema,
+  /**
+   * Glob patterns matching filenames to hide from the collection root.
+   * These are merged with the theme's rootConfig() defaults during prepare.
+   * Example: ["draft.md", "*.wip"]
+   */
+  hide: z.array(z.string()).optional(),
 });
 
 /** Site config schema — immutable settings stored in <name>.yml */

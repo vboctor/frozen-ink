@@ -102,10 +102,23 @@ api.get("/api/collections/:name/tree", async (c) => {
   const name = c.req.param("name");
   const prefix = `${name}/content/`;
 
+  // Fetch root config (content/content.yml) for collection-root-level settings (e.g. hide list)
+  const rootConfigObj = await c.env.BUCKET.get(`${prefix}content.yml`);
+  const rootConfig = rootConfigObj ? parseFolderConfig(await rootConfigObj.text()) : {};
+  const rootHide = rootConfig.hide ?? [];
+
   const listed = await c.env.BUCKET.list({ prefix });
   const mdPaths = listed.objects
     .map((o) => o.key.slice(prefix.length))
-    .filter((p) => p.endsWith(".md"));
+    .filter((p) => p.endsWith(".md"))
+    // Apply root-level hide patterns to files at the root (no subdirectory)
+    .filter((p) => {
+      const parts = p.split("/");
+      if (parts.length === 1 && rootHide.length > 0) {
+        return !matchesHidePattern(rootHide, parts[0]);
+      }
+      return true;
+    });
 
   // Fetch entity titles from D1 to display instead of raw filenames
   const titleByPath = new Map<string, string>();
@@ -135,7 +148,7 @@ api.get("/api/collections/:name/tree", async (c) => {
     }
   }
 
-  const folderConfigs = new Map<string, { visible?: boolean; sort?: "ASC" | "DESC" }>();
+  const folderConfigs = new Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] }>();
   await Promise.all(
     [...folderPaths].map(async (folderPath) => {
       const folderName = folderPath.split("/").pop()!;
@@ -301,15 +314,40 @@ api.get("/api/attachments/:collection/*", async (c) => {
   });
 });
 
-/** Parse a minimal folder yml (visible/sort only). Works without js-yaml in the Worker runtime. */
-function parseFolderConfig(content: string): { visible?: boolean; sort?: "ASC" | "DESC" } {
-  const config: { visible?: boolean; sort?: "ASC" | "DESC" } = {};
+/** Returns true if `filename` matches any of the glob patterns. */
+function matchesHidePattern(patterns: string[], filename: string): boolean {
+  return patterns.some((pattern) => {
+    const re = new RegExp(
+      "^" +
+        pattern
+          .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*/g, ".*")
+          .replace(/\?/g, ".") +
+        "$",
+    );
+    return re.test(filename);
+  });
+}
+
+/** Parse a minimal folder yml (visible/sort/hide). Works without js-yaml in the Worker runtime. */
+function parseFolderConfig(content: string): { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] } {
+  const config: { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] } = {};
   for (const line of content.split("\n")) {
     const m = line.match(/^(\w+):\s*(.+)$/);
     if (!m) continue;
     const [, key, val] = m;
     if (key === "visible") config.visible = val.trim() !== "false";
     if (key === "sort") config.sort = val.trim() === "DESC" ? "DESC" : "ASC";
+    if (key === "hide") {
+      // Parse inline YAML array: [item1, item2] or ["item1", "item2"]
+      const arrayMatch = val.trim().match(/^\[(.+)\]$/);
+      if (arrayMatch) {
+        config.hide = arrayMatch[1]
+          .split(",")
+          .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+          .filter(Boolean);
+      }
+    }
   }
   return config;
 }
@@ -318,7 +356,7 @@ function parseFolderConfig(content: string): { visible?: boolean; sort?: "ASC" |
 function buildTreeFromPaths(
   paths: string[],
   titleByPath: Map<string, string> = new Map(),
-  folderConfigs: Map<string, { visible?: boolean; sort?: "ASC" | "DESC" }> = new Map(),
+  folderConfigs: Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] }> = new Map(),
 ): object[] {
   interface TreeNode {
     name: string;
@@ -366,10 +404,11 @@ function buildTreeFromPaths(
     }
   }
 
-  // Sort: directories first (ASC), files per-folder config (ASC or DESC); prune hidden dirs
+  // Sort: directories first (ASC), files per-folder config (ASC or DESC); prune hidden dirs/files
   function sortTree(nodes: TreeNode[], parentPath: string = ""): TreeNode[] {
     const config = parentPath ? folderConfigs.get(parentPath) : undefined;
     const sortOrder = config?.sort ?? "ASC";
+    const folderHide = config?.hide ?? [];
 
     const dirs = nodes
       .filter((n) => n.type === "directory")
@@ -379,7 +418,9 @@ function buildTreeFromPaths(
       })
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    const files = nodes.filter((n) => n.type === "file");
+    const files = nodes
+      .filter((n) => n.type === "file")
+      .filter((n) => folderHide.length === 0 || !matchesHidePattern(folderHide, n.name));
     if (sortOrder === "DESC") {
       files.sort((a, b) => b.name.localeCompare(a.name));
     } else {
