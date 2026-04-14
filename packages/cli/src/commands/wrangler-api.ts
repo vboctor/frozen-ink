@@ -164,16 +164,23 @@ export async function deleteD1(dbName: string): Promise<void> {
 
 // --- Retry helper for HTTP APIs ---
 
+let throttleUntil = 0;
+
 async function fetchWithRetry(
   url: string,
   init: RequestInit,
   maxRetries = 5,
 ): Promise<Response> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const now = Date.now();
+    if (throttleUntil > now) {
+      await new Promise((r) => setTimeout(r, throttleUntil - now));
+    }
     const res = await fetch(url, init);
     if (res.ok || res.status === 404) return res;
     if (res.status === 429 && attempt < maxRetries) {
-      const delay = Math.min(1000 * 2 ** attempt, 30000);
+      const delay = Math.min(2000 * 2 ** attempt, 30000);
+      throttleUntil = Date.now() + delay;
       await new Promise((r) => setTimeout(r, delay));
       continue;
     }

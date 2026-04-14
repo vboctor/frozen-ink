@@ -457,7 +457,7 @@ export async function publishCollections(
     }
     if (uiUploads.length > 0) {
       onProgress("r2-upload", `Uploading ${uiUploads.length} UI asset(s) to R2...`);
-      await runConcurrent(uiUploads, 5, async ({ r2Key, fullPath }) => {
+      await runConcurrent(uiUploads, 3, async ({ r2Key, fullPath }) => {
         await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
       });
     }
@@ -497,7 +497,7 @@ export async function publishCollections(
 
     const uploadedKeys = new Set<string>();
     let uploadCount = 0;
-    await runConcurrent(toUpload, 5, async ({ r2Key, fullPath }) => {
+    await runConcurrent(toUpload, 3, async ({ r2Key, fullPath }) => {
       await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
       uploadedKeys.add(r2Key);
       uploadCount++;
@@ -516,7 +516,7 @@ export async function publishCollections(
         const staleKeys = remoteKeys.filter((key) => !allKeys.has(key));
         if (staleKeys.length > 0) {
           onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
-          await runConcurrent(staleKeys, 5, async (key) => deleteR2Object(r2BucketName, key));
+          await runConcurrent(staleKeys, 3, async (key) => deleteR2Object(r2BucketName, key));
         }
       } catch {
         onProgress("r2-cleanup", "Warning: could not list R2 objects for stale cleanup");
