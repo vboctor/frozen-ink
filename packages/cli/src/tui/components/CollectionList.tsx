@@ -51,6 +51,7 @@ type Mode =
   | "publish-password"
   | "publish-confirm"
   | "publishing"
+  | "publish-done"
   | "confirm-unpublish"
   | "unpublishing"
   | "password-manage"
@@ -487,6 +488,8 @@ export function CollectionList({
   const [publishProgress, setPublishProgress] = useState<string[]>([]);
   const [publishError, setPublishError] = useState("");
   const [publishPassword, setPublishPassword] = useState("");
+  const [publishStartTime, setPublishStartTime] = useState<number | null>(null);
+  const [publishElapsedMs, setPublishElapsedMs] = useState(0);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
@@ -496,6 +499,7 @@ export function CollectionList({
     setEditingCollection(name);
     setPublishProgress([]);
     setPublishError("");
+    setPublishStartTime(Date.now());
     setMode("publishing");
     publishCollections(
       {
@@ -506,11 +510,14 @@ export function CollectionList({
       },
       (step, detail) => setPublishProgress((p) => [...p, `[${step}] ${detail}`]),
     ).then(() => {
+      setPublishStartTime(null);
       setMessage(`Published "${name}"`);
-      setMode("list");
+      setMode("publish-done");
       refresh();
     }).catch((err) => {
+      setPublishStartTime(null);
       setPublishError(err instanceof Error ? err.message : String(err));
+      setMode("publish-done");
     });
   }, [refresh]);
 
@@ -521,6 +528,14 @@ export function CollectionList({
     }, 1000);
     return () => clearInterval(interval);
   }, [syncStartTime]);
+
+  useEffect(() => {
+    if (publishStartTime === null) return;
+    const interval = setInterval(() => {
+      setPublishElapsedMs(Date.now() - publishStartTime);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [publishStartTime]);
 
   ensureInitialized();
   const collections = listCollections();
@@ -752,18 +767,28 @@ export function CollectionList({
           setMode("unpublishing");
           setPublishProgress([]);
           setPublishError("");
+          setPublishStartTime(Date.now());
           unpublishCollection(current.name, publishState, (step, detail) => {
             setPublishProgress((p) => [...p, `[${step}] ${detail}`]);
           }).then(() => {
+            setPublishStartTime(null);
             setMessage(`Unpublished "${current.name}". Local data preserved.`);
-            setMode("list");
+            setMode("publish-done");
             refresh();
           }).catch((err) => {
+            setPublishStartTime(null);
             setPublishError(err instanceof Error ? err.message : String(err));
-            setMode("list");
+            setMode("publish-done");
           });
         }
       } else {
+        setMessage("");
+        setMode("list");
+      }
+    } else if (mode === "publish-done") {
+      if (key.return || key.escape) {
+        setPublishProgress([]);
+        setPublishError("");
         setMessage("");
         setMode("list");
       }
@@ -883,11 +908,27 @@ export function CollectionList({
     const label = mode === "publishing" ? "Publishing" : "Unpublishing";
     return (
       <Box flexDirection="column" paddingY={1}>
-        <Text bold color="yellow">{label}...</Text>
+        <Text bold color="yellow">{label} "{editingCollection}"... ({formatElapsed(publishElapsedMs)})</Text>
         <Box flexDirection="column" marginLeft={1} marginTop={1}>
           {publishProgress.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
-          {publishError && <Text color="red">Error: {publishError}</Text>}
         </Box>
+      </Box>
+    );
+  }
+
+  if (mode === "publish-done") {
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        {publishError ? (
+          <Text color="red" bold>Failed</Text>
+        ) : (
+          <Text color="green" bold>{message}</Text>
+        )}
+        <Box flexDirection="column" marginLeft={1} marginTop={1}>
+          {publishProgress.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
+          {publishError && <Text color="red">{publishError}</Text>}
+        </Box>
+        <Box marginTop={1}><Text dimColor>Press Enter to continue</Text></Box>
       </Box>
     );
   }
