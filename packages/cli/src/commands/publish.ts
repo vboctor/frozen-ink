@@ -212,9 +212,7 @@ export async function publishCollections(
 
   assertInitialPublishConfirmation({ isUpdate, workerOnly, passwordHash, forcePublic });
 
-  // --- Phase 1: Create resources + deploy worker ---
-  // The worker must be deployed before data so the site is reachable
-  // even while data is still uploading.
+  // --- Phase 1: Create infrastructure + deploy worker ---
 
   if (!workerOnly) {
     onProgress("d1", "Setting up D1 database...");
@@ -226,7 +224,6 @@ export async function publishCollections(
   onProgress("r2", "Setting up R2 bucket...");
   await createR2Bucket(r2BucketName);
 
-  // Deploy worker (before data upload)
   onProgress("deploy", "Deploying worker...");
   const workerBundlePath = resolveWorkerBundle(__moduleDir);
   if (!workerBundlePath || !existsSync(workerBundlePath)) {
@@ -250,26 +247,122 @@ export async function publishCollections(
     cleanupTempFile(tomlFile);
   }
 
-  // --- Phase 2: Upload data ---
+  // --- Phase 2: R2 uploads (before D1 rebuild so the site stays live on old data) ---
 
-  // Read R2 manifest BEFORE dropping D1 tables (needed for skip-unchanged and stale cleanup)
-  const existingR2Manifest = new Map<string, number>();
-  if (!workerOnly && isUpdate) {
-    try {
-      onProgress("r2-manifest", "Reading existing R2 manifest...");
-      const manifestJson = await executeD1Command(
-        d1DatabaseName,
-        "SELECT key, size FROM r2_manifest",
-      );
-      const parsed = JSON.parse(manifestJson);
-      const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
-      if (Array.isArray(results)) {
-        for (const row of results) existingR2Manifest.set(row.key, row.size ?? -1);
+  const uiDistDir = resolveUiDist(__moduleDir) ?? "";
+  let fileSizes = new Map<string, number>();
+
+  if (workerOnly) {
+    const uiUploads: Array<{ r2Key: string; fullPath: string }> = [];
+    if (existsSync(uiDistDir)) {
+      for (const file of collectFiles(uiDistDir)) {
+        uiUploads.push({ r2Key: `_ui/${file.relativePath}`, fullPath: file.fullPath });
       }
-    } catch {
-      // Manifest table may not exist or lack size column on old deployments
+    }
+    if (uiUploads.length > 0) {
+      onProgress("r2-upload", `Uploading ${uiUploads.length} UI asset(s) to R2...`);
+      await runConcurrent(uiUploads, 3, async ({ r2Key, fullPath }) => {
+        await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
+      });
+    }
+  } else {
+    // Read R2 manifest from D1 (still intact — D1 hasn't been rebuilt yet)
+    const existingR2Manifest = new Map<string, number>();
+    if (isUpdate) {
+      try {
+        onProgress("r2-manifest", "Reading existing R2 manifest...");
+        const manifestJson = await executeD1Command(
+          d1DatabaseName,
+          "SELECT key, size FROM r2_manifest",
+        );
+        const parsed = JSON.parse(manifestJson);
+        const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
+        if (Array.isArray(results)) {
+          for (const row of results) existingR2Manifest.set(row.key, row.size ?? -1);
+        }
+      } catch {
+        // Manifest table may not exist or lack size column on old deployments
+      }
+    }
+
+    const uploads: Array<{ r2Key: string; fullPath: string }> = [];
+    for (const colName of collectionNames) {
+      const collectionDir = join(home, "collections", colName);
+      for (const file of collectFiles(join(collectionDir, "content"))) {
+        uploads.push({ r2Key: `${colName}/content/${file.relativePath}`, fullPath: file.fullPath });
+      }
+    }
+    if (existsSync(uiDistDir)) {
+      for (const file of collectFiles(uiDistDir)) {
+        uploads.push({ r2Key: `_ui/${file.relativePath}`, fullPath: file.fullPath });
+      }
+    }
+
+    const toUpload: Array<{ r2Key: string; fullPath: string }> = [];
+    let skippedCount = 0;
+    for (const { r2Key, fullPath } of uploads) {
+      const localSize = statSync(fullPath).size;
+      fileSizes.set(r2Key, localSize);
+      if (existingR2Manifest.get(r2Key) === localSize) {
+        skippedCount++;
+      } else {
+        toUpload.push({ r2Key, fullPath });
+      }
+    }
+    if (skippedCount > 0) {
+      onProgress("r2-upload", `${skippedCount} unchanged files skipped, uploading ${toUpload.length}...`);
+    } else {
+      onProgress("r2-upload", `Uploading ${toUpload.length} files to R2...`);
+    }
+
+    let uploadCount = 0;
+    const pendingManifest: Array<{ key: string; size: number }> = [];
+    const CHECKPOINT_INTERVAL = 500;
+
+    const flushManifestCheckpoint = async () => {
+      if (pendingManifest.length === 0) return;
+      const batch = pendingManifest.splice(0);
+      const sql = batch
+        .map((e) => `INSERT OR REPLACE INTO r2_manifest (key, size) VALUES ('${escapeSQL(e.key)}', ${e.size});`)
+        .join("\n");
+      const tmpFile = writeTempFile(sql, ".sql");
+      try {
+        await executeD1File(d1DatabaseName, tmpFile);
+      } finally {
+        cleanupTempFile(tmpFile);
+      }
+    };
+
+    await runConcurrent(toUpload, 3, async ({ r2Key, fullPath }) => {
+      await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
+      pendingManifest.push({ key: r2Key, size: fileSizes.get(r2Key)! });
+      uploadCount++;
+      if (uploadCount % CHECKPOINT_INTERVAL === 0) {
+        onProgress("r2-upload", `${uploadCount}/${toUpload.length} files uploaded`);
+        await flushManifestCheckpoint();
+      }
+    });
+    await flushManifestCheckpoint();
+    onProgress("r2-upload", `Uploaded ${uploadCount} files to R2${skippedCount > 0 ? ` (${skippedCount} unchanged)` : ""}`);
+
+    // Stale cleanup via R2 list (source of truth)
+    if (isUpdate) {
+      const allKeys = new Set(fileSizes.keys());
+      onProgress("r2-cleanup", "Checking for stale R2 files...");
+      try {
+        const remoteKeys = await listR2Objects(r2BucketName);
+        const staleKeys = remoteKeys.filter((key) => !allKeys.has(key));
+        if (staleKeys.length > 0) {
+          onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
+          await runConcurrent(staleKeys, 3, async (key) => deleteR2Object(r2BucketName, key));
+        }
+      } catch {
+        onProgress("r2-cleanup", "Warning: could not list R2 objects for stale cleanup");
+      }
     }
   }
+
+  // --- Phase 3: D1 rebuild (destructive — done last to minimize downtime) ---
 
   if (!workerOnly) {
     onProgress("export", "Building database export...");
@@ -313,6 +406,11 @@ export async function publishCollections(
     schemaSql.push("CREATE TABLE r2_manifest (key TEXT PRIMARY KEY, size INTEGER NOT NULL DEFAULT 0);");
     schemaSql.push("");
 
+    // Write R2 manifest into the schema SQL so it's part of the rebuild
+    for (const [key, size] of fileSizes) {
+      schemaSql.push(`INSERT INTO r2_manifest (key, size) VALUES ('${escapeSQL(key)}', ${size});`);
+    }
+
     let entityIdOffset = 0;
     const MAX_DATA_LEN = 50000;
 
@@ -336,21 +434,18 @@ export async function publishCollections(
         schemaSql.push(`INSERT INTO entities (id, collection_name, external_id, entity_type, title, data, markdown_path, url, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(colName)}', '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.markdownPath ? `'${escapeSQL(entity.markdownPath)}'` : "NULL"}, ${entity.url ? `'${escapeSQL(entity.url)}'` : "NULL"}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "NULL"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "NULL"});`);
       }
 
-      // Export tags and entity_tags — resolve tagId to tag name via tags table
       const tagNameCache: Record<number, string> = {};
       const remoteTagNameToId: Record<string, number> = {};
       let remoteTagIdCounter = 0;
       for (const et of colDb.select().from(entityTags).all()) {
         const remoteId = entityIdMap.get(et.entityId);
         if (!remoteId) continue;
-        // Resolve tag name from local tags table
         let tagName = tagNameCache[et.tagId];
         if (!tagName) {
           const [tagRow] = colDb.select().from(tags).where(eq(tags.id, et.tagId)).all();
           tagName = tagRow?.name ?? `tag_${et.tagId}`;
           tagNameCache[et.tagId] = tagName;
         }
-        // Insert into remote tags table if not already done
         if (!remoteTagNameToId[tagName]) {
           remoteTagIdCounter++;
           remoteTagNameToId[tagName] = remoteTagIdCounter;
@@ -443,116 +538,6 @@ export async function publishCollections(
       } finally {
         cleanupTempFile(batchFile);
       }
-    }
-  }
-
-  // R2 uploads
-  const uiDistDir = resolveUiDist(__moduleDir) ?? "";
-  if (workerOnly) {
-    const uiUploads: Array<{ r2Key: string; fullPath: string }> = [];
-    if (existsSync(uiDistDir)) {
-      for (const file of collectFiles(uiDistDir)) {
-        uiUploads.push({ r2Key: `_ui/${file.relativePath}`, fullPath: file.fullPath });
-      }
-    }
-    if (uiUploads.length > 0) {
-      onProgress("r2-upload", `Uploading ${uiUploads.length} UI asset(s) to R2...`);
-      await runConcurrent(uiUploads, 3, async ({ r2Key, fullPath }) => {
-        await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
-      });
-    }
-  } else {
-    // existingR2Keys was populated before D1 tables were dropped (see above)
-    const uploads: Array<{ r2Key: string; fullPath: string }> = [];
-    for (const colName of collectionNames) {
-      const collectionDir = join(home, "collections", colName);
-      for (const file of collectFiles(join(collectionDir, "content"))) {
-        uploads.push({ r2Key: `${colName}/content/${file.relativePath}`, fullPath: file.fullPath });
-      }
-    }
-    if (existsSync(uiDistDir)) {
-      for (const file of collectFiles(uiDistDir)) {
-        uploads.push({ r2Key: `_ui/${file.relativePath}`, fullPath: file.fullPath });
-      }
-    }
-
-    // Skip files whose size matches the existing manifest
-    const fileSizes = new Map<string, number>();
-    const toUpload: Array<{ r2Key: string; fullPath: string }> = [];
-    let skippedCount = 0;
-    for (const { r2Key, fullPath } of uploads) {
-      const localSize = statSync(fullPath).size;
-      fileSizes.set(r2Key, localSize);
-      if (existingR2Manifest.get(r2Key) === localSize) {
-        skippedCount++;
-      } else {
-        toUpload.push({ r2Key, fullPath });
-      }
-    }
-    if (skippedCount > 0) {
-      onProgress("r2-upload", `${skippedCount} unchanged files skipped, uploading ${toUpload.length}...`);
-    } else {
-      onProgress("r2-upload", `Uploading ${toUpload.length} files to R2...`);
-    }
-
-    const uploadedKeys = new Set<string>();
-    let uploadCount = 0;
-    const pendingManifest: Array<{ key: string; size: number }> = [];
-    const CHECKPOINT_INTERVAL = 500;
-
-    const flushManifestCheckpoint = async () => {
-      if (pendingManifest.length === 0) return;
-      const batch = pendingManifest.splice(0);
-      const sql = batch
-        .map((e) => `INSERT OR REPLACE INTO r2_manifest (key, size) VALUES ('${escapeSQL(e.key)}', ${e.size});`)
-        .join("\n");
-      const tmpFile = writeTempFile(sql, ".sql");
-      try {
-        await executeD1File(d1DatabaseName, tmpFile);
-      } finally {
-        cleanupTempFile(tmpFile);
-      }
-    };
-
-    await runConcurrent(toUpload, 3, async ({ r2Key, fullPath }) => {
-      await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
-      uploadedKeys.add(r2Key);
-      pendingManifest.push({ key: r2Key, size: fileSizes.get(r2Key)! });
-      uploadCount++;
-      if (uploadCount % CHECKPOINT_INTERVAL === 0) {
-        onProgress("r2-upload", `${uploadCount}/${toUpload.length} files uploaded`);
-        await flushManifestCheckpoint();
-      }
-    });
-    await flushManifestCheckpoint();
-    const allKeys = new Set(fileSizes.keys());
-    onProgress("r2-upload", `Uploaded ${uploadCount} files to R2${skippedCount > 0 ? ` (${skippedCount} unchanged)` : ""}`);
-
-    // Stale cleanup: list actual R2 objects (source of truth) and delete any not in current set
-    if (isUpdate) {
-      onProgress("r2-cleanup", "Checking for stale R2 files...");
-      try {
-        const remoteKeys = await listR2Objects(r2BucketName);
-        const staleKeys = remoteKeys.filter((key) => !allKeys.has(key));
-        if (staleKeys.length > 0) {
-          onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
-          await runConcurrent(staleKeys, 3, async (key) => deleteR2Object(r2BucketName, key));
-        }
-      } catch {
-        onProgress("r2-cleanup", "Warning: could not list R2 objects for stale cleanup");
-      }
-    }
-
-    // Final manifest: ensure all keys (uploaded + skipped) are recorded
-    const manifestSql = ["DELETE FROM r2_manifest;"];
-    for (const [key, size] of fileSizes) {
-      manifestSql.push(`INSERT INTO r2_manifest (key, size) VALUES ('${escapeSQL(key)}', ${size});`);
-    }
-    const manifestFile = writeTempFile(manifestSql.join("\n"), ".sql");
-    try {
-      await executeD1File(d1DatabaseName, manifestFile);
-    } finally {
-      cleanupTempFile(manifestFile);
     }
   }
 
