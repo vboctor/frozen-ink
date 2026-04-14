@@ -118,4 +118,8 @@ export interface MantisHubIssue {
     message: string;
     field?: { name: string; old_value: string; new_value: string };
   }>;
+  custom_fields?: Array<{
+    field: { id: number; name: string };
+    value: string;
+  }>;
 }
