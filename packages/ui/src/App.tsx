@@ -143,6 +143,7 @@ export default function App() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
   const [fileTree, setFileTree] = useState<TreeNode[]>([]);
+  const [treeLoading, setTreeLoading] = useState(false);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [ftsOpen, setFtsOpen] = useState(false);
@@ -316,6 +317,7 @@ export default function App() {
     const collection = selectedCollection; // capture for async callbacks
     saveLastCollection(collection);
     setFileTree([]);
+    setTreeLoading(true);
     // Close tabs from other collections so a stale tab doesn't linger
     setTabs((prev) => {
       const kept = prev.filter((t) => t.collection === collection);
@@ -335,6 +337,7 @@ export default function App() {
       .then((r) => r.json())
       .then((tree: TreeNode[]) => {
         if (cancelled) return;
+        setTreeLoading(false);
         setFileTree(tree);
 
         // If a tab for this collection already exists, don't auto-open
@@ -769,6 +772,7 @@ export default function App() {
           />
           <FileTree
             tree={fileTree}
+            loading={treeLoading}
             selectedFile={selectedFile}
             onSelect={handleFileSelect}
           />

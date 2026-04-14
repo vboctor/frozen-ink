@@ -31,22 +31,7 @@ export async function buildRenderContext(
   crawlerType: string,
   entity: Entity,
 ): Promise<ThemeRenderContext> {
-  const [tags, allEntities] = await Promise.all([
-    getEntityTags(db, collectionName, entity.id),
-    db.prepare("SELECT external_id, markdown_path FROM entities WHERE collection_name = ?")
-      .bind(collectionName)
-      .all<{ external_id: string; markdown_path: string | null }>()
-      .then((r) => r.results ?? []),
-  ]);
-
-  const entityPathMap = new Map<string, string>();
-  for (const row of allEntities) {
-    if (!row.markdown_path) continue;
-    const prefix = "content/";
-    const rel = row.markdown_path.startsWith(prefix) ? row.markdown_path.slice(prefix.length) : row.markdown_path;
-    entityPathMap.set(row.external_id, rel.endsWith(".md") ? rel.slice(0, -3) : rel);
-  }
-
+  const tags = await getEntityTags(db, collectionName, entity.id);
   const data = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
 
   return {
@@ -60,7 +45,6 @@ export async function buildRenderContext(
     },
     collectionName,
     crawlerType,
-    lookupEntityPath: (externalId) => entityPathMap.get(externalId),
   };
 }
 
@@ -180,10 +164,30 @@ api.get("/api/collections/:name/tree", async (c) => {
 // GET /api/collections/:name/default-file
 api.get("/api/collections/:name/default-file", async (c) => {
   const name = c.req.param("name");
-  const entities = await getEntities(c.env.DB, name, { limit: 1 });
-  const first = entities[0];
-  const filePath = first?.markdown_path?.replace(/^content\//, "") ?? null;
-  return c.json({ file: filePath });
+  const col = await getCollection(c.env.DB, name);
+
+  // Pick the first file as it would appear in the tree:
+  // directories sorted ASC, files within sorted per folder config (DESC for issues).
+  const result = await c.env.DB.prepare(
+    "SELECT markdown_path FROM entities WHERE collection_name = ? AND markdown_path IS NOT NULL ORDER BY markdown_path ASC LIMIT 1",
+  ).bind(name).first<{ markdown_path: string }>();
+
+  if (!result) return c.json({ file: null });
+
+  // If the collection has DESC-sorted folders (e.g. issues), prefer the last file in that folder
+  if (col?.crawler_type) {
+    const folderConfigs = themeEngine.getFolderConfigs(col.crawler_type);
+    const path = result.markdown_path.replace(/^content\//, "");
+    const folder = path.split("/")[0];
+    if (folderConfigs[folder]?.sort === "DESC") {
+      const desc = await c.env.DB.prepare(
+        "SELECT markdown_path FROM entities WHERE collection_name = ? AND markdown_path LIKE ? ORDER BY markdown_path DESC LIMIT 1",
+      ).bind(name, `content/${folder}/%`).first<{ markdown_path: string }>();
+      if (desc) return c.json({ file: desc.markdown_path.replace(/^content\//, "") });
+    }
+  }
+
+  return c.json({ file: result.markdown_path.replace(/^content\//, "") });
 });
 
 // GET /api/collections/:name/markdown/*
