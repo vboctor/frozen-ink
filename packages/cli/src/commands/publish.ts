@@ -497,14 +497,34 @@ export async function publishCollections(
 
     const uploadedKeys = new Set<string>();
     let uploadCount = 0;
+    const pendingManifest: Array<{ key: string; size: number }> = [];
+    const CHECKPOINT_INTERVAL = 500;
+
+    const flushManifestCheckpoint = async () => {
+      if (pendingManifest.length === 0) return;
+      const batch = pendingManifest.splice(0);
+      const sql = batch
+        .map((e) => `INSERT OR REPLACE INTO r2_manifest (key, size) VALUES ('${escapeSQL(e.key)}', ${e.size});`)
+        .join("\n");
+      const tmpFile = writeTempFile(sql, ".sql");
+      try {
+        await executeD1File(d1DatabaseName, tmpFile);
+      } finally {
+        cleanupTempFile(tmpFile);
+      }
+    };
+
     await runConcurrent(toUpload, 3, async ({ r2Key, fullPath }) => {
       await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
       uploadedKeys.add(r2Key);
+      pendingManifest.push({ key: r2Key, size: fileSizes.get(r2Key)! });
       uploadCount++;
-      if (uploadCount % 500 === 0 || uploadCount === toUpload.length) {
+      if (uploadCount % CHECKPOINT_INTERVAL === 0) {
         onProgress("r2-upload", `${uploadCount}/${toUpload.length} files uploaded`);
+        await flushManifestCheckpoint();
       }
     });
+    await flushManifestCheckpoint();
     const allKeys = new Set(fileSizes.keys());
     onProgress("r2-upload", `Uploaded ${uploadCount} files to R2${skippedCount > 0 ? ` (${skippedCount} unchanged)` : ""}`);
 
@@ -523,6 +543,7 @@ export async function publishCollections(
       }
     }
 
+    // Final manifest: ensure all keys (uploaded + skipped) are recorded
     const manifestSql = ["DELETE FROM r2_manifest;"];
     for (const [key, size] of fileSizes) {
       manifestSql.push(`INSERT INTO r2_manifest (key, size) VALUES ('${escapeSQL(key)}', ${size});`);
