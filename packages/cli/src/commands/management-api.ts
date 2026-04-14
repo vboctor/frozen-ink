@@ -16,7 +16,6 @@ import {
   removeCollection,
   updateCollection,
   renameCollection,
-  getCollectionPublishState,
   clearCollectionPublishState,
   loadConfig,
   SyncEngine,
@@ -343,11 +342,8 @@ export function handleManagementRequest(req: Request): Response | null {
   if (unpublishColMatch && method === "POST") {
     const name = decodeURIComponent(unpublishColMatch[1]);
     return handleAsync(async () => {
-      const publishState = getCollectionPublishState(name);
-      if (!publishState) return errorResponse("Collection is not published", 404);
-
       const { unpublishCollection } = await import("./unpublish");
-      await unpublishCollection(name, publishState, (step, detail) => {
+      await unpublishCollection(name, (step, detail) => {
         console.log(`  [unpublish:${step}] ${detail}`);
       });
       return jsonResponse({ ok: true });

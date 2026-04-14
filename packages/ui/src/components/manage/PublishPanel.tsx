@@ -101,7 +101,7 @@ export default function PublishPanel() {
 
     setError(null);
     try {
-      const res = await fetch(`/api/collections/${encodeURIComponent(collectionName)}/publish`, { method: "DELETE" });
+      const res = await fetch(`/api/collections/${encodeURIComponent(collectionName)}/unpublish`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Unpublish failed" }));
         setError(data.error || "Unpublish failed");

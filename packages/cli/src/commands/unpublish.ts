@@ -3,9 +3,7 @@ import { createInterface } from "readline";
 import {
   ensureInitialized,
   getCollection,
-  getCollectionPublishState,
   clearCollectionPublishState,
-  type PublishState,
 } from "@frozenink/core";
 
 async function confirm(message: string): Promise<boolean> {
@@ -27,7 +25,6 @@ export type UnpublishProgressCallback = (step: string, detail: string) => void;
  */
 export async function unpublishCollection(
   collectionName: string,
-  _publishState: PublishState,
   onProgress: UnpublishProgressCallback = () => {},
 ): Promise<void> {
   const {
@@ -105,15 +102,9 @@ export const unpublishCommand = new Command("unpublish")
         process.exit(1);
       }
 
-      const publishState = getCollectionPublishState(collectionName);
-      if (!publishState) {
-        console.error(`Collection "${collectionName}" is not published`);
-        process.exit(1);
-      }
-
       if (!opts.force) {
         const ok = await confirm(
-          `This will delete the Cloudflare worker, D1 database, and R2 bucket for "${collectionName}". Continue?`,
+          `This will delete the Cloudflare worker, D1 database, and R2 bucket for "${collectionName}" (if they exist). Continue?`,
         );
         if (!ok) {
           console.log("Cancelled");
@@ -122,7 +113,7 @@ export const unpublishCommand = new Command("unpublish")
       }
 
       console.log(`Unpublishing "${collectionName}"...`);
-      await unpublishCollection(collectionName, publishState, (step, detail) => {
+      await unpublishCollection(collectionName, (step, detail) => {
         console.log(`  [${step}] ${detail}`);
       });
     } catch (err: unknown) {

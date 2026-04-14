@@ -743,7 +743,7 @@ export function CollectionList({
         setInputValue("");
         setMode("publish-password");
       }
-      if (input === "u" && current?.publish) {
+      if (input === "u") {
         setMode("confirm-unpublish");
       }
       if (input === "r" && (current?.publish as any)?.password?.protected) {
@@ -751,36 +751,33 @@ export function CollectionList({
       }
     } else if (mode === "confirm-unpublish") {
       if (input === "y" && editingCollection) {
-        const publishState = getCollectionPublishState(editingCollection);
-        if (publishState) {
-          setMode("unpublishing");
-          setPublishLog([]);
+        setMode("unpublishing");
+        setPublishLog([]);
+        setPublishStatus("");
+        setPublishLastStep("");
+        setPublishError("");
+        setPublishStartTime(Date.now());
+        let lastStep = "";
+        unpublishCollection(editingCollection, (step, detail) => {
+          if (step !== lastStep && lastStep) {
+            setPublishLog((log) => [...log, `[${lastStep}] done`]);
+          }
+          lastStep = step;
+          setPublishLastStep(step);
+          setPublishStatus(detail);
+        }).then(() => {
+          if (lastStep) setPublishLog((log) => [...log, `[${lastStep}] done`]);
           setPublishStatus("");
-          setPublishLastStep("");
-          setPublishError("");
-          setPublishStartTime(Date.now());
-          let lastStep = "";
-          unpublishCollection(editingCollection, publishState, (step, detail) => {
-            if (step !== lastStep && lastStep) {
-              setPublishLog((log) => [...log, `[${lastStep}] done`]);
-            }
-            lastStep = step;
-            setPublishLastStep(step);
-            setPublishStatus(detail);
-          }).then(() => {
-            if (lastStep) setPublishLog((log) => [...log, `[${lastStep}] done`]);
-            setPublishStatus("");
-            setPublishStartTime(null);
-            setMessage(`Unpublished "${editingCollection}". Local data preserved.`);
-            setMode("publish-done");
-            refresh();
-          }).catch((err) => {
-            setPublishStatus("");
-            setPublishStartTime(null);
-            setPublishError(err instanceof Error ? err.message : String(err));
-            setMode("publish-done");
-          });
-        }
+          setPublishStartTime(null);
+          setMessage(`Unpublished "${editingCollection}". Local data preserved.`);
+          setMode("publish-done");
+          refresh();
+        }).catch((err) => {
+          setPublishStatus("");
+          setPublishStartTime(null);
+          setPublishError(err instanceof Error ? err.message : String(err));
+          setMode("publish-done");
+        });
       } else {
         setMode("publish-menu");
       }
@@ -865,7 +862,7 @@ export function CollectionList({
         )}
         <Box flexDirection="column" marginTop={1}>
           <Text color="cyan">[p] Publish{isPublished ? " (update)" : ""}</Text>
-          <Text color={isPublished ? undefined : "gray"}>[u] Unpublish{!isPublished ? " (not published)" : ""}</Text>
+          <Text>[u] Unpublish</Text>
           <Text color={isPublished && isProtected ? undefined : "gray"}>[r] Remove password{!isPublished ? " (not published)" : !isProtected ? " (already public)" : ""}</Text>
         </Box>
         <Box marginTop={1}><Text dimColor>ESC back</Text></Box>
