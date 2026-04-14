@@ -162,6 +162,26 @@ export async function deleteD1(dbName: string): Promise<void> {
   await runWrangler(["d1", "delete", dbName, "-y"], { allowFailure: true });
 }
 
+// --- Retry helper for HTTP APIs ---
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  maxRetries = 5,
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, init);
+    if (res.ok || res.status === 404) return res;
+    if (res.status === 429 && attempt < maxRetries) {
+      const delay = Math.min(1000 * 2 ** attempt, 30000);
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
+    return res;
+  }
+  return fetch(url, init);
+}
+
 // --- R2 operations (bucket via wrangler CLI, objects via HTTP for speed) ---
 
 export async function createR2Bucket(name: string): Promise<void> {
@@ -184,22 +204,15 @@ export async function putR2Object(
   const { apiToken, accountId } = await getCredentials();
   const body = readFileSync(filePath);
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  const maxRetries = 5;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const res = await fetch(url, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        ...(contentType ? { "Content-Type": contentType } : {}),
-      },
-      body,
-    });
-    if (res.ok) return;
-    if (res.status === 429 && attempt < maxRetries) {
-      const delay = Math.min(1000 * 2 ** attempt, 30000);
-      await new Promise((r) => setTimeout(r, delay));
-      continue;
-    }
+  const res = await fetchWithRetry(url, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      ...(contentType ? { "Content-Type": contentType } : {}),
+    },
+    body,
+  });
+  if (!res.ok) {
     const text = await res.text();
     throw new Error(`R2 upload failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
   }
@@ -208,7 +221,7 @@ export async function putR2Object(
 export async function deleteR2Object(bucket: string, key: string): Promise<void> {
   const { apiToken, accountId } = await getCredentials();
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  await fetch(url, {
+  await fetchWithRetry(url, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${apiToken}` },
   });
