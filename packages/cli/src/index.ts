@@ -18,7 +18,6 @@ import { tuiCommand } from "./commands/tui";
 import { mcpCommand } from "./commands/mcp";
 import { tableplusCommand } from "./commands/tableplus";
 import { vscodeCommand } from "./commands/vscode";
-import { upgradeCommand } from "./commands/upgrade";
 import { cloneCommand } from "./commands/clone";
 import { pullCommand } from "./commands/pull";
 import { startTui } from "./tui/index";
@@ -48,7 +47,6 @@ program.addCommand(tuiCommand);
 program.addCommand(mcpCommand);
 program.addCommand(tableplusCommand);
 program.addCommand(vscodeCommand);
-program.addCommand(upgradeCommand);
 program.addCommand(cloneCommand);
 program.addCommand(pullCommand);
 

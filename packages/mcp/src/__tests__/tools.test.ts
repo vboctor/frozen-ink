@@ -7,7 +7,7 @@ import {
   SearchIndexer,
   addCollection as coreAddCollection,
   updateCollection,
-  saveContext,
+  ensureInitialized,
 } from "@frozenink/core";
 import { createMcpServer, type McpServerOptions } from "../server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -24,9 +24,7 @@ function setupTestEnv() {
   // Required so getFrozenInkHome() / listCollections() / getCollection() etc. resolve to TEST_DIR
   process.env.FROZENINK_HOME = TEST_DIR;
 
-  // Create context.yml (required by contextExists() checks in MCP tools/resources)
-  saveContext({ collections: {}, deployments: {} });
-  mkdirSync(join(TEST_DIR, "collections"), { recursive: true });
+  ensureInitialized();
 }
 
 function addCollection(

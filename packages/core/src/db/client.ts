@@ -1,4 +1,3 @@
-import { basename, dirname } from "path";
 import { openDatabase } from "../compat/sqlite";
 import { isBun } from "../compat/runtime";
 import * as collectionSchema from "./collection-schema";
@@ -47,77 +46,6 @@ export function getCollectionDb(dbPath: string) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
-
-  // Migration: copy legacy state tables into the collection YAML, then drop them.
-  // Derive collection name from dbPath: .../collections/<name>/db/data.db
-  const collectionName = basename(dirname(dirname(dbPath)));
-  const hasTables = (names: string[]) =>
-    names.some(
-      (n) =>
-        (sqlite.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(n) as unknown) !== null,
-    );
-
-  if (hasTables(["collection_state", "sync_state"])) {
-    // Lazy-import to avoid circular deps at module load time
-    const { getCollection, updateCollection } = require("../config/context") as typeof import("../config/context");
-    const existing = getCollection(collectionName);
-    if (existing) {
-      const updates: Record<string, unknown> = {};
-
-      // Migrate collection_state → YAML sync status fields
-      if (!existing.lastSyncAt) {
-        try {
-          const row = sqlite
-            .prepare(`SELECT lastSyncStatus, lastSyncAt, lastSyncCreated, lastSyncUpdated, lastSyncDeleted FROM collection_state WHERE id = 1`)
-            .get() as Record<string, unknown> | null;
-          if (row) {
-            if (row.lastSyncStatus) updates.lastSyncStatus = row.lastSyncStatus;
-            if (row.lastSyncAt) updates.lastSyncAt = row.lastSyncAt;
-            if (typeof row.lastSyncCreated === "number") updates.lastSyncCreated = row.lastSyncCreated;
-            if (typeof row.lastSyncUpdated === "number") updates.lastSyncUpdated = row.lastSyncUpdated;
-            if (typeof row.lastSyncDeleted === "number") updates.lastSyncDeleted = row.lastSyncDeleted;
-          }
-        } catch { /* table missing or schema mismatch — skip */ }
-      }
-
-      // Migrate sync_state cursor → YAML syncCursor
-      if (!existing.syncCursor) {
-        try {
-          const row = sqlite
-            .prepare(`SELECT cursor FROM sync_state LIMIT 1`)
-            .get() as Record<string, unknown> | null;
-          if (row?.cursor) {
-            const cursor = typeof row.cursor === "string" ? JSON.parse(row.cursor) : row.cursor;
-            if (cursor) updates.syncCursor = cursor;
-          }
-        } catch { /* table missing or schema mismatch — skip */ }
-      }
-
-      if (Object.keys(updates).length > 0) {
-        updateCollection(collectionName, updates as Parameters<typeof updateCollection>[1]);
-      }
-    }
-  }
-
-  // Drop legacy state tables (state now lives in the collection YAML file)
-  sqlite.exec(`
-    DROP TABLE IF EXISTS sync_runs;
-    DROP TABLE IF EXISTS sync_state;
-    DROP TABLE IF EXISTS collection_state;
-    DROP TABLE IF EXISTS clone_sync_state;
-  `);
-
-  // Migrations: add columns to existing tables
-  for (const col of ["tags", "out_links", "in_links", "assets"]) {
-    try {
-      sqlite.exec(`ALTER TABLE entities ADD COLUMN ${col} TEXT`);
-    } catch {
-      // Column already exists
-    }
-  }
-
-  // Migration: strip content/ prefix from markdown_path
-  sqlite.exec(`UPDATE entities SET markdown_path = substr(markdown_path, 9) WHERE markdown_path LIKE 'content/%'`);
 
   return db;
 }
