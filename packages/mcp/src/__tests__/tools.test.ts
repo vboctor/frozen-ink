@@ -67,9 +67,12 @@ function addEntity(
       externalId: data.externalId,
       entityType: data.entityType,
       title: data.title,
-      data: { source: data.data } as any,
-      url: data.url ?? null,
-      markdownPath: data.markdownPath ?? null,
+      data: {
+        source: data.data,
+        url: data.url ?? null,
+        markdown_path: data.markdownPath ?? null,
+        tags: data.tags ?? [],
+      } as any,
     })
     .run();
 
@@ -79,17 +82,7 @@ function addEntity(
     .all()
     .filter((e) => e.externalId === data.externalId);
 
-  const entityId = row.id;
-
-  if (data.tags?.length) {
-    colDb
-      .update(entities)
-      .set({ tags: data.tags })
-      .where(require("drizzle-orm").eq(entities.id, entityId))
-      .run();
-  }
-
-  return entityId;
+  return row.id;
 }
 
 function addAttachment(

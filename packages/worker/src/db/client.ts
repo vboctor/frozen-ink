@@ -7,9 +7,6 @@ export interface Entity {
   title: string;
   data: string;
   content_hash: string | null;
-  markdown_path: string | null;
-  url: string | null;
-  tags: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -21,6 +18,9 @@ export interface EntityData {
   assets?: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }>;
   markdown_mtime?: number | null;
   markdown_size?: number | null;
+  markdown_path?: string | null;
+  url?: string | null;
+  tags?: string[] | null;
 }
 
 export function parseEntityData(entity: Entity): EntityData {
@@ -33,7 +33,7 @@ export async function getEntityByMarkdownPath(
   markdownPath: string,
 ): Promise<Entity | null> {
   const result = await db
-    .prepare("SELECT * FROM entities WHERE markdown_path = ?")
+    .prepare("SELECT * FROM entities WHERE json_extract(data, '$.markdown_path') = ?")
     .bind(markdownPath)
     .first<Entity>();
   return result ?? null;
@@ -44,7 +44,7 @@ export async function getEntityMarkdownPathByExternalId(
   externalId: string,
 ): Promise<string | null> {
   const result = await db
-    .prepare("SELECT markdown_path FROM entities WHERE external_id = ?")
+    .prepare("SELECT json_extract(data, '$.markdown_path') as markdown_path FROM entities WHERE external_id = ?")
     .bind(externalId)
     .first<{ markdown_path: string | null }>();
   if (!result?.markdown_path) return null;
@@ -88,11 +88,6 @@ export async function getEntityByExternalId(
     .bind(externalId)
     .first<Entity>();
   return result ?? null;
-}
-
-export function parseEntityTags(entity: Entity): string[] {
-  if (!entity.tags) return [];
-  try { return JSON.parse(entity.tags); } catch { return []; }
 }
 
 export async function getBacklinks(

@@ -9,6 +9,7 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
+  type EntityData,
 } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
@@ -62,11 +63,12 @@ async function handleGetEntity(
 
     if (!entity) continue;
 
-    const entityTagRows: string[] = (entity as any).tags ?? [];
+    const entityData = entity.data as EntityData;
+    const markdownPath = entityData.markdown_path ?? null;
 
     let markdown: string | null = null;
-    if (entity.markdownPath) {
-      const mdPath = join(options.frozeninkHome, "collections", colName, "content", entity.markdownPath);
+    if (markdownPath) {
+      const mdPath = join(options.frozeninkHome, "collections", colName, "content", markdownPath);
       if (existsSync(mdPath)) {
         markdown = readFileSync(mdPath, "utf-8");
       }
@@ -82,8 +84,8 @@ async function handleGetEntity(
             entityType: entity.entityType,
             title: entity.title,
             data: entity.data,
-            url: entity.url,
-            tags: entityTagRows,
+            url: entityData.url ?? null,
+            tags: entityData.tags ?? [],
             markdown,
             createdAt: entity.createdAt,
             updatedAt: entity.updatedAt,

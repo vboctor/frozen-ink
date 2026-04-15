@@ -5,14 +5,9 @@ export interface HashableEntity {
   entityType: string;
   title: string;
   data: EntityData | string;
-  markdownPath: string | null;
-  url: string | null;
-  tags: string[] | null;
 }
 
 export function computeEntityHash(entity: HashableEntity): string {
-  const tags = [...(entity.tags ?? [])].sort();
-
   let d: EntityData;
   if (typeof entity.data === "string") {
     try { d = JSON.parse(entity.data); } catch { d = { source: {} }; }
@@ -20,6 +15,7 @@ export function computeEntityHash(entity: HashableEntity): string {
     d = entity.data ?? { source: {} };
   }
 
+  const tags = [...(d.tags ?? [])].sort();
   const out_links = [...(d.out_links ?? [])].sort();
   const in_links = [...(d.in_links ?? [])].sort();
   const assets = [...(d.assets ?? [])].sort((a, b) => a.filename.localeCompare(b.filename));
@@ -33,8 +29,8 @@ export function computeEntityHash(entity: HashableEntity): string {
     assets,
     markdown_mtime: d.markdown_mtime ?? null,
     markdown_size: d.markdown_size ?? null,
-    markdownPath: entity.markdownPath,
-    url: entity.url,
+    markdown_path: d.markdown_path ?? null,
+    url: d.url ?? null,
     tags,
   });
 

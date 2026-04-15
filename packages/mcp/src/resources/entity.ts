@@ -8,6 +8,7 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
+  type EntityData,
 } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
@@ -104,7 +105,7 @@ export function registerEntityResources(
         };
       }
 
-      const entityTagRows: string[] = (entity as any).tags ?? [];
+      const entityData = entity.data as EntityData;
 
       return {
         contents: [
@@ -117,8 +118,8 @@ export function registerEntityResources(
               entityType: entity.entityType,
               title: entity.title,
               data: entity.data,
-              url: entity.url,
-              tags: entityTagRows,
+              url: entityData.url ?? null,
+              tags: entityData.tags ?? [],
               createdAt: entity.createdAt,
               updatedAt: entity.updatedAt,
             }),

@@ -8,6 +8,9 @@ export interface EntityData {
   assets?: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }>;
   markdown_mtime?: number | null;
   markdown_size?: number | null;
+  markdown_path?: string | null;
+  url?: string | null;
+  tags?: string[] | null;
 }
 
 export const entities = sqliteTable("entities", {
@@ -17,9 +20,6 @@ export const entities = sqliteTable("entities", {
   title: text("title").notNull(),
   data: text("data", { mode: "json" }).notNull().$type<EntityData>(),
   contentHash: text("content_hash"),
-  markdownPath: text("markdown_path"),
-  url: text("url"),
-  tags: text("tags", { mode: "json" }).$type<string[]>(),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),

@@ -10,6 +10,7 @@ import {
   LocalStorageBackend,
   CollectionEntry,
   type FolderConfig,
+  type EntityData,
   entities,
 } from "@frozenink/core";
 import { eq, sql } from "drizzle-orm";
@@ -24,11 +25,11 @@ type ColDb = ReturnType<typeof getCollectionDb>;
 function makeEntityPathLookup(colDb: ColDb): (id: string) => string | undefined {
   return (externalId: string) => {
     const rows = colDb
-      .select({ markdownPath: entities.markdownPath })
+      .select({ data: entities.data })
       .from(entities)
       .where(eq(entities.externalId, externalId))
       .all();
-    const mdPath = rows[0]?.markdownPath;
+    const mdPath = (rows[0]?.data as EntityData)?.markdown_path;
     if (!mdPath) return undefined;
     return mdPath.endsWith(".md") ? mdPath.slice(0, -3) : mdPath;
   };
@@ -37,7 +38,7 @@ function makeEntityPathLookup(colDb: ColDb): (id: string) => string | undefined 
 /** Build stem-matching wikilink resolver (for Obsidian-style [[bare name]] links). */
 function makeResolveWikilink(colDb: ColDb): (target: string) => string | undefined {
   const allRows = colDb
-    .select({ externalId: entities.externalId, markdownPath: entities.markdownPath })
+    .select({ externalId: entities.externalId, data: entities.data })
     .from(entities)
     .all();
 
@@ -45,8 +46,9 @@ function makeResolveWikilink(colDb: ColDb): (target: string) => string | undefin
   const byStem = new Map<string, string>();
 
   for (const row of allRows) {
-    if (!row.markdownPath) continue;
-    const noExt = row.markdownPath.endsWith(".md") ? row.markdownPath.slice(0, -3) : row.markdownPath;
+    const markdownPath = (row.data as EntityData)?.markdown_path;
+    if (!markdownPath) continue;
+    const noExt = markdownPath.endsWith(".md") ? markdownPath.slice(0, -3) : markdownPath;
     byExtId.set(row.externalId, noExt);
     const stem = row.externalId.replace(/\.md$/, "");
     const stemName = stem.includes("/") ? stem.split("/").pop()! : stem;
@@ -225,19 +227,18 @@ async function checkSamples(
       .all();
 
     for (const entity of sample) {
-      if (!entity.markdownPath) continue;
+      const entityData = entity.data as EntityData;
+      if (!entityData.markdown_path) continue;
       sampled++;
-
-      const entityTagNames: string[] = (entity as any).tags ?? [];
 
       const ctx = {
         entity: {
           externalId: entity.externalId,
           entityType: entity.entityType,
           title: entity.title,
-          data: entity.data as Record<string, unknown>,
-          url: entity.url ?? undefined,
-          tags: entityTagNames,
+          data: entityData.source as Record<string, unknown>,
+          url: entityData.url ?? undefined,
+          tags: entityData.tags ?? [],
         },
         collectionName,
         crawlerType,
@@ -254,7 +255,7 @@ async function checkSamples(
       // Check markdown: compare on-disk file against fresh render
       let onDisk: string | null = null;
       try {
-        onDisk = await storage.read(`${basePath}/${entity.markdownPath}`);
+        onDisk = await storage.read(`${basePath}/${entityData.markdown_path}`);
       } catch { /* file missing */ }
 
       // Re-render with the derived title (same logic as generateCollection)

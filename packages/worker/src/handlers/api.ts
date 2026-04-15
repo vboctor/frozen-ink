@@ -10,7 +10,6 @@ import {
   getOutgoingLinks,
   getEntitiesByExternalIds,
   getFullManifest,
-  parseEntityTags,
   parseEntityData,
 } from "../db/client";
 import { getCollections, getCollectionConfig } from "../config";
@@ -62,12 +61,11 @@ api.get("/api/collections/:name/html/*", async (c) => {
   const entity = await getEntityByMarkdownPath(c.env.DB, decoded);
   if (!entity) return c.text("Entity not found", 404);
 
-  const [tags, allEntities] = await Promise.all([
-    Promise.resolve(parseEntityTags(entity)),
-    c.env.DB.prepare("SELECT external_id, markdown_path FROM entities WHERE markdown_path IS NOT NULL")
-      .all<{ external_id: string; markdown_path: string | null }>()
-      .then((r) => r.results ?? []),
-  ]);
+  const entityData = parseEntityData(entity);
+  const allEntities = await c.env.DB.prepare(
+    "SELECT external_id, json_extract(data, '$.markdown_path') as markdown_path FROM entities WHERE json_extract(data, '$.markdown_path') IS NOT NULL",
+  ).all<{ external_id: string; markdown_path: string | null }>()
+    .then((r) => r.results ?? []);
 
   const entityPathMap = new Map<string, string>();
   for (const row of allEntities) {
@@ -75,8 +73,8 @@ api.get("/api/collections/:name/html/*", async (c) => {
     entityPathMap.set(row.external_id, row.markdown_path.endsWith(".md") ? row.markdown_path.slice(0, -3) : row.markdown_path);
   }
 
-  const entityData = parseEntityData(entity);
   const source = entityData.source ?? (typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data);
+  const tags = entityData.tags ?? [];
 
   const html = themeEngine.renderHtml({
     entity: {
@@ -84,7 +82,7 @@ api.get("/api/collections/:name/html/*", async (c) => {
       entityType: entity.entity_type,
       title: entity.title,
       data: source,
-      url: entity.url ?? undefined,
+      url: entityData.url ?? undefined,
       tags,
     },
     collectionName: name,
@@ -120,7 +118,7 @@ api.get("/api/collections/:name/tree", async (c) => {
   const titleByPath = new Map<string, string>();
   try {
     const { results } = await c.env.DB.prepare(
-      "SELECT markdown_path, title FROM entities WHERE markdown_path IS NOT NULL AND title IS NOT NULL",
+      "SELECT json_extract(data, '$.markdown_path') as markdown_path, title FROM entities WHERE json_extract(data, '$.markdown_path') IS NOT NULL AND title IS NOT NULL",
     ).all<{ markdown_path: string; title: string }>();
     for (const row of results ?? []) {
       titleByPath.set(row.markdown_path, row.title);
@@ -156,7 +154,7 @@ api.get("/api/collections/:name/default-file", async (c) => {
   const name = c.req.param("name");
   const entityList = await getEntities(c.env.DB, { limit: 1 });
   const first = entityList[0];
-  const filePath = first?.markdown_path ?? null;
+  const filePath = first ? parseEntityData(first).markdown_path ?? null : null;
   return c.json({ file: filePath });
 });
 
@@ -184,16 +182,19 @@ api.get("/api/collections/:name/entities", async (c) => {
 
   const rows = await getEntities(c.env.DB, { limit, offset, entityType });
 
-  const result = rows.map((row) => ({
-    id: row.id,
-    externalId: row.external_id,
-    entityType: row.entity_type,
-    title: row.title,
-    url: row.url,
-    tags: parseEntityTags(row),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+  const result = rows.map((row) => {
+    const ed = parseEntityData(row);
+    return {
+      id: row.id,
+      externalId: row.external_id,
+      entityType: row.entity_type,
+      title: row.title,
+      url: ed.url ?? null,
+      tags: ed.tags ?? [],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  });
 
   return c.json({
     entities: result,
@@ -244,9 +245,9 @@ api.get("/api/collections/:name/entities/bulk", async (c) => {
       title: row.title,
       data: entityData,
       hash: row.content_hash ?? "",
-      markdownPath: row.markdown_path,
-      url: row.url,
-      tags: parseEntityTags(row),
+      markdownPath: entityData.markdown_path ?? null,
+      url: entityData.url ?? null,
+      tags: entityData.tags ?? [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -272,7 +273,7 @@ api.get("/api/search", async (c) => {
   const enriched = await Promise.all(
     results.map(async (r) => {
       const entity = await getEntityByExternalId(c.env.DB, r.externalId);
-      const markdownPath = entity?.markdown_path ?? null;
+      const markdownPath = entity ? parseEntityData(entity).markdown_path ?? null : null;
       return { ...r, title: entity?.title ?? r.title, collection: collection ?? "", markdownPath, snippet: r.snippet };
     }),
   );
@@ -291,15 +292,16 @@ api.get("/api/collections/:name/backlinks/:externalId", async (c) => {
   const links = await getBacklinks(c.env.DB, externalId);
 
   const results = links.map(({ entity }) => {
-    const displayTitle = entity.markdown_path
-      ? entity.markdown_path.replace(/\.md$/, "").split("/").pop()!
+    const ed = parseEntityData(entity);
+    const displayTitle = ed.markdown_path
+      ? ed.markdown_path.replace(/\.md$/, "").split("/").pop()!
       : entity.title;
     return {
       entityId: entity.id,
       externalId: entity.external_id,
       entityType: entity.entity_type,
       title: displayTitle,
-      markdownPath: entity.markdown_path,
+      markdownPath: ed.markdown_path ?? null,
     };
   });
 
@@ -319,10 +321,11 @@ api.get("/api/collections/:name/outgoing-links/:externalId", async (c) => {
   const results = links
     .filter(({ entity }) => entity !== null)
     .map(({ entity }) => {
-      const displayTitle = entity!.markdown_path
-        ? entity!.markdown_path.replace(/\.md$/, "").split("/").pop()!
+      const ed = parseEntityData(entity!);
+      const displayTitle = ed.markdown_path
+        ? ed.markdown_path.replace(/\.md$/, "").split("/").pop()!
         : entity!.title;
-      return { title: displayTitle, markdownPath: entity!.markdown_path };
+      return { title: displayTitle, markdownPath: ed.markdown_path ?? null };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 

@@ -21,11 +21,11 @@ export interface RemoteEntityData {
   externalId: string;
   entityType: string;
   title: string;
-  data: Record<string, unknown>;
+  data: Record<string, unknown>;  // contains markdown_path, url, tags, source, out_links, etc.
   hash: string;
-  markdownPath: string | null;
-  url: string | null;
-  tags: string[];
+  markdownPath: string | null;    // convenience alias for data.markdown_path, sent by worker API
+  url: string | null;             // convenience alias for data.url, sent by worker API
+  tags: string[];                 // convenience alias for data.tags, sent by worker API
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -59,11 +59,8 @@ export interface LocalEntity {
   externalId: string;
   entityType: string;
   title: string;
-  data: Record<string, unknown> | string;
+  data: Record<string, unknown> | string;  // contains markdown_path, url, tags, etc.
   contentHash: string | null;
-  markdownPath: string | null;
-  url: string | null;
-  tags: string[] | null;
 }
 
 export function computeSyncPlan(
@@ -171,8 +168,9 @@ export function computeSyncPlan(
   for (const extId of deleteIds) {
     const local = localByExtId.get(extId);
     if (!local) continue;
-    if (local.markdownPath) {
-      deletes.push({ path: local.markdownPath, entityExternalId: extId, type: "markdown" });
+    const localMdPath = (local.data as any)?.markdown_path;
+    if (localMdPath) {
+      deletes.push({ path: localMdPath, entityExternalId: extId, type: "markdown" });
     }
     const localAssets: Array<{ storagePath: string }> = (local.data as any)?.assets ?? [];
     for (const asset of localAssets) {

@@ -34,9 +34,6 @@ export function getCollectionDb(dbPath: string) {
       title TEXT NOT NULL,
       data TEXT NOT NULL DEFAULT '{}',
       content_hash TEXT,
-      markdown_path TEXT,
-      url TEXT,
-      tags TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );

@@ -310,7 +310,7 @@ describe("SyncEngine", () => {
     const db = getCollectionDb(dbPath);
     expect(db.select().from(entities).all()).toHaveLength(1);
     const [entity] = db.select().from(entities).all();
-    expect((entity as any).tags).toEqual(["bug"]);
+    expect((entity.data as EntityData).tags).toEqual(["bug"]);
 
     const crawler2 = createMockCrawler([
       {
@@ -497,7 +497,7 @@ describe("SyncEngine", () => {
 
     const db = getCollectionDb(dbPath);
     const [row] = db.select().from(entities).all();
-    expect(row.markdownPath).toBe("issue/md-1.md");
+    expect((row.data as EntityData).markdown_path).toBe("issue/md-1.md");
   });
 
   it("stores tags as inline JSON on entities", async () => {
@@ -532,7 +532,7 @@ describe("SyncEngine", () => {
 
     const db = getCollectionDb(dbPath);
     const [entity] = db.select().from(entities).all();
-    expect((entity as any).tags).toEqual(["bug", "critical", "frontend"]);
+    expect((entity.data as EntityData).tags).toEqual(["bug", "critical", "frontend"]);
   });
 
   it("reconcile: deletes orphaned markdown files not in DB", async () => {

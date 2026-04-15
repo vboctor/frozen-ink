@@ -195,7 +195,7 @@ async function handleGetAttachment(
       }
 
       sourceEntityId = sourceEntity.id;
-      sourceMarkdownPath = sourceEntity.markdownPath;
+      sourceMarkdownPath = (sourceEntity.data as import("@frozenink/core").EntityData)?.markdown_path ?? null;
     }
 
     const effectiveCandidates = buildCandidates(extracted, sourceMarkdownPath);

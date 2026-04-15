@@ -37,9 +37,8 @@ describe("Collection Database", () => {
         externalId: "issue-123",
         entityType: "issue",
         title: "Fix bug",
-        data: { source: { state: "open", labels: ["bug"] } },
+        data: { source: { state: "open", labels: ["bug"] }, url: "https://github.com/org/repo/issues/123" },
         contentHash: "abc123",
-        url: "https://github.com/org/repo/issues/123",
       })
       .run();
 
@@ -63,7 +62,7 @@ describe("Collection Database", () => {
     expect(db.select().from(entities).all()).toHaveLength(0);
   });
 
-  it("supports inline tags on entities", () => {
+  it("supports tags inside entity data", () => {
     const dbPath = join(TEST_DIR, "collection-tags.db");
     const db = getCollectionDb(dbPath);
 
@@ -72,13 +71,12 @@ describe("Collection Database", () => {
         externalId: "pr-1",
         entityType: "pull_request",
         title: "Add feature",
-        data: { source: {} },
-        tags: ["enhancement", "frontend"],
+        data: { source: {}, tags: ["enhancement", "frontend"] },
       })
       .run();
 
     const [entity] = db.select().from(entities).all();
-    expect((entity as any).tags).toEqual(["enhancement", "frontend"]);
+    expect((entity.data as EntityData).tags).toEqual(["enhancement", "frontend"]);
   });
 
   it("supports assets inside entity data", () => {

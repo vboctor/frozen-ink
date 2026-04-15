@@ -296,8 +296,7 @@ export async function publishCollections(
   id INTEGER PRIMARY KEY,
   external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
   title TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
-  content_hash TEXT, markdown_path TEXT,
-  url TEXT, tags TEXT,
+  content_hash TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`);
@@ -318,9 +317,7 @@ export async function publishCollections(
         entityIdOffset++;
         const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
 
-        const tagsJson = JSON.stringify((entity as any).tags ?? []);
-
-        schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, markdown_path, url, tags, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${entity.markdownPath ? `'${escapeSQL(entity.markdownPath)}'` : "NULL"}, ${entity.url ? `'${escapeSQL(entity.url)}'` : "NULL"}, '${escapeSQL(tagsJson)}', ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
+        schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
       }
 
       onProgress("export", `Exported "${colName}": ${allEntities.length} entities`);
@@ -346,9 +343,11 @@ export async function publishCollections(
       const collectionDir = join(home, "collections", colName);
 
       for (const entity of allEntities) {
+        const entityData = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
+        const markdownPath = entityData?.markdown_path ?? null;
         let content = "";
-        if (entity.markdownPath) {
-          const mdPath = join(collectionDir, "content", entity.markdownPath);
+        if (markdownPath) {
+          const mdPath = join(collectionDir, "content", markdownPath);
           if (existsSync(mdPath)) {
             content = readFileSync(mdPath, "utf-8");
           }
@@ -356,7 +355,7 @@ export async function publishCollections(
         if (content.length > MAX_FTS_CONTENT) {
           content = content.slice(0, MAX_FTS_CONTENT);
         }
-        const entityTagNames = ((entity as any).tags ?? []).join(" ");
+        const entityTagNames = (entityData?.tags ?? []).join(" ");
 
         ftsSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(entityTagNames)}');`);
       }

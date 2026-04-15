@@ -62,15 +62,21 @@ export const indexCommand = new Command("index")
       let indexed = 0;
       let linked = 0;
 
-      for (const entity of allEntities) {
-        if (!entity.markdownPath) continue;
+      // Pre-build markdown_path → externalId map for link resolution
+      const byMdPath = new Map<string, string>();
+      for (const e of allEntities) {
+        const mp = (e.data as EntityData)?.markdown_path;
+        if (mp) byMdPath.set(mp, e.externalId);
+      }
 
-        const filePath = join(collectionDir, "content", entity.markdownPath);
+      for (const entity of allEntities) {
+        const entityData = entity.data as EntityData;
+        if (!entityData.markdown_path) continue;
+
+        const filePath = join(collectionDir, "content", entityData.markdown_path);
         if (!existsSync(filePath)) continue;
 
         const markdown = readFileSync(filePath, "utf-8");
-
-        const entityTagNames: string[] = (entity as any).tags ?? [];
 
         indexer.updateIndex({
           id: entity.id,
@@ -78,22 +84,17 @@ export const indexCommand = new Command("index")
           entityType: entity.entityType,
           title: entity.title,
           content: markdown,
-          tags: entityTagNames,
+          tags: entityData.tags ?? [],
         });
         indexed++;
 
         // Rebuild out_links in data
-        const targets = extractWikilinks(markdown, entity.markdownPath ?? undefined);
+        const targets = extractWikilinks(markdown, entityData.markdown_path);
         const outLinkExternalIds: string[] = [];
         for (const target of targets) {
-          const targetPath = `${target}.md`;
-          const [targetEntity] = colDb
-            .select({ externalId: entities.externalId })
-            .from(entities)
-            .where(eq(entities.markdownPath, targetPath))
-            .all();
-          if (targetEntity) {
-            outLinkExternalIds.push(targetEntity.externalId);
+          const targetExtId = byMdPath.get(`${target}.md`);
+          if (targetExtId) {
+            outLinkExternalIds.push(targetExtId);
             linked++;
           }
         }

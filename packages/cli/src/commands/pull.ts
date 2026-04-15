@@ -88,9 +88,6 @@ export const pullCommand = new Command("pull")
       title: e.title,
       data: e.data as unknown as EntityData,
       contentHash: e.contentHash,
-      markdownPath: e.markdownPath,
-      url: e.url,
-      tags: (e.tags as string[] | null) ?? null,
     }));
 
     // Compute sync plan
@@ -137,18 +134,19 @@ export const pullCommand = new Command("pull")
     }
 
     // Download new/updated markdown files
-    const mdDownloads = remoteEntities.filter((e) => e.markdownPath);
+    const mdDownloads = remoteEntities.filter((e) => (e.data as unknown as EntityData).markdown_path);
     if (mdDownloads.length > 0) {
       console.log(`Downloading ${mdDownloads.length} files...`);
       await runConcurrent(mdDownloads, 10, async (re) => {
-        assertSafePath(re.markdownPath!);
-        const content = await client.getMarkdown(re.markdownPath!);
+        const reData = re.data as unknown as EntityData;
+        const mdPath = reData.markdown_path!;
+        assertSafePath(mdPath);
+        const content = await client.getMarkdown(mdPath);
         if (content) {
-          await storage.write(`content/${re.markdownPath}`, content);
+          await storage.write(`content/${mdPath}`, content);
           // Set file mtime from stored metadata
-          const mtime = (re.data as unknown as EntityData).markdown_mtime;
-          if (mtime) {
-            await storage.utimes?.(`content/${re.markdownPath}`, mtime);
+          if (reData.markdown_mtime) {
+            await storage.utimes?.(`content/${mdPath}`, reData.markdown_mtime);
           }
         }
       });
@@ -194,9 +192,6 @@ export const pullCommand = new Command("pull")
           title: re.title,
           data: re.data as unknown as EntityData,
           contentHash: re.hash,
-          markdownPath: re.markdownPath,
-          url: re.url,
-          tags: re.tags,
         })
         .run();
     }
@@ -212,9 +207,6 @@ export const pullCommand = new Command("pull")
           title: re.title,
           data: re.data as unknown as EntityData,
           contentHash: re.hash,
-          markdownPath: re.markdownPath,
-          url: re.url,
-          tags: re.tags,
           updatedAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
         })
         .where(eq(entities.externalId, entry.externalId))
@@ -244,9 +236,10 @@ export const pullCommand = new Command("pull")
       if (!dbEntity) continue;
 
       let content = "";
-      if (re.markdownPath) {
+      const reData = re.data as unknown as EntityData;
+      if (reData.markdown_path) {
         try {
-          content = await storage.read(`content/${re.markdownPath}`);
+          content = await storage.read(`content/${reData.markdown_path}`);
         } catch { /* ok */ }
       }
       indexer.updateIndex({
@@ -255,7 +248,7 @@ export const pullCommand = new Command("pull")
         entityType: re.entityType,
         title: re.title,
         content,
-        tags: re.tags ?? [],
+        tags: reData.tags ?? [],
       });
     }
     for (const entityId of deletedEntityIds) {
