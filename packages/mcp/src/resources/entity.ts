@@ -8,8 +8,6 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
-  entityTags,
-  tags,
 } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
@@ -106,13 +104,7 @@ export function registerEntityResources(
         };
       }
 
-      const entityTagRows = colDb
-        .select({ name: tags.name })
-        .from(entityTags)
-        .innerJoin(tags, eq(entityTags.tagId, tags.id))
-        .where(eq(entityTags.entityId, entity.id))
-        .all()
-        .map((t: any) => t.name);
+      const entityTagRows: string[] = (entity as any).tags ?? [];
 
       return {
         contents: [

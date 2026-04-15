@@ -7,3 +7,4 @@ export * from "./theme";
 export * from "./storage";
 export * from "./search";
 export * from "./export";
+export * from "./sync";

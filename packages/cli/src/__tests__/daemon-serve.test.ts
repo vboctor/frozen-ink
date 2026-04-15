@@ -10,12 +10,10 @@ import { join } from "path";
 import {
   getCollectionDb,
   entities,
-  tags,
-  entityTags,
-  assets,
   SearchIndexer,
   addCollection,
 } from "@frozenink/core";
+import { eq } from "drizzle-orm";
 
 const TEST_DIR = join(import.meta.dir, ".test-daemon-serve");
 
@@ -82,13 +80,11 @@ function addTestCollection(
       .run();
 
     const entityRows = colDb.select().from(entities).all();
-    colDb.insert(tags).values({ name: "bug" }).run();
-    colDb.insert(tags).values({ name: "critical" }).run();
-    const allTags = colDb.select().from(tags).all();
-    const bugTag = allTags.find((t) => t.name === "bug")!;
-    const criticalTag = allTags.find((t) => t.name === "critical")!;
-    colDb.insert(entityTags).values({ entityId: entityRows[0].id, tagId: bugTag.id }).run();
-    colDb.insert(entityTags).values({ entityId: entityRows[0].id, tagId: criticalTag.id }).run();
+    colDb
+      .update(entities)
+      .set({ tags: ["bug", "critical"] })
+      .where(eq(entities.id, entityRows[0].id))
+      .run();
 
     mkdirSync(join(collectionDir, "content", "issues"), { recursive: true });
     mkdirSync(join(collectionDir, "content", "pull-requests"), { recursive: true });
@@ -103,13 +99,11 @@ function addTestCollection(
     if (opts.addEntities) {
       const entityRows = colDb.select().from(entities).all();
       colDb
-        .insert(assets)
-        .values({
-          entityId: entityRows[0].id,
-          filename: "screenshot.png",
-          mimeType: "image/png",
-          storagePath: "attachments/issue-1/screenshot.png",
+        .update(entities)
+        .set({
+          assets: [{ filename: "screenshot.png", mimeType: "image/png", storagePath: "attachments/issue-1/screenshot.png", hash: "" }],
         })
+        .where(eq(entities.id, entityRows[0].id))
         .run();
     }
   }

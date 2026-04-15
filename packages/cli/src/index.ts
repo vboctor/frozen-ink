@@ -18,6 +18,9 @@ import { tuiCommand } from "./commands/tui";
 import { mcpCommand } from "./commands/mcp";
 import { tableplusCommand } from "./commands/tableplus";
 import { vscodeCommand } from "./commands/vscode";
+import { upgradeCommand } from "./commands/upgrade";
+import { cloneCommand } from "./commands/clone";
+import { pullCommand } from "./commands/pull";
 import { startTui } from "./tui/index";
 
 const program = new Command();
@@ -45,6 +48,9 @@ program.addCommand(tuiCommand);
 program.addCommand(mcpCommand);
 program.addCommand(tableplusCommand);
 program.addCommand(vscodeCommand);
+program.addCommand(upgradeCommand);
+program.addCommand(cloneCommand);
+program.addCommand(pullCommand);
 
 // If no arguments passed (just "fink"), launch TUI by default
 const args = process.argv.slice(2);
