@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdirSync, rmSync } from "fs";
 import { join } from "path";
-import { saveContext } from "@frozenink/core";
+import { ensureInitialized } from "@frozenink/core";
 
 const TEST_DIR = join(import.meta.dir, ".test-mcp-command");
 
@@ -15,10 +15,8 @@ beforeEach(() => {
   listArg = null;
 
   mkdirSync(TEST_DIR, { recursive: true });
-  mkdirSync(join(TEST_DIR, "collections"), { recursive: true });
-  mkdirSync(join(TEST_DIR, "sites"), { recursive: true });
   process.env.FROZENINK_HOME = TEST_DIR;
-  saveContext({ collections: {}, deployments: {} });
+  ensureInitialized();
 
   mock.module("../mcp/manager", () => ({
     addMcpConnections: async (opts: unknown) => {
