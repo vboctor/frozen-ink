@@ -7,11 +7,11 @@ import {
   getCollectionDb,
   ensureInitialized,
   getCollection,
+  updateCollection,
   getCollectionDbPath,
   addSite,
   getSite,
   entities,
-  collectionState,
   getModuleDir,
   resolveWorkerBundle,
   resolveUiDist,
@@ -453,19 +453,11 @@ export async function publishCollections(
   const mcpUrl = `${workerUrl}/mcp`;
   const passwordProtected = passwordHash.length > 0;
 
-  // Update collection_state.lastPublishedAt for each published collection
+  // Update lastPublishedAt in each collection's YAML
   if (!workerOnly) {
     const now = new Date().toISOString().replace("T", " ").replace("Z", "");
     for (const colName of collectionNames) {
-      const dbPath = getCollectionDbPath(colName);
-      if (existsSync(dbPath)) {
-        const colDb = getCollectionDb(dbPath);
-        colDb
-          .insert(collectionState)
-          .values({ id: 1, lastPublishedAt: now })
-          .onConflictDoUpdate({ target: collectionState.id, set: { lastPublishedAt: now } })
-          .run();
-      }
+      updateCollection(colName, { lastPublishedAt: now });
     }
   }
 

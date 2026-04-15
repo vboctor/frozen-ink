@@ -15,7 +15,6 @@ import {
   renameCollection,
   isValidCollectionKey,
   entities,
-  collectionState,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
@@ -27,7 +26,7 @@ import {
   gitTheme,
   mantisHubTheme,
 } from "@frozenink/crawlers";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { TextInput } from "./TextInput.js";
 import { AddCollection } from "./AddCollection.js";
 import { ExportView } from "./ExportView.js";
@@ -84,24 +83,27 @@ interface RowStats {
 }
 
 function getRowStats(name: string): RowStats {
+  const col = getCollection(name);
   const dbPath = getCollectionDbPath(name);
-  if (!existsSync(dbPath)) return { entityCount: "—", lastSync: "—" };
-  try {
-    const colDb = getCollectionDb(dbPath);
-    const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
-    const rows = colDb.select().from(collectionState).where(eq(collectionState.id, 1)).all();
-    let lastSync = "never";
-    if (rows.length > 0 && rows[0].lastSyncAt) {
-      const d = new Date(rows[0].lastSyncAt + "Z");
-      if (!isNaN(d.getTime())) {
-        lastSync = formatRelative(d);
-        if (rows[0].lastSyncStatus === "failed") lastSync += " (failed)";
-      }
+  let entityCount = "—";
+  if (existsSync(dbPath)) {
+    try {
+      const colDb = getCollectionDb(dbPath);
+      const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
+      entityCount = String(total);
+    } catch {
+      entityCount = "err";
     }
-    return { entityCount: String(total), lastSync };
-  } catch {
-    return { entityCount: "err", lastSync: "—" };
   }
+  let lastSync = "never";
+  if (col?.lastSyncAt) {
+    const d = new Date(col.lastSyncAt + "Z");
+    if (!isNaN(d.getTime())) {
+      lastSync = formatRelative(d);
+      if (col.lastSyncStatus === "failed") lastSync += " (failed)";
+    }
+  }
+  return { entityCount, lastSync };
 }
 
 function getSourceDetails(crawler: string, config: Record<string, unknown>): Array<{ label: string; value: string }> {
@@ -532,13 +534,16 @@ export function CollectionList({
           } catch { /* ignore */ }
         }
 
-        const stateRows = colDb.select().from(collectionState).where(eq(collectionState.id, 1)).all();
-        if (stateRows.length > 0) {
-          lastState = stateRows[0];
-          if (stateRows[0].lastSyncAt) {
-            const d = new Date(stateRows[0].lastSyncAt + "Z");
-            if (!isNaN(d.getTime())) lastSyncTime = formatRelative(d);
-          }
+        if (current.lastSyncAt) {
+          lastState = {
+            lastSyncStatus: current.lastSyncStatus ?? null,
+            lastSyncAt: current.lastSyncAt,
+            lastSyncCreated: current.lastSyncCreated ?? null,
+            lastSyncUpdated: current.lastSyncUpdated ?? null,
+            lastSyncDeleted: current.lastSyncDeleted ?? null,
+          };
+          const d = new Date(current.lastSyncAt + "Z");
+          if (!isNaN(d.getTime())) lastSyncTime = formatRelative(d);
         }
       } catch { /* ignore */ }
     }

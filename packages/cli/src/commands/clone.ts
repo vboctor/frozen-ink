@@ -166,17 +166,5 @@ export const cloneCommand = new Command("clone")
     }
     indexer.close();
 
-    // Save sync state
-    const sqlite = colDb as any;
-    try {
-      const manifestJson = JSON.stringify({ entries });
-      // Use raw SQL via the underlying drizzle session
-      colDb.run(
-        require("drizzle-orm").sql`INSERT INTO clone_sync_state (source_url, protocol_version, last_manifest) VALUES (${url}, 1, ${manifestJson})`,
-      );
-    } catch {
-      // Table might not exist in older DB — not critical
-    }
-
     console.log(`\nCloned "${localName}": ${remoteEntities.length} entities`);
   });

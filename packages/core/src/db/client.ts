@@ -1,3 +1,4 @@
+import { basename, dirname } from "path";
 import { openDatabase } from "../compat/sqlite";
 import { isBun } from "../compat/runtime";
 import * as collectionSchema from "./collection-schema";
@@ -45,55 +46,68 @@ export function getCollectionDb(dbPath: string) {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
-
-    CREATE TABLE IF NOT EXISTS sync_state (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      crawler_type TEXT NOT NULL,
-      cursor TEXT,
-      crawler_version TEXT,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS collection_state (
-      id INTEGER PRIMARY KEY,
-      last_sync_status TEXT,
-      last_sync_at TEXT,
-      last_sync_created INTEGER DEFAULT 0,
-      last_sync_updated INTEGER DEFAULT 0,
-      last_sync_deleted INTEGER DEFAULT 0,
-      last_sync_errors TEXT,
-      last_published_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS clone_sync_state (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      source_url TEXT NOT NULL,
-      protocol_version INTEGER NOT NULL DEFAULT 1,
-      last_manifest TEXT NOT NULL,
-      last_synced_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
   `);
 
-  // Migration: migrate sync_runs → collection_state
-  try {
-    const hasSyncRuns = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sync_runs'").get();
-    if (hasSyncRuns) {
-      const lastRun = sqlite.prepare("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1").get() as any;
-      if (lastRun) {
-        sqlite.exec(`INSERT OR REPLACE INTO collection_state (id, last_sync_status, last_sync_at, last_sync_created, last_sync_updated, last_sync_deleted, last_sync_errors) VALUES (1, '${lastRun.status}', '${lastRun.started_at}', ${lastRun.entities_created}, ${lastRun.entities_updated}, ${lastRun.entities_deleted}, ${lastRun.errors ? `'${String(lastRun.errors).replace(/'/g, "''")}'` : "NULL"})`);
+  // Migration: copy legacy state tables into the collection YAML, then drop them.
+  // Derive collection name from dbPath: .../collections/<name>/db/data.db
+  const collectionName = basename(dirname(dirname(dbPath)));
+  const hasTables = (names: string[]) =>
+    names.some(
+      (n) =>
+        (sqlite.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(n) as unknown) !== null,
+    );
+
+  if (hasTables(["collection_state", "sync_state"])) {
+    // Lazy-import to avoid circular deps at module load time
+    const { getCollection, updateCollection } = require("../config/context") as typeof import("../config/context");
+    const existing = getCollection(collectionName);
+    if (existing) {
+      const updates: Record<string, unknown> = {};
+
+      // Migrate collection_state → YAML sync status fields
+      if (!existing.lastSyncAt) {
+        try {
+          const row = sqlite
+            .prepare(`SELECT lastSyncStatus, lastSyncAt, lastSyncCreated, lastSyncUpdated, lastSyncDeleted FROM collection_state WHERE id = 1`)
+            .get() as Record<string, unknown> | null;
+          if (row) {
+            if (row.lastSyncStatus) updates.lastSyncStatus = row.lastSyncStatus;
+            if (row.lastSyncAt) updates.lastSyncAt = row.lastSyncAt;
+            if (typeof row.lastSyncCreated === "number") updates.lastSyncCreated = row.lastSyncCreated;
+            if (typeof row.lastSyncUpdated === "number") updates.lastSyncUpdated = row.lastSyncUpdated;
+            if (typeof row.lastSyncDeleted === "number") updates.lastSyncDeleted = row.lastSyncDeleted;
+          }
+        } catch { /* table missing or schema mismatch — skip */ }
       }
-      sqlite.exec("DROP TABLE sync_runs");
+
+      // Migrate sync_state cursor → YAML syncCursor
+      if (!existing.syncCursor) {
+        try {
+          const row = sqlite
+            .prepare(`SELECT cursor FROM sync_state LIMIT 1`)
+            .get() as Record<string, unknown> | null;
+          if (row?.cursor) {
+            const cursor = typeof row.cursor === "string" ? JSON.parse(row.cursor) : row.cursor;
+            if (cursor) updates.syncCursor = cursor;
+          }
+        } catch { /* table missing or schema mismatch — skip */ }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        updateCollection(collectionName, updates as Parameters<typeof updateCollection>[1]);
+      }
     }
-  } catch {
-    // Migration may have already run
   }
 
+  // Drop legacy state tables (state now lives in the collection YAML file)
+  sqlite.exec(`
+    DROP TABLE IF EXISTS sync_runs;
+    DROP TABLE IF EXISTS sync_state;
+    DROP TABLE IF EXISTS collection_state;
+    DROP TABLE IF EXISTS clone_sync_state;
+  `);
+
   // Migrations: add columns to existing tables
-  try {
-    sqlite.exec("ALTER TABLE sync_state ADD COLUMN crawler_version TEXT");
-  } catch {
-    // Column already exists — expected on new databases
-  }
   for (const col of ["tags", "out_links", "in_links", "assets"]) {
     try {
       sqlite.exec(`ALTER TABLE entities ADD COLUMN ${col} TEXT`);

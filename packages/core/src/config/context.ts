@@ -32,6 +32,17 @@ const collectionEntrySchema = z.object({
    * Example: ["draft.md", "*.wip"]
    */
   hide: z.array(z.string()).optional(),
+  // --- Sync state (written after each sync; replaces collection_state DB table) ---
+  lastSyncAt: z.string().optional(),
+  lastSyncStatus: z.string().optional(),
+  lastSyncCreated: z.number().optional(),
+  lastSyncUpdated: z.number().optional(),
+  lastSyncDeleted: z.number().optional(),
+  lastSyncErrors: z.unknown().array().optional(),
+  // --- Publish state ---
+  lastPublishedAt: z.string().optional(),
+  // --- Incremental sync cursor (replaces sync_state DB table) ---
+  syncCursor: z.unknown().optional(),
 });
 
 /** Site config schema — immutable settings stored in <name>.yml */

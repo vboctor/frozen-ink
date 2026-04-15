@@ -5,8 +5,6 @@ import { eq } from "drizzle-orm";
 import { getCollectionDb } from "../client";
 import {
   entities,
-  syncState,
-  collectionState,
 } from "../collection-schema";
 
 const TEST_DIR = join(import.meta.dir, ".test-dbs");
@@ -27,8 +25,6 @@ describe("Collection Database", () => {
     expect(existsSync(dbPath)).toBe(true);
 
     expect(db.select().from(entities).all()).toEqual([]);
-    expect(db.select().from(syncState).all()).toEqual([]);
-    expect(db.select().from(collectionState).all()).toEqual([]);
   });
 
   it("supports CRUD on entities", () => {
@@ -122,37 +118,6 @@ describe("Collection Database", () => {
     const [entity] = db.select().from(entities).all();
     expect((entity as any).outLinks).toEqual(["issue-2", "issue-3"]);
     expect((entity as any).inLinks).toEqual(["issue-4"]);
-  });
-
-  it("supports sync_state and collection_state", () => {
-    const dbPath = join(TEST_DIR, "collection-sync.db");
-    const db = getCollectionDb(dbPath);
-
-    db.insert(syncState)
-      .values({
-        crawlerType: "github",
-        cursor: { since: "2024-01-01T00:00:00Z" },
-      })
-      .run();
-
-    const states = db.select().from(syncState).all();
-    expect(states).toHaveLength(1);
-    expect(states[0].cursor).toEqual({ since: "2024-01-01T00:00:00Z" });
-
-    db.insert(collectionState)
-      .values({
-        id: 1,
-        lastSyncStatus: "completed",
-        lastSyncCreated: 10,
-        lastSyncUpdated: 5,
-        lastSyncDeleted: 2,
-      })
-      .run();
-
-    const [state] = db.select().from(collectionState).where(eq(collectionState.id, 1)).all();
-    expect(state).toBeTruthy();
-    expect(state.lastSyncStatus).toBe("completed");
-    expect(state.lastSyncCreated).toBe(10);
   });
 
 });

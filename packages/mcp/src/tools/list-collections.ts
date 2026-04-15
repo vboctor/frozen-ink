@@ -6,9 +6,7 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
-  collectionState,
 } from "@frozenink/core";
-import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 import { filterAllowedCollections } from "../collection-scope";
 
@@ -40,24 +38,13 @@ export function registerListCollections(
 
       const result = rows.map((col) => {
         let entityCount = 0;
-        let lastSyncTime: string | null = null;
-        let lastSyncStatus: string | null = null;
+        const lastSyncTime: string | null = col.lastSyncAt ?? null;
+        const lastSyncStatus: string | null = col.lastSyncStatus ?? null;
 
         const dbPath = getCollectionDbPath(col.name);
         if (existsSync(dbPath)) {
           const colDb = getCollectionDb(dbPath);
           entityCount = colDb.select().from(entities).all().length;
-
-          const [state] = colDb
-            .select()
-            .from(collectionState)
-            .where(eq(collectionState.id, 1))
-            .all();
-
-          if (state?.lastSyncAt) {
-            lastSyncTime = state.lastSyncAt;
-            lastSyncStatus = state.lastSyncStatus;
-          }
         }
 
         return {

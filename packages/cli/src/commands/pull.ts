@@ -12,7 +12,7 @@ import {
   SearchIndexer,
   computeEntityHash,
 } from "@frozenink/core";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { RemoteClient } from "./remote-client";
 import {
   computeSyncPlan,
@@ -265,16 +265,6 @@ export const pullCommand = new Command("pull")
       indexer.removeIndex(entityId);
     }
     indexer.close();
-
-    // Update sync state
-    try {
-      const manifestJson = JSON.stringify({ entries });
-      colDb.run(
-        sql`UPDATE clone_sync_state SET last_manifest = ${manifestJson}, last_synced_at = datetime('now') WHERE id = 1`,
-      );
-    } catch {
-      // Not critical
-    }
 
     console.log(
       `\nPulled: +${plan.entities.add.length} added, ~${plan.entities.update.length} updated, -${plan.entities.delete.length} deleted`,

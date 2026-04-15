@@ -8,13 +8,13 @@ import {
   listCollections,
   listSites,
   getSite,
+  getCollection,
   getCollectionDb,
   getCollectionDbPath,
   getFrozenInkHome,
   entities,
-  collectionState,
 } from "@frozenink/core";
-import { sql, eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { publishCollections, type PublishOptions } from "../../commands/publish.js";
 import { unpublishDeployment } from "../../commands/unpublish.js";
 import { TextInput } from "./TextInput.js";
@@ -52,13 +52,10 @@ function getCollectionStats(name: string): { entityCount: number; diskSize: numb
       const colDb = getCollectionDb(dbPath);
       const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
       entityCount = total;
-      const rows = colDb.select().from(collectionState).where(eq(collectionState.id, 1)).all();
-      if (rows.length > 0) {
-        lastSyncAt = rows[0].lastSyncAt;
-      }
     } catch {}
     try { diskSize += statSync(dbPath).size; } catch {}
   }
+  lastSyncAt = getCollection(name)?.lastSyncAt ?? null;
   const home = getFrozenInkHome();
   const colDir = join(home, "collections", name);
   diskSize += getDirectorySize(join(colDir, "markdown"));

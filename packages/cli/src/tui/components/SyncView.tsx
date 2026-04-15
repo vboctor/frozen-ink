@@ -5,11 +5,11 @@ import { join } from "path";
 import {
   ensureInitialized,
   listCollections,
+  getCollection,
   getCollectionDb,
   getCollectionDbPath,
   getFrozenInkHome,
   entities,
-  collectionState,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
@@ -21,7 +21,7 @@ import {
   gitTheme,
   mantisHubTheme,
 } from "@frozenink/crawlers";
-import { sql, eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 type SyncMode = "skip" | "incremental" | "full";
 type ViewMode = "select" | "syncing" | "done";
@@ -58,16 +58,11 @@ function formatRelative(date: Date): string {
 }
 
 function getLastSync(name: string): string {
-  const dbPath = getCollectionDbPath(name);
-  if (!existsSync(dbPath)) return "never";
-  try {
-    const colDb = getCollectionDb(dbPath);
-    const rows = colDb.select().from(collectionState).where(eq(collectionState.id, 1)).all();
-    if (rows.length > 0 && rows[0].lastSyncAt) {
-      const d = new Date(rows[0].lastSyncAt + "Z");
-      if (!isNaN(d.getTime())) return formatRelative(d);
-    }
-  } catch {}
+  const lastSyncAt = getCollection(name)?.lastSyncAt;
+  if (lastSyncAt) {
+    const d = new Date(lastSyncAt + "Z");
+    if (!isNaN(d.getTime())) return formatRelative(d);
+  }
   return "never";
 }
 

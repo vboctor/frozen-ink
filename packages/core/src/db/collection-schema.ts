@@ -24,24 +24,3 @@ export const entities = sqliteTable("entities", {
     .default(sql`(datetime('now'))`),
 });
 
-export const syncState = sqliteTable("sync_state", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  crawlerType: text("crawler_type").notNull(),
-  cursor: text("cursor", { mode: "json" }).$type<Record<string, unknown>>(),
-  crawlerVersion: text("crawler_version"),
-  updatedAt: text("updated_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
-});
-
-export const collectionState = sqliteTable("collection_state", {
-  id: integer("id").primaryKey(),
-  lastSyncStatus: text("last_sync_status"),
-  lastSyncAt: text("last_sync_at"),
-  lastSyncCreated: integer("last_sync_created").default(0),
-  lastSyncUpdated: integer("last_sync_updated").default(0),
-  lastSyncDeleted: integer("last_sync_deleted").default(0),
-  lastSyncErrors: text("last_sync_errors", { mode: "json" }).$type<unknown[]>(),
-  lastPublishedAt: text("last_published_at"),
-});
-

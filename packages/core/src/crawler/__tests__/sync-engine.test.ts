@@ -4,11 +4,8 @@ import { join } from "path";
 import { eq } from "drizzle-orm";
 import { SyncEngine, extractWikilinks } from "../sync-engine";
 import { getCollectionDb } from "../../db/client";
-import {
-  entities,
-  syncState,
-  collectionState,
-} from "../../db/collection-schema";
+import { entities } from "../../db/collection-schema";
+import { getCollection, addCollection } from "../../config/context";
 import { ThemeEngine } from "../../theme/engine";
 import { LocalStorageBackend } from "../../storage/local";
 import type { Crawler, SyncCursor, SyncResult } from "../interface";
@@ -56,6 +53,9 @@ let storage: LocalStorageBackend;
 
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
+  process.env.FROZENINK_HOME = TEST_DIR;
+  mkdirSync(join(TEST_DIR, "collections", "test"), { recursive: true });
+  addCollection("test", { crawler: "mock", config: {}, credentials: {} });
   themeEngine = new ThemeEngine();
   themeEngine.register(createMockTheme());
   storage = new LocalStorageBackend(join(TEST_DIR, "storage"));
@@ -63,6 +63,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(TEST_DIR, { recursive: true, force: true });
+  delete process.env.FROZENINK_HOME;
 });
 
 describe("SyncEngine", () => {
@@ -203,10 +204,10 @@ describe("SyncEngine", () => {
     const [second] = db.select().from(entities).all();
     expect(second.updatedAt).toBe(firstUpdatedAt);
 
-    const [state] = db.select().from(collectionState).where(eq(collectionState.id, 1)).all();
-    expect(state.lastSyncStatus).toBe("completed");
-    expect(state.lastSyncUpdated).toBe(0);
-    expect(state.lastSyncCreated).toBe(0);
+    const col = getCollection("test");
+    expect(col!.lastSyncStatus).toBe("completed");
+    expect(col!.lastSyncUpdated).toBe(0);
+    expect(col!.lastSyncCreated).toBe(0);
   });
 
   it("re-renders when content hash changes", async () => {
@@ -334,8 +335,8 @@ describe("SyncEngine", () => {
     const exists = await storage.exists("md/issue/del-1.md");
     expect(exists).toBe(false);
 
-    const [state] = db.select().from(collectionState).where(eq(collectionState.id, 1)).all();
-    expect(state.lastSyncDeleted).toBe(1);
+    const col = getCollection("test");
+    expect(col!.lastSyncDeleted).toBe(1);
   });
 
   it("downloads attachments and stores them as entity JSON assets", async () => {
@@ -387,7 +388,7 @@ describe("SyncEngine", () => {
     expect(assets[0].hash).toBeTruthy();
   });
 
-  it("updates sync_state with latest cursor", async () => {
+  it("updates YAML with cursor after sync", async () => {
     const crawler = createMockCrawler([
       {
         entities: [
@@ -416,14 +417,11 @@ describe("SyncEngine", () => {
 
     await engine.run();
 
-    const db = getCollectionDb(dbPath);
-    const states = db.select().from(syncState).all();
-    expect(states).toHaveLength(1);
-    expect(states[0].crawlerType).toBe("mock");
-    expect(states[0].cursor).toEqual({ page: 2, since: "2024-01-01" });
+    const col = getCollection("test");
+    expect(col!.syncCursor).toEqual({ page: 2, since: "2024-01-01" });
   });
 
-  it("updates collection_state with status, counts, and timing", async () => {
+  it("updates YAML with sync status, counts, and timing", async () => {
     const crawler = createMockCrawler([
       {
         entities: [
@@ -452,14 +450,13 @@ describe("SyncEngine", () => {
 
     await engine.run();
 
-    const db = getCollectionDb(dbPath);
-    const [state] = db.select().from(collectionState).where(eq(collectionState.id, 1)).all();
-    expect(state).toBeTruthy();
-    expect(state.lastSyncStatus).toBe("completed");
-    expect(state.lastSyncCreated).toBe(1);
-    expect(state.lastSyncUpdated).toBe(0);
-    expect(state.lastSyncDeleted).toBe(0);
-    expect(state.lastSyncAt).toBeTruthy();
+    const col = getCollection("test");
+    expect(col).toBeTruthy();
+    expect(col!.lastSyncStatus).toBe("completed");
+    expect(col!.lastSyncCreated).toBe(1);
+    expect(col!.lastSyncUpdated).toBe(0);
+    expect(col!.lastSyncDeleted).toBe(0);
+    expect(col!.lastSyncAt).toBeTruthy();
   });
 
   it("writes markdown files for new entities", async () => {

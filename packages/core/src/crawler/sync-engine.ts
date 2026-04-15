@@ -1,11 +1,8 @@
 import { eq, and } from "drizzle-orm";
 import { createCryptoHasher } from "../compat/crypto";
 import { getCollectionDb } from "../db/client";
-import {
-  entities,
-  syncState,
-  collectionState,
-} from "../db/collection-schema";
+import { entities } from "../db/collection-schema";
+import { getCollection, updateCollection } from "../config/context";
 import { SearchIndexer } from "../search/indexer";
 import type { Crawler, CrawlerEntityData, SyncCursor } from "./interface";
 import type { FolderConfig } from "../theme/interface";
@@ -179,15 +176,8 @@ export class SyncEngine {
       allowedExtensions: this.allowedExtensions,
     });
 
-    // Mark sync as running in collection_state
-    this.db
-      .insert(collectionState)
-      .values({ id: 1, lastSyncStatus: "running", lastSyncAt: startedAt })
-      .onConflictDoUpdate({
-        target: collectionState.id,
-        set: { lastSyncStatus: "running", lastSyncAt: startedAt },
-      })
-      .run();
+    // Mark sync as running in collection YAML
+    updateCollection(this.collectionName, { lastSyncStatus: "running", lastSyncAt: startedAt });
 
     let created = 0;
     let updated = 0;
@@ -195,17 +185,13 @@ export class SyncEngine {
     const errors: unknown[] = [];
 
     try {
-      // Load existing cursor
-      const [stateRow] = this.db
-        .select()
-        .from(syncState)
-        .where(eq(syncState.crawlerType, crawlerType))
-        .all();
-      let cursor: SyncCursor | null = (stateRow?.cursor as SyncCursor) ?? null;
+      // Load cursor and version from collection YAML
+      const colYaml = getCollection(this.collectionName);
+      let cursor: SyncCursor | null = (colYaml?.syncCursor as SyncCursor) ?? null;
 
       // Version check: compare stored version with crawler's current version
       const currentVersion = this.crawler.metadata.version ?? "1.0";
-      const storedVersion = (stateRow as any)?.crawlerVersion ?? "1.0";
+      const storedVersion = colYaml?.version ?? "1.0";
       const [curMajor, curMinor] = currentVersion.split(".").map(Number);
       const [stoMajor, stoMinor] = storedVersion.split(".").map(Number);
 
@@ -260,29 +246,11 @@ export class SyncEngine {
         hasMore = result.hasMore;
       }
 
-      // Persist cursor and version
-      const now = new Date().toISOString().replace("T", " ").replace("Z", "");
-      if (cursor) {
-        if (stateRow) {
-          this.db
-            .update(syncState)
-            .set({ cursor: cursor as Record<string, unknown>, crawlerVersion: currentVersion, updatedAt: now })
-            .where(eq(syncState.id, stateRow.id))
-            .run();
-        } else {
-          this.db
-            .insert(syncState)
-            .values({ crawlerType, cursor: cursor as Record<string, unknown>, crawlerVersion: currentVersion })
-            .run();
-        }
-      } else if (stateRow) {
-        // Update version even when cursor is null (e.g. after major version reset)
-        this.db
-          .update(syncState)
-          .set({ crawlerVersion: currentVersion, updatedAt: now })
-          .where(eq(syncState.id, stateRow.id))
-          .run();
-      }
+      // Persist cursor and version to collection YAML
+      updateCollection(this.collectionName, {
+        syncCursor: cursor ?? undefined,
+        version: currentVersion,
+      });
 
       // Reconcile filesystem with DB
       await this.reconcile(crawlerType);
@@ -293,35 +261,27 @@ export class SyncEngine {
       // Notify caller to update collection version in .config
       this.onVersionUpdate?.(currentVersion);
 
-      // Update collection_state as completed
-      this.db
-        .update(collectionState)
-        .set({
-          lastSyncStatus: "completed",
-          lastSyncAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
-          lastSyncCreated: created,
-          lastSyncUpdated: updated,
-          lastSyncDeleted: deleted,
-          lastSyncErrors: errors.length > 0 ? errors : null,
-        })
-        .where(eq(collectionState.id, 1))
-        .run();
+      // Update sync state in collection YAML
+      updateCollection(this.collectionName, {
+        lastSyncStatus: "completed",
+        lastSyncAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
+        lastSyncCreated: created,
+        lastSyncUpdated: updated,
+        lastSyncDeleted: deleted,
+        lastSyncErrors: errors.length > 0 ? errors : undefined,
+      });
 
       return { created, updated, deleted };
     } catch (err) {
       errors.push(String(err));
-      this.db
-        .update(collectionState)
-        .set({
-          lastSyncStatus: "failed",
-          lastSyncAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
-          lastSyncCreated: created,
-          lastSyncUpdated: updated,
-          lastSyncDeleted: deleted,
-          lastSyncErrors: errors,
-        })
-        .where(eq(collectionState.id, 1))
-        .run();
+      updateCollection(this.collectionName, {
+        lastSyncStatus: "failed",
+        lastSyncAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
+        lastSyncCreated: created,
+        lastSyncUpdated: updated,
+        lastSyncDeleted: deleted,
+        lastSyncErrors: errors,
+      });
       throw err;
     }
   }
