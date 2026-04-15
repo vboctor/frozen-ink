@@ -51,14 +51,13 @@ const api = new Hono<{ Bindings: Env }>();
 // GET /api/collections
 api.get("/api/collections", async (c) => {
   const collections = await getCollections(c.env.BUCKET);
-  const result = await Promise.all(
-    collections.map(async (col) => ({
-      name: col.name,
-      title: col.title || col.name,
-      enabled: true,
-      entityCount: await getEntityCount(c.env.DB),
-    })),
-  );
+  const entityCount = await getEntityCount(c.env.DB);
+  const result = collections.map((col) => ({
+    name: col.name,
+    title: col.title || col.name,
+    enabled: true,
+    entityCount,
+  }));
   return c.json(result);
 });
 
@@ -146,11 +145,11 @@ api.get("/api/collections/:name/tree", async (c) => {
   }
 
   // Apply root-level hide patterns to files at the root (no subdirectory)
-  const rootHide = rootConfig.hide ?? [];
+  const rootHideCompiled = compileHidePatterns(rootConfig.hide ?? []);
   const filteredPaths = mdPaths.filter((p) => {
     const parts = p.split("/");
-    if (parts.length === 1 && rootHide.length > 0) {
-      return !matchesHidePattern(rootHide, parts[0]);
+    if (parts.length === 1 && rootHideCompiled.length > 0) {
+      return !matchesHidePattern(rootHideCompiled, parts[0]);
     }
     return true;
   });
@@ -305,13 +304,14 @@ api.get("/api/search", async (c) => {
     limit,
   });
 
-  const enriched = await Promise.all(
-    results.map(async (r) => {
-      const entity = await getEntityByExternalId(c.env.DB, r.externalId);
-      const markdownPath = entity ? parseEntityData(entity).markdown_path ?? null : null;
-      return { ...r, title: entity?.title ?? r.title, collection: collection ?? "", markdownPath, snippet: r.snippet };
-    }),
-  );
+  const externalIds = results.map((r) => r.externalId);
+  const entitiesList = await getEntitiesByExternalIds(c.env.DB, externalIds);
+  const entityMap = new Map(entitiesList.map((e) => [e.external_id, e]));
+  const enriched = results.map((r) => {
+    const entity = entityMap.get(r.externalId) ?? null;
+    const markdownPath = entity ? parseEntityData(entity).markdown_path ?? null : null;
+    return { ...r, title: entity?.title ?? r.title, collection: collection ?? "", markdownPath, snippet: r.snippet };
+  });
 
   return c.json(enriched);
 });
@@ -324,7 +324,7 @@ api.get("/api/collections/:name/backlinks/:externalId", async (c) => {
   const targetEntity = await getEntityByExternalId(c.env.DB, externalId);
   if (!targetEntity) return c.json({ error: "Entity not found" }, 404);
 
-  const links = await getBacklinks(c.env.DB, externalId);
+  const links = await getBacklinks(c.env.DB, targetEntity);
 
   const results = links.map(({ entity }) => {
     const ed = parseEntityData(entity);
@@ -382,19 +382,19 @@ api.get("/api/attachments/:collection/*", async (c) => {
   });
 });
 
-/** Returns true if `filename` matches any of the glob patterns. */
-function matchesHidePattern(patterns: string[], filename: string): boolean {
-  return patterns.some((pattern) => {
-    const re = new RegExp(
-      "^" +
-        pattern
-          .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-          .replace(/\*/g, ".*")
-          .replace(/\?/g, ".") +
-        "$",
-    );
-    return re.test(filename);
-  });
+function compileHidePatterns(patterns: string[]): RegExp[] {
+  return patterns.map((pattern) => new RegExp(
+    "^" +
+      pattern
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*/g, ".*")
+        .replace(/\?/g, ".") +
+      "$",
+  ));
+}
+
+function matchesHidePattern(compiled: RegExp[], filename: string): boolean {
+  return compiled.some((re) => re.test(filename));
 }
 
 // Helper to build tree from flat file paths, honoring folder yml configs
@@ -452,7 +452,7 @@ function buildTreeFromPaths(
   function sortTree(nodes: TreeNode[], parentPath: string = ""): TreeNode[] {
     const config = parentPath ? folderConfigs.get(parentPath) : undefined;
     const sortOrder = config?.sort ?? "ASC";
-    const folderHide = config?.hide ?? [];
+    const folderHideCompiled = compileHidePatterns(config?.hide ?? []);
 
     const dirs = nodes
       .filter((n) => n.type === "directory")
@@ -464,7 +464,7 @@ function buildTreeFromPaths(
 
     const files = nodes
       .filter((n) => n.type === "file")
-      .filter((n) => folderHide.length === 0 || !matchesHidePattern(folderHide, n.name));
+      .filter((n) => folderHideCompiled.length === 0 || !matchesHidePattern(folderHideCompiled, n.name));
     if (sortOrder === "DESC") {
       files.sort((a, b) => b.name.localeCompare(a.name));
     } else {

@@ -478,7 +478,7 @@ export default function App() {
   }, [tabs, activeTab]);
 
   useEffect(() => {
-    if (!selectedCollection || !selectedFile) {
+    if (viewMode !== "markdown" || !selectedCollection || !selectedFile) {
       setFileContent(null);
       return;
     }
@@ -500,11 +500,11 @@ export default function App() {
         setFileNotFound(true);
       })
       .finally(() => setLoading(false));
-  }, [selectedCollection, selectedFile]);
+  }, [viewMode, selectedCollection, selectedFile]);
 
-  // Fetch backlinks for the current file
+  // Fetch backlinks for the current file (only when links panel is open)
   useEffect(() => {
-    if (!selectedCollection || !selectedFile) {
+    if (!backlinksOpen || !selectedCollection || !selectedFile) {
       setBacklinks([]);
       return;
     }
@@ -514,11 +514,11 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : []))
       .then(setBacklinks)
       .catch(() => setBacklinks([]));
-  }, [selectedCollection, selectedFile]);
+  }, [backlinksOpen, selectedCollection, selectedFile]);
 
-  // Fetch outgoing links for the current file
+  // Fetch outgoing links for the current file (only when links panel is open)
   useEffect(() => {
-    if (!selectedCollection || !selectedFile) {
+    if (!backlinksOpen || !selectedCollection || !selectedFile) {
       setOutgoingLinks([]);
       return;
     }
@@ -528,7 +528,7 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : []))
       .then(setOutgoingLinks)
       .catch(() => setOutgoingLinks([]));
-  }, [selectedCollection, selectedFile]);
+  }, [backlinksOpen, selectedCollection, selectedFile]);
 
   // Check if HTML rendering is available for the selected collection
   useEffect(() => {
@@ -550,10 +550,8 @@ export default function App() {
       .catch(() => setHtmlAvailable(false));
   }, [selectedCollection]);
 
-  // Fetch HTML content whenever htmlAvailable and a file is selected.
-  // Not gated by viewMode so it's ready when the user toggles.
   useEffect(() => {
-    if (!htmlAvailable || !selectedCollection || !selectedFile) {
+    if (viewMode !== "html" || !htmlAvailable || !selectedCollection || !selectedFile) {
       setHtmlContent(null);
       setHtmlLoading(false);
       return;
@@ -575,7 +573,7 @@ export default function App() {
         setHtmlContent(null);
         setHtmlLoading(false);
       });
-  }, [htmlAvailable, selectedCollection, selectedFile]);
+  }, [viewMode, htmlAvailable, selectedCollection, selectedFile]);
 
   // Core navigation: open a file, optionally in a new tab.
   // Uses functional state updates throughout to avoid stale closure issues.

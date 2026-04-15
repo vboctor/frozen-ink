@@ -92,21 +92,13 @@ export async function getEntityByExternalId(
 
 export async function getBacklinks(
   db: D1Database,
-  targetExternalId: string,
+  targetEntity: Entity,
 ): Promise<Array<{ entity: Entity }>> {
-  const { results } = await db
-    .prepare("SELECT * FROM entities")
-    .all<Entity>();
-
-  const out: Array<{ entity: Entity }> = [];
-  for (const entity of results ?? []) {
-    const data = parseEntityData(entity);
-    const outLinks = data.out_links ?? [];
-    if (outLinks.includes(targetExternalId)) {
-      out.push({ entity });
-    }
-  }
-  return out;
+  const data = parseEntityData(targetEntity);
+  const inLinks = data.in_links ?? [];
+  if (inLinks.length === 0) return [];
+  const entities = await getEntitiesByExternalIds(db, inLinks);
+  return entities.map((entity) => ({ entity }));
 }
 
 export async function getOutgoingLinks(
@@ -115,13 +107,10 @@ export async function getOutgoingLinks(
 ): Promise<Array<{ entity: Entity | null; externalId: string }>> {
   const data = parseEntityData(sourceEntity);
   const outLinks = data.out_links ?? [];
-  const out: Array<{ entity: Entity | null; externalId: string }> = [];
-
-  for (const targetExtId of outLinks) {
-    const entity = await getEntityByExternalId(db, targetExtId);
-    out.push({ entity, externalId: targetExtId });
-  }
-  return out;
+  if (outLinks.length === 0) return [];
+  const entities = await getEntitiesByExternalIds(db, outLinks);
+  const map = new Map(entities.map((e) => [e.external_id, e]));
+  return outLinks.map((extId) => ({ entity: map.get(extId) ?? null, externalId: extId }));
 }
 
 export async function getEntityCount(
