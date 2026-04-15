@@ -5,11 +5,13 @@ import {
   getCollectionDb,
   ensureInitialized,
   addCollection,
+  getCollection,
   getCollectionDbPath,
   entities,
   LocalStorageBackend,
   SearchIndexer,
 } from "@frozenink/core";
+import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import { RemoteClient } from "./remote-client";
 import {
@@ -63,6 +65,13 @@ export const cloneCommand = new Command("clone")
       return;
     }
 
+    // Fail if collection already exists
+    const existingCol = getCollection(localName);
+    if (existingCol !== null) {
+      console.error(`Collection "${localName}" already exists. Use 'fink pull' to update it.`);
+      process.exit(1);
+    }
+
     // Register the collection
     addCollection(localName, {
       crawler: "remote",
@@ -93,14 +102,11 @@ export const cloneCommand = new Command("clone")
           externalId: re.externalId,
           entityType: re.entityType,
           title: re.title,
-          data: re.data,
+          data: re.data as unknown as EntityData,
           contentHash: re.hash,
           markdownPath: re.markdownPath,
           url: re.url,
           tags: re.tags,
-          outLinks: re.outLinks,
-          inLinks: re.inLinks,
-          assets: re.assets,
         })
         .run();
     }
@@ -114,6 +120,11 @@ export const cloneCommand = new Command("clone")
       const content = await client.getMarkdown(re.markdownPath!);
       if (content) {
         await storage.write(`content/${re.markdownPath}`, content);
+        // Set file mtime from stored metadata
+        const mtime = (re.data as unknown as EntityData).markdown_mtime;
+        if (mtime) {
+          await storage.utimes?.(`content/${re.markdownPath}`, mtime);
+        }
       }
       downloaded++;
       if (downloaded % 50 === 0) {
@@ -124,7 +135,7 @@ export const cloneCommand = new Command("clone")
     // Download asset files
     const assetDownloads: Array<{ path: string; entity: RemoteEntityData }> = [];
     for (const re of remoteEntities) {
-      for (const asset of re.assets ?? []) {
+      for (const asset of (re.data as unknown as EntityData).assets ?? []) {
         assetDownloads.push({ path: asset.storagePath, entity: re });
       }
     }
@@ -143,7 +154,6 @@ export const cloneCommand = new Command("clone")
     const indexer = new SearchIndexer(dbPath);
     for (const re of remoteEntities) {
       if (!re.markdownPath) continue;
-      const filePath = join(collectionDir, "content", re.markdownPath);
       let content = "";
       try {
         content = await storage.read(`content/${re.markdownPath}`);

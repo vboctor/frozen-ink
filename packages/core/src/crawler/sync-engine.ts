@@ -2,8 +2,10 @@ import { eq, and } from "drizzle-orm";
 import { createCryptoHasher } from "../compat/crypto";
 import { getCollectionDb } from "../db/client";
 import { entities } from "../db/collection-schema";
+import type { EntityData } from "../db/collection-schema";
 import { getCollection, updateCollection } from "../config/context";
 import { SearchIndexer } from "../search/indexer";
+import { computeEntityHash } from "../sync/entity-hash";
 import type { Crawler, CrawlerEntityData, SyncCursor } from "./interface";
 import type { FolderConfig } from "../theme/interface";
 import type { ThemeEngine } from "../theme/engine";
@@ -27,11 +29,11 @@ function isToolPath(filePath: string): boolean {
 
 /** Returns true when the stored mtime+size match the current file stat. */
 function statMatches(
-  stored: { markdownMtime: number | null; markdownSize: number | null },
+  stored: { markdown_mtime?: number | null; markdown_size?: number | null },
   current: { mtimeMs: number; size: number } | null,
 ): boolean {
   if (!current) return false;
-  return stored.markdownMtime === current.mtimeMs && stored.markdownSize === current.size;
+  return stored.markdown_mtime === current.mtimeMs && stored.markdown_size === current.size;
 }
 
 /**
@@ -74,12 +76,6 @@ export function extractWikilinks(markdown: string, sourceFilePath?: string): str
   }
 
   return Array.from(targets);
-}
-
-function computeHash(data: Record<string, unknown>): string {
-  const hasher = createCryptoHasher("sha256");
-  hasher.update(JSON.stringify(data));
-  return hasher.digest("hex");
 }
 
 /** Default file extensions allowed for asset downloads. */
@@ -230,6 +226,7 @@ export class SyncEngine {
         // Sync links now that all entities in the batch exist
         for (const { entityId, markdown, markdownPath } of deferredLinks) {
           this.syncLinks(entityId, markdown, markdownPath);
+          this.recomputeHash(entityId);
         }
 
         // Handle deletions
@@ -286,12 +283,35 @@ export class SyncEngine {
     }
   }
 
+  private async updateEntityData(entityId: number, updates: Partial<EntityData>): Promise<void> {
+    const [row] = this.db.select({ data: entities.data }).from(entities).where(eq(entities.id, entityId)).all();
+    const current = (row?.data as EntityData) ?? { source: {} };
+    this.db.update(entities).set({ data: { ...current, ...updates } }).where(eq(entities.id, entityId)).run();
+  }
+
+  private recomputeHash(entityId: number): void {
+    const [row] = this.db.select().from(entities).where(eq(entities.id, entityId)).all();
+    if (!row) return;
+    const hash = computeEntityHash({
+      entityType: row.entityType,
+      title: row.title,
+      data: row.data as EntityData,
+      markdownPath: row.markdownPath,
+      url: row.url,
+      tags: (row.tags as string[] | null) ?? [],
+    });
+    this.db.update(entities).set({ contentHash: hash }).where(eq(entities.id, entityId)).run();
+  }
+
   private async upsertEntity(
     entityData: CrawlerEntityData,
     crawlerType: string,
     deferredLinks?: Array<{ entityId: number; markdown: string; markdownPath?: string }>,
   ): Promise<{ created: number; updated: number }> {
-    const contentHash = entityData.contentHash ?? computeHash(entityData.data);
+    // Build initial EntityData with source from the crawler
+    const initialData: EntityData = {
+      source: entityData.data as Record<string, unknown>,
+    };
 
     // Check if entity already exists
     const [existing] = this.db
@@ -301,10 +321,14 @@ export class SyncEngine {
       .all();
 
     if (existing) {
-      // Compare hash — skip re-render if unchanged
-      if (existing.contentHash === contentHash) {
-        // Still update title/url — cheap metadata that can change without content changing
-        // (e.g. title format updates, URL changes).
+      const existingData = (existing.data as EntityData) ?? { source: {} };
+
+      // Compare source data to decide if re-render is needed
+      const sourceChanged = JSON.stringify(entityData.data) !== JSON.stringify(existingData.source);
+
+      if (!sourceChanged) {
+        // Source unchanged — still update tags/links/assets/mtime in data
+        // Update title/url if they changed
         if (existing.title !== entityData.title || existing.url !== (entityData.url ?? null)) {
           this.db
             .update(entities)
@@ -315,6 +339,16 @@ export class SyncEngine {
             })
             .where(eq(entities.id, existing.id))
             .run();
+        }
+        // Update tags
+        this.syncTags(existing.id, entityData.tags ?? []);
+        // Handle assets (update data.assets)
+        await this.syncAssets(existing.id, entityData);
+        // Defer link syncing
+        if (deferredLinks) {
+          // We need to re-read the markdown to re-sync links, but source hasn't changed
+          // so we can skip re-rendering. Just re-sync links from existing markdown if any.
+          // For simplicity when source unchanged, we skip link re-sync (links were set before).
         }
         return { created: 0, updated: 0 };
       }
@@ -335,17 +369,22 @@ export class SyncEngine {
         }
       }
 
+      // Build updated EntityData preserving existing links/assets until sync
+      const updatedData: EntityData = {
+        ...existingData,
+        source: entityData.data as Record<string, unknown>,
+        markdown_mtime: writtenStat?.mtimeMs ?? null,
+        markdown_size: writtenStat?.size ?? null,
+      };
+
       // Update entity
       this.db
         .update(entities)
         .set({
           title: entityData.title,
           entityType: entityData.entityType,
-          data: entityData.data,
-          contentHash,
+          data: updatedData,
           markdownPath: filePath,
-          markdownMtime: writtenStat?.mtimeMs ?? null,
-          markdownSize: writtenStat?.size ?? null,
           url: entityData.url ?? null,
           updatedAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
         })
@@ -363,6 +402,7 @@ export class SyncEngine {
         deferredLinks.push({ entityId: existing.id, markdown, markdownPath: filePath });
       } else {
         this.syncLinks(existing.id, markdown, filePath);
+        this.recomputeHash(existing.id);
       }
 
       // Update search index
@@ -385,6 +425,13 @@ export class SyncEngine {
     await this.storage.write(storagePath, markdown);
     const writtenStat = await this.storage.stat(storagePath);
 
+    // Build EntityData
+    const newData: EntityData = {
+      source: entityData.data as Record<string, unknown>,
+      markdown_mtime: writtenStat?.mtimeMs ?? null,
+      markdown_size: writtenStat?.size ?? null,
+    };
+
     // Insert entity
     this.db
       .insert(entities)
@@ -392,11 +439,8 @@ export class SyncEngine {
         externalId: entityData.externalId,
         entityType: entityData.entityType,
         title: entityData.title,
-        data: entityData.data,
-        contentHash,
+        data: newData,
         markdownPath: filePath,
-        markdownMtime: writtenStat?.mtimeMs ?? null,
-        markdownSize: writtenStat?.size ?? null,
         url: entityData.url ?? null,
       })
       .run();
@@ -418,6 +462,7 @@ export class SyncEngine {
       deferredLinks.push({ entityId: inserted.id, markdown, markdownPath: filePath });
     } else {
       this.syncLinks(inserted.id, markdown, filePath);
+      this.recomputeHash(inserted.id);
     }
 
     // Add to search index
@@ -463,11 +508,7 @@ export class SyncEngine {
     entityData: CrawlerEntityData,
   ): Promise<void> {
     if (!entityData.attachments?.length) {
-      this.db
-        .update(entities)
-        .set({ assets: [] })
-        .where(eq(entities.id, entityId))
-        .run();
+      await this.updateEntityData(entityId, { assets: [] });
       return;
     }
 
@@ -496,11 +537,7 @@ export class SyncEngine {
       });
     }
 
-    this.db
-      .update(entities)
-      .set({ assets: assetEntries })
-      .where(eq(entities.id, entityId))
-      .run();
+    await this.updateEntityData(entityId, { assets: assetEntries });
   }
 
   private syncLinks(
@@ -522,7 +559,7 @@ export class SyncEngine {
     for (const target of wikiTargets) {
       const targetPath = `${target}.md`;
       const [targetEntity] = this.db
-        .select({ id: entities.id, externalId: entities.externalId, inLinks: entities.inLinks })
+        .select({ id: entities.id, externalId: entities.externalId, data: entities.data })
         .from(entities)
         .where(eq(entities.markdownPath, targetPath))
         .all();
@@ -530,11 +567,12 @@ export class SyncEngine {
         outLinkExternalIds.push(targetEntity.externalId);
         // Add source to target's inLinks if not already present
         if (sourceExternalId) {
-          const currentInLinks: string[] = (targetEntity.inLinks as string[] | null) ?? [];
+          const targetData = (targetEntity.data as EntityData) ?? { source: {} };
+          const currentInLinks: string[] = targetData.in_links ?? [];
           if (!currentInLinks.includes(sourceExternalId)) {
             this.db
               .update(entities)
-              .set({ inLinks: [...currentInLinks, sourceExternalId] })
+              .set({ data: { ...targetData, in_links: [...currentInLinks, sourceExternalId] } })
               .where(eq(entities.id, targetEntity.id))
               .run();
           }
@@ -542,9 +580,12 @@ export class SyncEngine {
       }
     }
 
+    // Update out_links in data
+    const [sourceRow] = this.db.select({ data: entities.data }).from(entities).where(eq(entities.id, entityId)).all();
+    const sourceData = (sourceRow?.data as EntityData) ?? { source: {} };
     this.db
       .update(entities)
-      .set({ outLinks: outLinkExternalIds })
+      .set({ data: { ...sourceData, out_links: outLinkExternalIds } })
       .where(eq(entities.id, entityId))
       .run();
   }
@@ -660,13 +701,14 @@ export class SyncEngine {
   private async reRenderAllEntities(crawlerType: string): Promise<void> {
     const allEntities = this.db.select().from(entities).all();
     for (const row of allEntities) {
+      const rowData = (row.data as EntityData) ?? { source: {} };
       // Re-derive title from stored data via the theme (no API call needed).
       const derivedTitle = this.themeEngine.getTitle({
         entity: {
           externalId: row.externalId,
           entityType: row.entityType,
           title: row.title,
-          data: row.data as Record<string, unknown>,
+          data: rowData.source,
           url: row.url ?? undefined,
         },
         collectionName: this.collectionName,
@@ -678,7 +720,7 @@ export class SyncEngine {
         externalId: row.externalId,
         entityType: row.entityType,
         title,
-        data: row.data,
+        data: rowData.source,
         url: row.url ?? undefined,
       };
       const markdown = this.renderMarkdown(entityData, crawlerType);
@@ -692,19 +734,20 @@ export class SyncEngine {
         try { await this.storage.delete(this.toStoragePath(row.markdownPath)); } catch { /* ignore */ }
       }
 
+      await this.updateEntityData(row.id, {
+        markdown_mtime: stat?.mtimeMs ?? null,
+        markdown_size: stat?.size ?? null,
+      });
+
       this.db
         .update(entities)
-        .set({
-          title,
-          markdownPath: filePath,
-          markdownMtime: stat?.mtimeMs ?? null,
-          markdownSize: stat?.size ?? null,
-        })
+        .set({ title, markdownPath: filePath })
         .where(eq(entities.id, row.id))
         .run();
 
       // Re-sync wikilinks
       this.syncLinks(row.id, markdown, filePath);
+      this.recomputeHash(row.id);
 
       // Update search index
       this.searchIndexer.updateIndex({
@@ -726,9 +769,10 @@ export class SyncEngine {
     // avoiding expensive re-renders and reads for unchanged entities.
     for (const entity of allEntities) {
       if (!entity.markdownPath) continue;
+      const entityData = (entity.data as EntityData) ?? { source: {} };
       const storagePath = this.toStoragePath(entity.markdownPath);
       const currentStat = await this.storage.stat(storagePath);
-      if (statMatches(entity, currentStat)) continue;
+      if (statMatches(entityData, currentStat)) continue;
 
       // File is missing or has been modified — re-render and restore
       const entityTagNames = this.getEntityTagNames(entity.id);
@@ -737,7 +781,7 @@ export class SyncEngine {
           externalId: entity.externalId,
           entityType: entity.entityType,
           title: entity.title,
-          data: entity.data as Record<string, unknown>,
+          data: entityData.source,
           url: entity.url ?? undefined,
           tags: entityTagNames,
         },
@@ -748,14 +792,11 @@ export class SyncEngine {
       });
       await this.storage.write(storagePath, expected);
       const writtenStat = await this.storage.stat(storagePath);
-      this.db
-        .update(entities)
-        .set({
-          markdownMtime: writtenStat?.mtimeMs ?? null,
-          markdownSize: writtenStat?.size ?? null,
-        })
-        .where(eq(entities.id, entity.id))
-        .run();
+      await this.updateEntityData(entity.id, {
+        markdown_mtime: writtenStat?.mtimeMs ?? null,
+        markdown_size: writtenStat?.size ?? null,
+      });
+      this.recomputeHash(entity.id);
     }
 
     // 2. Delete orphaned markdown files (on disk but no matching entity in DB)
@@ -767,7 +808,8 @@ export class SyncEngine {
     );
     const dbAssetStoragePaths = new Set<string>();
     for (const entity of allEntities) {
-      const entityAssets: Array<{ storagePath: string }> = (entity.assets as any) ?? [];
+      const entityData = (entity.data as EntityData) ?? { source: {} };
+      const entityAssets: Array<{ storagePath: string }> = entityData.assets ?? [];
       for (const att of entityAssets) dbAssetStoragePaths.add(att.storagePath);
     }
     try {
@@ -792,7 +834,8 @@ export class SyncEngine {
     const dbAssetPaths = new Set<string>();
     const assetDirs = new Set<string>();
     for (const entity of allEntities) {
-      const entityAssets: Array<{ storagePath: string }> = (entity.assets as any) ?? [];
+      const entityData = (entity.data as EntityData) ?? { source: {} };
+      const entityAssets: Array<{ storagePath: string }> = entityData.assets ?? [];
       for (const att of entityAssets) {
         dbAssetPaths.add(att.storagePath);
         const parts = att.storagePath.split("/");
@@ -865,18 +908,19 @@ export class SyncEngine {
       }
     }
 
-    // Remove this entity's externalId from all other entities' inLinks
+    // Remove this entity's externalId from all other entities' inLinks (in data)
     if (existing.externalId) {
-      const allWithInLinks = this.db
-        .select({ id: entities.id, inLinks: entities.inLinks })
+      const allWithData = this.db
+        .select({ id: entities.id, data: entities.data })
         .from(entities)
         .all();
-      for (const row of allWithInLinks) {
-        const inLinks: string[] = (row.inLinks as string[] | null) ?? [];
+      for (const row of allWithData) {
+        const rowData = (row.data as EntityData) ?? { source: {} };
+        const inLinks: string[] = rowData.in_links ?? [];
         if (inLinks.includes(existing.externalId)) {
           this.db
             .update(entities)
-            .set({ inLinks: inLinks.filter((l) => l !== existing.externalId) })
+            .set({ data: { ...rowData, in_links: inLinks.filter((l) => l !== existing.externalId) } })
             .where(eq(entities.id, row.id))
             .run();
         }

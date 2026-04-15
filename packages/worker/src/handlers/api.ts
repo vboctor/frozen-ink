@@ -11,9 +11,7 @@ import {
   getEntitiesByExternalIds,
   getFullManifest,
   parseEntityTags,
-  parseOutLinks,
-  parseInLinks,
-  parseAssets,
+  parseEntityData,
 } from "../db/client";
 import { getCollections, getCollectionConfig } from "../config";
 import { searchEntities } from "../db/search";
@@ -36,7 +34,7 @@ api.get("/api/collections", async (c) => {
     collections.map(async (col) => ({
       name: col.name,
       title: col.title || col.name,
-      entityCount: await getEntityCount(c.env.DB, col.name),
+      entityCount: await getEntityCount(c.env.DB),
     })),
   );
   return c.json(result);
@@ -61,13 +59,12 @@ api.get("/api/collections/:name/html/*", async (c) => {
   const filePath = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/html/`, "");
   const decoded = decodeURIComponent(filePath);
 
-  const entity = await getEntityByMarkdownPath(c.env.DB, name, decoded);
+  const entity = await getEntityByMarkdownPath(c.env.DB, decoded);
   if (!entity) return c.text("Entity not found", 404);
 
   const [tags, allEntities] = await Promise.all([
     Promise.resolve(parseEntityTags(entity)),
-    c.env.DB.prepare("SELECT external_id, markdown_path FROM entities WHERE collection_name = ?")
-      .bind(name)
+    c.env.DB.prepare("SELECT external_id, markdown_path FROM entities WHERE markdown_path IS NOT NULL")
       .all<{ external_id: string; markdown_path: string | null }>()
       .then((r) => r.results ?? []),
   ]);
@@ -78,14 +75,15 @@ api.get("/api/collections/:name/html/*", async (c) => {
     entityPathMap.set(row.external_id, row.markdown_path.endsWith(".md") ? row.markdown_path.slice(0, -3) : row.markdown_path);
   }
 
-  const data = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
+  const entityData = parseEntityData(entity);
+  const source = entityData.source ?? (typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data);
 
   const html = themeEngine.renderHtml({
     entity: {
       externalId: entity.external_id,
       entityType: entity.entity_type,
       title: entity.title,
-      data,
+      data: source,
       url: entity.url ?? undefined,
       tags,
     },
@@ -122,8 +120,8 @@ api.get("/api/collections/:name/tree", async (c) => {
   const titleByPath = new Map<string, string>();
   try {
     const { results } = await c.env.DB.prepare(
-      "SELECT markdown_path, title FROM entities WHERE collection_name = ? AND markdown_path IS NOT NULL AND title IS NOT NULL",
-    ).bind(name).all<{ markdown_path: string; title: string }>();
+      "SELECT markdown_path, title FROM entities WHERE markdown_path IS NOT NULL AND title IS NOT NULL",
+    ).all<{ markdown_path: string; title: string }>();
     for (const row of results ?? []) {
       titleByPath.set(row.markdown_path, row.title);
     }
@@ -156,8 +154,8 @@ api.get("/api/collections/:name/tree", async (c) => {
 // GET /api/collections/:name/default-file
 api.get("/api/collections/:name/default-file", async (c) => {
   const name = c.req.param("name");
-  const entities = await getEntities(c.env.DB, name, { limit: 1 });
-  const first = entities[0];
+  const entityList = await getEntities(c.env.DB, { limit: 1 });
+  const first = entityList[0];
   const filePath = first?.markdown_path ?? null;
   return c.json({ file: filePath });
 });
@@ -184,7 +182,7 @@ api.get("/api/collections/:name/entities", async (c) => {
   const offset = parseInt(c.req.query("offset") || "0", 10);
   const entityType = c.req.query("type") || undefined;
 
-  const rows = await getEntities(c.env.DB, name, { limit, offset, entityType });
+  const rows = await getEntities(c.env.DB, { limit, offset, entityType });
 
   const result = rows.map((row) => ({
     id: row.id,
@@ -209,7 +207,7 @@ api.get("/api/collections/:name/manifest", async (c) => {
   const col = await getCollectionConfig(c.env.BUCKET, name);
   if (!col) return c.json({ error: "Collection not found" }, 404);
 
-  const manifest = await getFullManifest(c.env.DB, name);
+  const manifest = await getFullManifest(c.env.DB);
   const entitiesStr = manifest
     .map((e) => `${e.externalId}\t${e.hash}`)
     .join("\n");
@@ -236,23 +234,23 @@ api.get("/api/collections/:name/entities/bulk", async (c) => {
     return c.json({ entities: [] });
   }
 
-  const rows = await getEntitiesByExternalIds(c.env.DB, name, externalIds);
+  const rows = await getEntitiesByExternalIds(c.env.DB, externalIds);
 
-  const result = rows.map((row) => ({
-    externalId: row.external_id,
-    entityType: row.entity_type,
-    title: row.title,
-    data: typeof row.data === "string" ? JSON.parse(row.data) : row.data,
-    hash: row.content_hash ?? "",
-    markdownPath: row.markdown_path,
-    url: row.url,
-    tags: parseEntityTags(row),
-    outLinks: parseOutLinks(row),
-    inLinks: parseInLinks(row),
-    assets: parseAssets(row),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+  const result = rows.map((row) => {
+    const entityData = parseEntityData(row);
+    return {
+      externalId: row.external_id,
+      entityType: row.entity_type,
+      title: row.title,
+      data: entityData,
+      hash: row.content_hash ?? "",
+      markdownPath: row.markdown_path,
+      url: row.url,
+      tags: parseEntityTags(row),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  });
 
   return c.json({ entities: result });
 });
@@ -267,16 +265,15 @@ api.get("/api/search", async (c) => {
   const limit = parseInt(c.req.query("limit") || "20", 10);
 
   const results = await searchEntities(c.env.DB, query, {
-    collectionName: collection,
     entityType,
     limit,
   });
 
   const enriched = await Promise.all(
     results.map(async (r) => {
-      const entity = await getEntityByExternalId(c.env.DB, r.collectionName, r.externalId);
+      const entity = await getEntityByExternalId(c.env.DB, r.externalId);
       const markdownPath = entity?.markdown_path ?? null;
-      return { ...r, title: entity?.title ?? r.title, collection: r.collectionName, markdownPath, snippet: r.snippet };
+      return { ...r, title: entity?.title ?? r.title, collection: collection ?? "", markdownPath, snippet: r.snippet };
     }),
   );
 
@@ -288,10 +285,10 @@ api.get("/api/collections/:name/backlinks/:externalId", async (c) => {
   const name = c.req.param("name");
   const externalId = decodeURIComponent(c.req.param("externalId"));
 
-  const targetEntity = await getEntityByExternalId(c.env.DB, name, externalId);
+  const targetEntity = await getEntityByExternalId(c.env.DB, externalId);
   if (!targetEntity) return c.json({ error: "Entity not found" }, 404);
 
-  const links = await getBacklinks(c.env.DB, name, externalId);
+  const links = await getBacklinks(c.env.DB, externalId);
 
   const results = links.map(({ entity }) => {
     const displayTitle = entity.markdown_path
@@ -314,10 +311,10 @@ api.get("/api/collections/:name/outgoing-links/:externalId", async (c) => {
   const name = c.req.param("name");
   const externalId = decodeURIComponent(c.req.param("externalId"));
 
-  const sourceEntity = await getEntityByExternalId(c.env.DB, name, externalId);
+  const sourceEntity = await getEntityByExternalId(c.env.DB, externalId);
   if (!sourceEntity) return c.json({ error: "Entity not found" }, 404);
 
-  const links = await getOutgoingLinks(c.env.DB, name, sourceEntity);
+  const links = await getOutgoingLinks(c.env.DB, sourceEntity);
 
   const results = links
     .filter(({ entity }) => entity !== null)

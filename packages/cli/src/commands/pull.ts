@@ -10,8 +10,8 @@ import {
   entities,
   LocalStorageBackend,
   SearchIndexer,
-  computeEntityHash,
 } from "@frozenink/core";
+import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import { RemoteClient } from "./remote-client";
 import {
@@ -86,13 +86,11 @@ export const pullCommand = new Command("pull")
       externalId: e.externalId,
       entityType: e.entityType,
       title: e.title,
-      data: e.data as Record<string, unknown>,
+      data: e.data as unknown as EntityData,
+      contentHash: e.contentHash,
       markdownPath: e.markdownPath,
       url: e.url,
       tags: (e.tags as string[] | null) ?? null,
-      outLinks: (e.outLinks as string[] | null) ?? null,
-      inLinks: (e.inLinks as string[] | null) ?? null,
-      assets: (e.assets as any) ?? null,
     }));
 
     // Compute sync plan
@@ -147,6 +145,11 @@ export const pullCommand = new Command("pull")
         const content = await client.getMarkdown(re.markdownPath!);
         if (content) {
           await storage.write(`content/${re.markdownPath}`, content);
+          // Set file mtime from stored metadata
+          const mtime = (re.data as unknown as EntityData).markdown_mtime;
+          if (mtime) {
+            await storage.utimes?.(`content/${re.markdownPath}`, mtime);
+          }
         }
       });
     }
@@ -154,7 +157,7 @@ export const pullCommand = new Command("pull")
     // Download new/changed assets
     const assetDownloads: Array<{ path: string }> = [];
     for (const re of remoteEntities) {
-      for (const asset of re.assets ?? []) {
+      for (const asset of (re.data as unknown as EntityData).assets ?? []) {
         assetDownloads.push({ path: asset.storagePath });
       }
     }
@@ -189,14 +192,11 @@ export const pullCommand = new Command("pull")
           externalId: re.externalId,
           entityType: re.entityType,
           title: re.title,
-          data: re.data,
+          data: re.data as unknown as EntityData,
           contentHash: re.hash,
           markdownPath: re.markdownPath,
           url: re.url,
           tags: re.tags,
-          outLinks: re.outLinks,
-          inLinks: re.inLinks,
-          assets: re.assets,
         })
         .run();
     }
@@ -210,14 +210,11 @@ export const pullCommand = new Command("pull")
         .set({
           entityType: re.entityType,
           title: re.title,
-          data: re.data,
+          data: re.data as unknown as EntityData,
           contentHash: re.hash,
           markdownPath: re.markdownPath,
           url: re.url,
           tags: re.tags,
-          outLinks: re.outLinks,
-          inLinks: re.inLinks,
-          assets: re.assets,
           updatedAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
         })
         .where(eq(entities.externalId, entry.externalId))

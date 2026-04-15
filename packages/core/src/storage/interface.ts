@@ -15,4 +15,6 @@ export interface StorageBackend {
   listDirs?(prefix: string): Promise<string[]>;
   /** Returns file metadata, or null if the file does not exist. */
   stat(path: string): Promise<FileStat | null>;
+  /** Set the modification time of a file (milliseconds since epoch). No-op if file doesn't exist. */
+  utimes?(path: string, mtimeMs: number): Promise<void>;
 }

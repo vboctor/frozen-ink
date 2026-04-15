@@ -6,6 +6,7 @@ import { getCollectionDb } from "../client";
 import {
   entities,
 } from "../collection-schema";
+import type { EntityData } from "../collection-schema";
 
 const TEST_DIR = join(import.meta.dir, ".test-dbs");
 
@@ -36,7 +37,7 @@ describe("Collection Database", () => {
         externalId: "issue-123",
         entityType: "issue",
         title: "Fix bug",
-        data: { state: "open", labels: ["bug"] },
+        data: { source: { state: "open", labels: ["bug"] } },
         contentHash: "abc123",
         url: "https://github.com/org/repo/issues/123",
       })
@@ -47,7 +48,7 @@ describe("Collection Database", () => {
     expect(rows[0].externalId).toBe("issue-123");
     expect(rows[0].entityType).toBe("issue");
     expect(rows[0].title).toBe("Fix bug");
-    expect(rows[0].data).toEqual({ state: "open", labels: ["bug"] });
+    expect((rows[0].data as EntityData).source).toEqual({ state: "open", labels: ["bug"] });
     expect(rows[0].contentHash).toBe("abc123");
 
     db.update(entities)
@@ -71,7 +72,7 @@ describe("Collection Database", () => {
         externalId: "pr-1",
         entityType: "pull_request",
         title: "Add feature",
-        data: {},
+        data: { source: {} },
         tags: ["enhancement", "frontend"],
       })
       .run();
@@ -80,44 +81,53 @@ describe("Collection Database", () => {
     expect((entity as any).tags).toEqual(["enhancement", "frontend"]);
   });
 
-  it("supports inline assets on entities", () => {
+  it("supports assets inside entity data", () => {
     const dbPath = join(TEST_DIR, "collection-assets.db");
     const db = getCollectionDb(dbPath);
+
+    const assetData: EntityData = {
+      source: {},
+      assets: [{ filename: "screenshot.png", mimeType: "image/png", storagePath: "assets/screenshot.png", hash: "abc123" }],
+    };
 
     db.insert(entities)
       .values({
         externalId: "doc-1",
         entityType: "document",
         title: "Readme",
-        data: {},
-        assets: [{ filename: "screenshot.png", mimeType: "image/png", storagePath: "assets/screenshot.png", hash: "abc123" }],
+        data: assetData,
       })
       .run();
 
     const [entity] = db.select().from(entities).all();
-    const assets: any[] = (entity as any).assets;
-    expect(assets).toHaveLength(1);
-    expect(assets[0].filename).toBe("screenshot.png");
+    const data = entity.data as EntityData;
+    expect(data.assets).toHaveLength(1);
+    expect(data.assets![0].filename).toBe("screenshot.png");
   });
 
-  it("supports inline links on entities", () => {
+  it("supports links inside entity data", () => {
     const dbPath = join(TEST_DIR, "collection-links.db");
     const db = getCollectionDb(dbPath);
+
+    const linkData: EntityData = {
+      source: {},
+      out_links: ["issue-2", "issue-3"],
+      in_links: ["issue-4"],
+    };
 
     db.insert(entities)
       .values({
         externalId: "issue-1",
         entityType: "issue",
         title: "Issue 1",
-        data: {},
-        outLinks: ["issue-2", "issue-3"],
-        inLinks: ["issue-4"],
+        data: linkData,
       })
       .run();
 
     const [entity] = db.select().from(entities).all();
-    expect((entity as any).outLinks).toEqual(["issue-2", "issue-3"]);
-    expect((entity as any).inLinks).toEqual(["issue-4"]);
+    const data = entity.data as EntityData;
+    expect(data.out_links).toEqual(["issue-2", "issue-3"]);
+    expect(data.in_links).toEqual(["issue-4"]);
   });
 
 });

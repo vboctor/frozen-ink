@@ -67,7 +67,7 @@ function addEntity(
       externalId: data.externalId,
       entityType: data.entityType,
       title: data.title,
-      data: data.data,
+      data: { source: data.data } as any,
       url: data.url ?? null,
       markdownPath: data.markdownPath ?? null,
     })
@@ -106,7 +106,8 @@ function addAttachment(
   const { eq } = require("drizzle-orm");
   const colDb = getCollectionDb(dbPath);
   const [entity] = colDb.select().from(entities).where(eq(entities.id, data.entityId)).all();
-  const currentAssets: any[] = (entity as any)?.assets ?? [];
+  const entityData: any = entity?.data ?? { source: {} };
+  const currentAssets: any[] = entityData.assets ?? [];
   currentAssets.push({
     filename: data.filename,
     mimeType: data.mimeType,
@@ -115,7 +116,7 @@ function addAttachment(
   });
   colDb
     .update(entities)
-    .set({ assets: currentAssets })
+    .set({ data: { ...entityData, assets: currentAssets } } as any)
     .where(eq(entities.id, data.entityId))
     .run();
 
@@ -401,8 +402,8 @@ describe("entity_get_data tool", () => {
     expect(data.id).toBe("issue-5");
     expect(data.entityType).toBe("issue");
     expect(data.title).toBe("Important issue");
-    expect(data.data.number).toBe(5);
-    expect(data.data.state).toBe("open");
+    expect(data.data.source.number).toBe(5);
+    expect(data.data.source.state).toBe("open");
     expect(data.url).toBe("https://github.com/test/get-test/issues/5");
     expect(data.tags).toEqual(["bug", "critical"]);
   });
@@ -741,12 +742,14 @@ describe("entity_get_attachment tool", () => {
       data: {},
     });
 
-    // Insert asset record as entity JSON but do NOT write the file to disk
+    // Insert asset record into entity data but do NOT write the file to disk
     const { eq } = require("drizzle-orm");
     const colDb = getCollectionDb(dbPath);
+    const [currentRow] = colDb.select({ data: entities.data }).from(entities).where(eq(entities.id, entityId)).all();
+    const currentData: any = currentRow?.data ?? { source: {} };
     colDb.update(entities).set({
-      assets: [{ filename: "ghost.png", mimeType: "image/png", storagePath: "attachments/git/zzz/ghost.png", hash: "" }],
-    }).where(eq(entities.id, entityId)).run();
+      data: { ...currentData, assets: [{ filename: "ghost.png", mimeType: "image/png", storagePath: "attachments/git/zzz/ghost.png", hash: "" }] },
+    } as any).where(eq(entities.id, entityId)).run();
 
     await setupClient();
     const result = await client.callTool({

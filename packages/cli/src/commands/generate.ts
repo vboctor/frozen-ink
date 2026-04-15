@@ -15,6 +15,7 @@ import {
   extractWikilinks,
   CollectionEntry,
 } from "@frozenink/core";
+import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import { gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme } from "@frozenink/crawlers";
 
@@ -122,12 +123,13 @@ export async function generateCollection(
     const entityTagNames: string[] = (entity as any).tags ?? [];
 
     // Re-derive title from stored data (no API call needed).
+    const entityData = (entity.data as EntityData) ?? { source: {} };
     const baseCtx = {
       entity: {
         externalId: entity.externalId,
         entityType: entity.entityType,
         title: entity.title,
-        data: entity.data as Record<string, unknown>,
+        data: entityData.source as Record<string, unknown>,
         url: entity.url ?? undefined,
         tags: entityTagNames,
       },
@@ -160,13 +162,17 @@ export async function generateCollection(
     const fileStat = await storage.stat(newStoragePath);
 
     // Update entity record with new path, mtime, and re-derived title
+    const updatedEntityData: EntityData = {
+      ...entityData,
+      markdown_mtime: fileStat?.mtimeMs ?? null,
+      markdown_size: fileStat?.size ?? null,
+    };
     colDb
       .update(entities)
       .set({
         title,
         markdownPath: newPath,
-        markdownMtime: fileStat?.mtimeMs ?? null,
-        markdownSize: fileStat?.size ?? null,
+        data: updatedEntityData,
       })
       .where(eq(entities.id, entity.id))
       .run();
@@ -181,7 +187,7 @@ export async function generateCollection(
       tags: entityTagNames,
     });
 
-    // Rebuild entity outLinks
+    // Rebuild entity out_links in data
     const targets = extractWikilinks(markdown, newPath);
     const outLinkExternalIds: string[] = [];
     for (const target of targets) {
@@ -195,9 +201,12 @@ export async function generateCollection(
         outLinkExternalIds.push(targetEntity.externalId);
       }
     }
+    // Read current data and update out_links
+    const [currentRow] = colDb.select({ data: entities.data }).from(entities).where(eq(entities.id, entity.id)).all();
+    const currentData: EntityData = (currentRow?.data as EntityData) ?? { source: {} };
     colDb
       .update(entities)
-      .set({ outLinks: outLinkExternalIds })
+      .set({ data: { ...currentData, out_links: outLinkExternalIds } })
       .where(eq(entities.id, entity.id))
       .run();
 
@@ -206,11 +215,12 @@ export async function generateCollection(
 
   indexer.close();
 
-  // Rebuild inLinks from outLinks
+  // Rebuild in_links from out_links
   const allEntitiesForInLinks = colDb.select().from(entities).all();
   const inLinksMap = new Map<string, string[]>();
   for (const e of allEntitiesForInLinks) {
-    const outLinks: string[] = (e.outLinks as string[] | null) ?? [];
+    const eData = (e.data as EntityData) ?? { source: {} };
+    const outLinks: string[] = eData.out_links ?? [];
     for (const targetExtId of outLinks) {
       const existing = inLinksMap.get(targetExtId) ?? [];
       existing.push(e.externalId);
@@ -219,9 +229,10 @@ export async function generateCollection(
   }
   for (const e of allEntitiesForInLinks) {
     const newInLinks = inLinksMap.get(e.externalId) ?? [];
+    const eData = (e.data as EntityData) ?? { source: {} };
     colDb
       .update(entities)
-      .set({ inLinks: newInLinks })
+      .set({ data: { ...eData, in_links: newInLinks } })
       .where(eq(entities.id, e.id))
       .run();
   }

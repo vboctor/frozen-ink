@@ -12,6 +12,7 @@ import {
   SearchIndexer,
   extractWikilinks,
 } from "@frozenink/core";
+import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 
 export const indexCommand = new Command("index")
@@ -81,7 +82,7 @@ export const indexCommand = new Command("index")
         });
         indexed++;
 
-        // Rebuild outLinks
+        // Rebuild out_links in data
         const targets = extractWikilinks(markdown, entity.markdownPath ?? undefined);
         const outLinkExternalIds: string[] = [];
         for (const target of targets) {
@@ -96,20 +97,23 @@ export const indexCommand = new Command("index")
             linked++;
           }
         }
+        const [currentRow] = colDb.select({ data: entities.data }).from(entities).where(eq(entities.id, entity.id)).all();
+        const currentData: EntityData = (currentRow?.data as EntityData) ?? { source: {} };
         colDb
           .update(entities)
-          .set({ outLinks: outLinkExternalIds })
+          .set({ data: { ...currentData, out_links: outLinkExternalIds } })
           .where(eq(entities.id, entity.id))
           .run();
       }
 
       indexer.close();
 
-      // Rebuild inLinks from outLinks
+      // Rebuild in_links from out_links
       const allEntitiesForInLinks = colDb.select().from(entities).all();
       const inLinksMap = new Map<string, string[]>();
       for (const e of allEntitiesForInLinks) {
-        const outLinks: string[] = (e.outLinks as string[] | null) ?? [];
+        const eData = (e.data as EntityData) ?? { source: {} };
+        const outLinks: string[] = eData.out_links ?? [];
         for (const targetExtId of outLinks) {
           const existing = inLinksMap.get(targetExtId) ?? [];
           existing.push(e.externalId);
@@ -118,9 +122,10 @@ export const indexCommand = new Command("index")
       }
       for (const e of allEntitiesForInLinks) {
         const newInLinks = inLinksMap.get(e.externalId) ?? [];
+        const eData = (e.data as EntityData) ?? { source: {} };
         colDb
           .update(entities)
-          .set({ inLinks: newInLinks })
+          .set({ data: { ...eData, in_links: newInLinks } })
           .where(eq(entities.id, e.id))
           .run();
       }

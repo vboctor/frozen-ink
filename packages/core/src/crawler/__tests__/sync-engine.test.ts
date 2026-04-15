@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { SyncEngine, extractWikilinks } from "../sync-engine";
 import { getCollectionDb } from "../../db/client";
 import { entities } from "../../db/collection-schema";
+import type { EntityData } from "../../db/collection-schema";
 import { getCollection, addCollection } from "../../config/context";
 import { ThemeEngine } from "../../theme/engine";
 import { LocalStorageBackend } from "../../storage/local";
@@ -380,7 +381,8 @@ describe("SyncEngine", () => {
 
     const db = getCollectionDb(dbPath);
     const [entity] = db.select().from(entities).all();
-    const assets: any[] = (entity as any).assets;
+    const data = entity.data as EntityData;
+    const assets = data.assets ?? [];
     expect(assets).toHaveLength(1);
     expect(assets[0].filename).toBe("image.png");
     expect(assets[0].mimeType).toBe("image/png");
@@ -745,11 +747,13 @@ describe("SyncEngine", () => {
     const linkerEntity = allEntities.find((e) => e.externalId === "linker-1")!;
     const otherEntity = allEntities.find((e) => e.externalId === "other-note")!;
 
-    const outLinks: string[] = (linkerEntity as any).outLinks ?? [];
+    const linkerData = linkerEntity.data as EntityData;
+    const outLinks: string[] = linkerData.out_links ?? [];
     expect(outLinks).toContain("other-note");
 
     // Target should have linker in its inLinks
-    const inLinks: string[] = (otherEntity as any).inLinks ?? [];
+    const otherData = otherEntity.data as EntityData;
+    const inLinks: string[] = otherData.in_links ?? [];
     expect(inLinks).toContain("linker-1");
   });
 
@@ -829,7 +833,8 @@ describe("SyncEngine", () => {
 
     const db = getCollectionDb(dbPath);
     const linkerEntity = db.select().from(entities).where(eq(entities.externalId, "delme-1")).all()[0];
-    expect(((linkerEntity as any).outLinks ?? []).length).toBeGreaterThan(0);
+    const linkerData = linkerEntity.data as EntityData;
+    expect((linkerData.out_links ?? []).length).toBeGreaterThan(0);
 
     const crawler2 = createMockCrawler([
       {
@@ -860,6 +865,7 @@ describe("SyncEngine", () => {
     expect(db.select().from(entities).where(eq(entities.externalId, "delme-1")).all()).toHaveLength(0);
     // The target should have empty inLinks
     const targetEntity = db.select().from(entities).where(eq(entities.externalId, "target")).all()[0];
-    expect((targetEntity as any).inLinks ?? []).not.toContain("delme-1");
+    const targetData = targetEntity.data as EntityData;
+    expect(targetData.in_links ?? []).not.toContain("delme-1");
   });
 });

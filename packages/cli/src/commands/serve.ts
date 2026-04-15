@@ -361,9 +361,10 @@ export function createApiServer(
 
         const entityTagNames: string[] = (entity as any).tags ?? [];
 
-        const data = typeof entity.data === "string"
+        const entityDataObj = typeof entity.data === "string"
           ? JSON.parse(entity.data)
           : entity.data;
+        const sourceData = entityDataObj?.source ?? entityDataObj ?? {};
 
         // Build entity path lookup for resolving cross-references (e.g. user pages)
         const lookupEntityPath = (externalId: string): string | undefined => {
@@ -382,7 +383,7 @@ export function createApiServer(
             externalId: entity.externalId,
             entityType: entity.entityType,
             title: entity.title,
-            data,
+            data: sourceData,
             url: entity.url ?? undefined,
             tags: entityTagNames,
           },
@@ -575,7 +576,8 @@ export function createApiServer(
           const allEntitiesWithLinks = colDb.select().from(entities).all();
           for (const entity of allEntitiesWithLinks) {
             if (seen.has(entity.id)) continue;
-            const outLinks: string[] = (entity.outLinks as string[] | null) ?? [];
+            const entityData: any = entity.data ?? { source: {} };
+            const outLinks: string[] = entityData.out_links ?? [];
             if (outLinks.some((l) => targetExternalIds.has(l))) {
               seen.add(entity.id);
               const displayTitle = entity.markdownPath
@@ -629,7 +631,8 @@ export function createApiServer(
             .all();
           if (!sourceEntity) continue;
 
-          const outLinks: string[] = (sourceEntity.outLinks as string[] | null) ?? [];
+          const sourceEntityData: any = sourceEntity.data ?? { source: {} };
+          const outLinks: string[] = sourceEntityData.out_links ?? [];
           for (const targetExternalId of outLinks) {
             if (seen.has(targetExternalId)) continue;
             seen.add(targetExternalId);

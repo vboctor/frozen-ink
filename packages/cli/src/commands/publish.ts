@@ -188,6 +188,9 @@ export async function publishCollections(
     for (const name of collectionNames) {
       const col = getCollection(name);
       if (!col) throw new Error(`Collection "${name}" not found`);
+      if (col.crawler === "remote") {
+        throw new Error(`Cannot publish "${name}": crawler is "remote". Remote collections are read-only clones.`);
+      }
       const dbPath = getCollectionDbPath(name);
       if (!existsSync(dbPath)) throw new Error(`Collection "${name}" database not found at ${dbPath}`);
     }
@@ -290,22 +293,18 @@ export async function publishCollections(
     schemaSql.push("DROP TABLE IF EXISTS collections_meta;");
     schemaSql.push("");
     schemaSql.push(`CREATE TABLE entities (
-  id INTEGER PRIMARY KEY, collection_name TEXT NOT NULL,
+  id INTEGER PRIMARY KEY,
   external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
   title TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
   content_hash TEXT, markdown_path TEXT,
-  markdown_mtime REAL, markdown_size INTEGER,
-  url TEXT,
-  tags TEXT, out_links TEXT, in_links TEXT, assets TEXT,
+  url TEXT, tags TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`);
-    schemaSql.push("CREATE INDEX idx_entities_collection ON entities(collection_name);");
-    schemaSql.push("CREATE INDEX idx_entities_external ON entities(collection_name, external_id);");
+    schemaSql.push("CREATE INDEX idx_entities_external ON entities(external_id);");
     schemaSql.push("");
 
     let entityIdOffset = 0;
-    const MAX_DATA_LEN = 50000;
 
     for (const colName of collectionNames) {
       const col = getCollection(colName)!;
@@ -317,15 +316,11 @@ export async function publishCollections(
 
       for (const entity of allEntities) {
         entityIdOffset++;
-        let data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
-        if (data.length > MAX_DATA_LEN) data = data.slice(0, MAX_DATA_LEN);
+        const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
 
         const tagsJson = JSON.stringify((entity as any).tags ?? []);
-        const outLinksJson = JSON.stringify((entity as any).outLinks ?? []);
-        const inLinksJson = JSON.stringify((entity as any).inLinks ?? []);
-        const assetsJson = JSON.stringify((entity as any).assets ?? []);
 
-        schemaSql.push(`INSERT INTO entities (id, collection_name, external_id, entity_type, title, data, content_hash, markdown_path, markdown_mtime, markdown_size, url, tags, out_links, in_links, assets, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(colName)}', '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${entity.markdownPath ? `'${escapeSQL(entity.markdownPath)}'` : "NULL"}, ${entity.markdownMtime ?? "NULL"}, ${entity.markdownSize ?? "NULL"}, ${entity.url ? `'${escapeSQL(entity.url)}'` : "NULL"}, '${escapeSQL(tagsJson)}', '${escapeSQL(outLinksJson)}', '${escapeSQL(inLinksJson)}', '${escapeSQL(assetsJson)}', ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
+        schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, markdown_path, url, tags, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${entity.markdownPath ? `'${escapeSQL(entity.markdownPath)}'` : "NULL"}, ${entity.url ? `'${escapeSQL(entity.url)}'` : "NULL"}, '${escapeSQL(tagsJson)}', ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
       }
 
       onProgress("export", `Exported "${colName}": ${allEntities.length} entities`);
@@ -342,7 +337,7 @@ export async function publishCollections(
     onProgress("fts", "Building search index...");
     const MAX_FTS_CONTENT = 8000;
     const ftsSql: string[] = [];
-    ftsSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(collection_name UNINDEXED, entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
+    ftsSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
 
     for (const colName of collectionNames) {
       const dbPath = getCollectionDbPath(colName);
@@ -363,7 +358,7 @@ export async function publishCollections(
         }
         const entityTagNames = ((entity as any).tags ?? []).join(" ");
 
-        ftsSql.push(`INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES ('${escapeSQL(colName)}', ${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(entityTagNames)}');`);
+        ftsSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(entityTagNames)}');`);
       }
     }
 

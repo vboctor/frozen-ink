@@ -110,7 +110,8 @@ function findAttachmentInDb(
   const fileName = basename(extracted);
 
   for (const entity of entitiesToSearch) {
-    const entityAssets: Array<{ filename: string; mimeType: string; storagePath: string }> = (entity as any).assets ?? [];
+    const entityData: any = entity.data ?? { source: {} };
+    const entityAssets: Array<{ filename: string; mimeType: string; storagePath: string }> = entityData.assets ?? [];
     for (const att of entityAssets) {
       if (candidateSet.has(att.storagePath)) {
         return { entityId: entity.id, ...att };
@@ -122,7 +123,8 @@ function findAttachmentInDb(
   let filenameMatch: { entityId: number; filename: string; mimeType: string; storagePath: string } | undefined;
   let matchCount = 0;
   for (const entity of entitiesToSearch) {
-    const entityAssets: Array<{ filename: string; mimeType: string; storagePath: string }> = (entity as any).assets ?? [];
+    const entityData: any = entity.data ?? { source: {} };
+    const entityAssets: Array<{ filename: string; mimeType: string; storagePath: string }> = entityData.assets ?? [];
     for (const att of entityAssets) {
       if (att.filename === fileName) {
         filenameMatch = { entityId: entity.id, ...att };

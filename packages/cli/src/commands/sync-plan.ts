@@ -1,5 +1,3 @@
-import { computeEntityHash, type HashableEntity } from "@frozenink/core";
-
 /**
  * Reject paths that could escape the collection directory.
  * Call this for every markdownPath / storagePath received from a remote server.
@@ -28,9 +26,6 @@ export interface RemoteEntityData {
   markdownPath: string | null;
   url: string | null;
   tags: string[];
-  outLinks: string[];
-  inLinks: string[];
-  assets: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }>;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -65,12 +60,10 @@ export interface LocalEntity {
   entityType: string;
   title: string;
   data: Record<string, unknown> | string;
+  contentHash: string | null;
   markdownPath: string | null;
   url: string | null;
   tags: string[] | null;
-  outLinks: string[] | null;
-  inLinks: string[] | null;
-  assets: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }> | null;
 }
 
 export function computeSyncPlan(
@@ -83,7 +76,7 @@ export function computeSyncPlan(
 
   for (const entity of localEntities) {
     localByExtId.set(entity.externalId, entity);
-    localHashByExtId.set(entity.externalId, computeEntityHash(entity as HashableEntity));
+    localHashByExtId.set(entity.externalId, entity.contentHash ?? "");
   }
 
   const remoteByExtId = new Map<string, ManifestEntity>();
@@ -137,35 +130,28 @@ export function computeSyncPlan(
     if (remote?.markdownPath) {
       downloads.push({ path: remote.markdownPath, entityExternalId: entry.externalId, type: "markdown" });
     }
-    if (remote?.assets) {
-      for (const asset of remote.assets) {
-        downloads.push({ path: asset.storagePath, entityExternalId: entry.externalId, type: "asset" });
-      }
+    // Read assets from data.assets
+    for (const asset of (remote?.data as any)?.assets ?? []) {
+      downloads.push({ path: asset.storagePath, entityExternalId: entry.externalId, type: "asset" });
     }
   }
 
-  // File operations for updated entities (detect moves vs content changes)
+  // File operations for updated entities (always re-download if in update list)
   for (const entry of update) {
     const remote = remoteEntityMap.get(entry.externalId);
     const local = localByExtId.get(entry.externalId);
     if (!remote || !local) continue;
 
-    if (remote.markdownPath && local.markdownPath && remote.markdownPath !== local.markdownPath) {
-      // Path changed — could be a move
-      const localDataHash = computeEntityHash({ ...local, markdownPath: remote.markdownPath } as HashableEntity);
-      if (localDataHash === remote.hash) {
-        moves.push({ from: local.markdownPath, to: remote.markdownPath, hash: remote.hash });
-        continue;
-      }
-    }
-
     if (remote.markdownPath) {
       downloads.push({ path: remote.markdownPath, entityExternalId: entry.externalId, type: "markdown" });
     }
 
-    // Check asset changes
-    const localAssetsByPath = new Map((local.assets ?? []).map((a) => [a.storagePath, a]));
-    const remoteAssetsByPath = new Map((remote.assets ?? []).map((a) => [a.storagePath, a]));
+    // Check asset changes from data.assets
+    const localAssets: Array<{ storagePath: string; hash: string }> = (local.data as any)?.assets ?? [];
+    const remoteAssets: Array<{ storagePath: string; hash: string }> = (remote.data as any)?.assets ?? [];
+
+    const localAssetsByPath = new Map(localAssets.map((a) => [a.storagePath, a]));
+    const remoteAssetsByPath = new Map(remoteAssets.map((a) => [a.storagePath, a]));
 
     for (const [path, remoteAsset] of remoteAssetsByPath) {
       const localAsset = localAssetsByPath.get(path);
@@ -188,7 +174,8 @@ export function computeSyncPlan(
     if (local.markdownPath) {
       deletes.push({ path: local.markdownPath, entityExternalId: extId, type: "markdown" });
     }
-    for (const asset of local.assets ?? []) {
+    const localAssets: Array<{ storagePath: string }> = (local.data as any)?.assets ?? [];
+    for (const asset of localAssets) {
       deletes.push({ path: asset.storagePath, entityExternalId: extId, type: "asset" });
     }
   }

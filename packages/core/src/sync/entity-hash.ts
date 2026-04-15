@@ -1,37 +1,41 @@
 import { createCryptoHasher } from "../compat/crypto";
+import type { EntityData } from "../db/collection-schema";
 
 export interface HashableEntity {
-  externalId: string;
   entityType: string;
   title: string;
-  data: Record<string, unknown> | string;
+  data: EntityData | string;
   markdownPath: string | null;
   url: string | null;
   tags: string[] | null;
-  outLinks: string[] | null;
-  inLinks: string[] | null;
-  assets: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }> | null;
 }
 
 export function computeEntityHash(entity: HashableEntity): string {
   const tags = [...(entity.tags ?? [])].sort();
-  const outLinks = [...(entity.outLinks ?? [])].sort();
-  const inLinks = [...(entity.inLinks ?? [])].sort();
-  const assets = [...(entity.assets ?? [])].sort((a, b) => a.filename.localeCompare(b.filename));
 
-  const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
+  let d: EntityData;
+  if (typeof entity.data === "string") {
+    try { d = JSON.parse(entity.data); } catch { d = { source: {} }; }
+  } else {
+    d = entity.data ?? { source: {} };
+  }
+
+  const out_links = [...(d.out_links ?? [])].sort();
+  const in_links = [...(d.in_links ?? [])].sort();
+  const assets = [...(d.assets ?? [])].sort((a, b) => a.filename.localeCompare(b.filename));
 
   const canonical = JSON.stringify({
-    externalId: entity.externalId,
     entityType: entity.entityType,
     title: entity.title,
-    data,
+    source: d.source ?? {},
+    out_links,
+    in_links,
+    assets,
+    markdown_mtime: d.markdown_mtime ?? null,
+    markdown_size: d.markdown_size ?? null,
     markdownPath: entity.markdownPath,
     url: entity.url,
     tags,
-    outLinks,
-    inLinks,
-    assets,
   });
 
   const hasher = createCryptoHasher("sha256");
