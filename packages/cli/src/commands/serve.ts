@@ -24,7 +24,7 @@ import {
   mantisHubTheme,
 } from "@frozenink/crawlers";
 import { startStdioServer } from "@frozenink/mcp";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import { handleManagementRequest, setAppMode } from "./management-api";
 import { prepareCollections } from "./prepare";
 
@@ -552,18 +552,18 @@ export function createApiServer(
           }
         }
 
-        // Find target entity externalIds by scanning all entities
-        const targetExternalIds = new Set<string>();
+        // Find target entities by markdown path and use their in_links
         type BacklinkEntity = { id: number; externalId: string; entityType: string; title: string; data: unknown };
-        const allEntitiesForBacklinks = colDb.select().from(entities).all() as BacklinkEntity[];
-        for (const e of allEntitiesForBacklinks) {
+        const allTargets = colDb.select().from(entities).all() as BacklinkEntity[];
+        const inLinkIds = new Set<string>();
+        for (const e of allTargets) {
           const mdPath = (e.data as EntityData)?.markdown_path;
           if (mdPath && targetVariants.includes(mdPath)) {
-            targetExternalIds.add(e.externalId);
+            const eInLinks: string[] = (e.data as EntityData).in_links ?? [];
+            for (const id of eInLinks) inLinkIds.add(id);
           }
         }
 
-        // Find all entities that have any target externalId in their outLinks
         const results: Array<{
           entityId: number;
           externalId: string;
@@ -571,26 +571,23 @@ export function createApiServer(
           title: string;
           markdownPath: string | null;
         }> = [];
-        const seen = new Set<number>();
 
-        if (targetExternalIds.size > 0) {
-          for (const entity of allEntitiesForBacklinks) {
-            if (seen.has(entity.id)) continue;
+        if (inLinkIds.size > 0) {
+          const backlinkEntities = colDb.select().from(entities)
+            .where(inArray(entities.externalId, [...inLinkIds]))
+            .all() as BacklinkEntity[];
+          for (const entity of backlinkEntities) {
             const entityData = entity.data as EntityData;
-            const outLinks: string[] = entityData.out_links ?? [];
-            if (outLinks.some((l) => targetExternalIds.has(l))) {
-              seen.add(entity.id);
-              const displayTitle = entityData.markdown_path
-                ? entityData.markdown_path.replace(/\.md$/, "").split("/").pop()!
-                : entity.title;
-              results.push({
-                entityId: entity.id,
-                externalId: entity.externalId,
-                entityType: entity.entityType,
-                title: displayTitle,
-                markdownPath: entityData.markdown_path ?? null,
-              });
-            }
+            const displayTitle = entityData.markdown_path
+              ? entityData.markdown_path.replace(/\.md$/, "").split("/").pop()!
+              : entity.title;
+            results.push({
+              entityId: entity.id,
+              externalId: entity.externalId,
+              entityType: entity.entityType,
+              title: displayTitle,
+              markdownPath: entityData.markdown_path ?? null,
+            });
           }
         }
 
@@ -615,39 +612,27 @@ export function createApiServer(
         const colDb = getCollectionDb(dbPath);
 
         // Find source entity by markdown path
-        const sourceVariants = [sourceFile];
-
-        const results: Array<{
-          title: string;
-          markdownPath: string | null;
-        }> = [];
-        const seen = new Set<string>();
-
         type ServeEntity = { id: number; externalId: string; entityType: string; title: string; data: unknown };
-        const allEntitiesForOutgoing = colDb.select().from(entities).all() as ServeEntity[];
-        for (const variant of sourceVariants) {
-          const sourceEntity = allEntitiesForOutgoing.find(
-            (e) => (e.data as EntityData)?.markdown_path === variant,
-          );
-          if (!sourceEntity) continue;
+        const allForOutgoing = colDb.select().from(entities).all() as ServeEntity[];
+        const [sourceEntity] = allForOutgoing
+          .filter((e: ServeEntity) => (e.data as EntityData)?.markdown_path === sourceFile);
 
-          const sourceEntityData = sourceEntity.data as EntityData;
-          const outLinks: string[] = sourceEntityData.out_links ?? [];
-          for (const targetExternalId of outLinks) {
-            if (seen.has(targetExternalId)) continue;
-            seen.add(targetExternalId);
+        if (!sourceEntity) return jsonResponse([]);
 
-            const entity = (allEntitiesForOutgoing as ServeEntity[]).find((e) => e.externalId === targetExternalId);
+        const outLinks: string[] = (sourceEntity.data as EntityData).out_links ?? [];
+        if (outLinks.length === 0) return jsonResponse([]);
 
-            if (entity) {
-              const ed = entity.data as EntityData;
-              const displayTitle = ed.markdown_path
-                ? ed.markdown_path.replace(/\.md$/, "").split("/").pop()!
-                : entity.title;
-              results.push({ title: displayTitle, markdownPath: (entity.data as EntityData)?.markdown_path ?? null });
-            }
-          }
-        }
+        const linkedEntities = colDb.select().from(entities)
+          .where(inArray(entities.externalId, outLinks))
+          .all() as ServeEntity[];
+
+        const results = linkedEntities.map((entity) => {
+          const ed = entity.data as EntityData;
+          const displayTitle = ed.markdown_path
+            ? ed.markdown_path.replace(/\.md$/, "").split("/").pop()!
+            : entity.title;
+          return { title: displayTitle, markdownPath: ed.markdown_path ?? null };
+        });
 
         results.sort((a, b) => a.title.localeCompare(b.title));
         return jsonResponse(results);
