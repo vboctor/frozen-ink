@@ -1,10 +1,10 @@
 import type { Env } from "../types";
 import {
-  getCollections,
   getEntityByExternalId,
-  getEntityTags,
+  parseEntityData,
   getEntityCount,
 } from "../db/client";
+import { getCollections } from "../config";
 import { searchEntities } from "../db/search";
 import { getR2Object } from "../storage/r2";
 
@@ -139,7 +139,7 @@ async function callTool(
   env: Env,
 ): Promise<Array<{ type: string; text: string }>> {
   if (name === "collection_list") {
-    const collections = await getCollections(env.DB);
+    const collections = await getCollections(env.BUCKET);
     const data = await Promise.all(
       collections.map(async (col) => ({
         name: col.name,
@@ -163,27 +163,29 @@ async function callTool(
     const entity = await getEntityByExternalId(env.DB, args.collection as string, args.externalId as string);
     if (!entity) return [{ type: "text", text: JSON.stringify({ error: "Entity not found" }) }];
 
-    const tags = await getEntityTags(env.DB, args.collection as string, entity.id);
+    const entityData = parseEntityData(entity);
     let markdown: string | null = null;
-    if (entity.markdown_path) {
-      const obj = await getR2Object(env.BUCKET, `${args.collection}/${entity.markdown_path}`);
+    if (entityData.markdown_path) {
+      const obj = await getR2Object(env.BUCKET, `${args.collection}/content/${entityData.markdown_path}`);
       if (obj) markdown = await new Response(obj.body).text();
     }
     return [{
       type: "text",
       text: JSON.stringify({
         id: entity.id, externalId: entity.external_id, entityType: entity.entity_type,
-        title: entity.title, data: JSON.parse(entity.data || "{}"), url: entity.url,
-        tags, markdown, createdAt: entity.created_at, updatedAt: entity.updated_at,
+        title: entity.title, data: entityData, url: entityData.url ?? null,
+        tags: entityData.tags ?? [], markdown, createdAt: entity.created_at, updatedAt: entity.updated_at,
       }),
     }];
   }
 
   if (name === "entity_get_markdown") {
     const entity = await getEntityByExternalId(env.DB, args.collection as string, args.externalId as string);
-    if (!entity?.markdown_path) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
+    if (!entity) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
+    const mdEntityData = parseEntityData(entity);
+    if (!mdEntityData.markdown_path) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
 
-    const obj = await getR2Object(env.BUCKET, `${args.collection}/${entity.markdown_path}`);
+    const obj = await getR2Object(env.BUCKET, `${args.collection}/content/${mdEntityData.markdown_path}`);
     if (!obj) return [{ type: "text", text: JSON.stringify({ error: "Markdown not found" }) }];
 
     const md = await new Response(obj.body).text();
@@ -191,7 +193,7 @@ async function callTool(
       type: "text",
       text: JSON.stringify({
         collection: args.collection, externalId: entity.external_id,
-        title: entity.title, markdownPath: entity.markdown_path, markdown: md,
+        title: entity.title, markdownPath: mdEntityData.markdown_path, markdown: md,
         updatedAt: entity.updated_at,
       }),
     }];

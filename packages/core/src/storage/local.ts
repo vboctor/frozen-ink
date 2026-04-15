@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, unlink, access, readdir, stat } from "fs/promises";
+import { mkdir, writeFile, readFile, unlink, access, readdir, stat, utimes as fsUtimes } from "fs/promises";
 import { dirname, join, relative } from "path";
 import type { StorageBackend, FileStat } from "./interface";
 
@@ -89,5 +89,11 @@ export class LocalStorageBackend implements StorageBackend {
     } catch {
       return null;
     }
+  }
+
+  async utimes(path: string, mtimeMs: number): Promise<void> {
+    const fullPath = join(this.basePath, path);
+    const t = new Date(mtimeMs);
+    try { await fsUtimes(fullPath, t, t); } catch { /* ignore if file doesn't exist */ }
   }
 }

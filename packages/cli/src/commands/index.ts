@@ -9,12 +9,10 @@ import {
   getCollection,
   getCollectionDbPath,
   entities,
-  entityTags,
-  tags,
-  links,
   SearchIndexer,
   extractWikilinks,
 } from "@frozenink/core";
+import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 
 export const indexCommand = new Command("index")
@@ -57,34 +55,28 @@ export const indexCommand = new Command("index")
       const collectionDir = join(home, "collections", col.name);
       const markdownBasePath = "content";
 
-      // Clear existing search index and links
       const indexer = new SearchIndexer(dbPath);
       indexer.clearIndex();
-      colDb.delete(links).run();
 
       const allEntities = colDb.select().from(entities).all();
       let indexed = 0;
       let linked = 0;
 
-      for (const entity of allEntities) {
-        if (!entity.markdownPath) continue;
+      // Pre-build markdown_path → externalId map for link resolution
+      const byMdPath = new Map<string, string>();
+      for (const e of allEntities) {
+        const mp = (e.data as EntityData)?.markdown_path;
+        if (mp) byMdPath.set(mp, e.externalId);
+      }
 
-        const filePath = join(collectionDir, entity.markdownPath);
+      for (const entity of allEntities) {
+        const entityData = entity.data as EntityData;
+        if (!entityData.markdown_path) continue;
+
+        const filePath = join(collectionDir, "content", entityData.markdown_path);
         if (!existsSync(filePath)) continue;
 
         const markdown = readFileSync(filePath, "utf-8");
-
-        // Rebuild FTS index
-        const entityTagNames = colDb
-          .select()
-          .from(entityTags)
-          .where(eq(entityTags.entityId, entity.id))
-          .all()
-          .map((t: any) => {
-            const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
-            return tagRow?.name ?? "";
-          })
-          .filter(Boolean);
 
         indexer.updateIndex({
           id: entity.id,
@@ -92,36 +84,53 @@ export const indexCommand = new Command("index")
           entityType: entity.entityType,
           title: entity.title,
           content: markdown,
-          tags: entityTagNames,
+          tags: entityData.tags ?? [],
         });
         indexed++;
 
-        // Rebuild links
-        const sourceFile = entity.markdownPath?.startsWith(markdownBasePath + "/")
-          ? entity.markdownPath.slice(markdownBasePath.length + 1)
-          : undefined;
-        const targets = extractWikilinks(markdown, sourceFile);
+        // Rebuild out_links in data
+        const targets = extractWikilinks(markdown, entityData.markdown_path);
+        const outLinkExternalIds: string[] = [];
         for (const target of targets) {
-          const targetPath = `${markdownBasePath}/${target}.md`;
-          const [targetEntity] = colDb
-            .select({ id: entities.id })
-            .from(entities)
-            .where(eq(entities.markdownPath, targetPath))
-            .all();
-          if (targetEntity) {
-            colDb
-              .insert(links)
-              .values({
-                sourceEntityId: entity.id,
-                targetEntityId: targetEntity.id,
-              })
-              .run();
+          const targetExtId = byMdPath.get(`${target}.md`);
+          if (targetExtId) {
+            outLinkExternalIds.push(targetExtId);
             linked++;
           }
         }
+        const [currentRow] = colDb.select({ data: entities.data }).from(entities).where(eq(entities.id, entity.id)).all();
+        const currentData: EntityData = (currentRow?.data as EntityData) ?? { source: {} };
+        colDb
+          .update(entities)
+          .set({ data: { ...currentData, out_links: outLinkExternalIds } })
+          .where(eq(entities.id, entity.id))
+          .run();
       }
 
       indexer.close();
+
+      // Rebuild in_links from out_links
+      const allEntitiesForInLinks = colDb.select().from(entities).all();
+      const inLinksMap = new Map<string, string[]>();
+      for (const e of allEntitiesForInLinks) {
+        const eData = (e.data as EntityData) ?? { source: {} };
+        const outLinks: string[] = eData.out_links ?? [];
+        for (const targetExtId of outLinks) {
+          const existing = inLinksMap.get(targetExtId) ?? [];
+          existing.push(e.externalId);
+          inLinksMap.set(targetExtId, existing);
+        }
+      }
+      for (const e of allEntitiesForInLinks) {
+        const newInLinks = inLinksMap.get(e.externalId) ?? [];
+        const eData = (e.data as EntityData) ?? { source: {} };
+        colDb
+          .update(entities)
+          .set({ data: { ...eData, in_links: newInLinks } })
+          .where(eq(entities.id, e.id))
+          .run();
+      }
+
       console.log(
         `  Indexed ${indexed} entities, ${linked} links from ${allEntities.length} total entities`,
       );

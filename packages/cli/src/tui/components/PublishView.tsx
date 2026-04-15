@@ -8,13 +8,13 @@ import {
   listCollections,
   listSites,
   getSite,
+  getCollection,
   getCollectionDb,
   getCollectionDbPath,
   getFrozenInkHome,
   entities,
-  syncRuns,
 } from "@frozenink/core";
-import { sql, desc } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { publishCollections, type PublishOptions } from "../../commands/publish.js";
 import { unpublishDeployment } from "../../commands/unpublish.js";
 import { TextInput } from "./TextInput.js";
@@ -52,19 +52,10 @@ function getCollectionStats(name: string): { entityCount: number; diskSize: numb
       const colDb = getCollectionDb(dbPath);
       const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
       entityCount = total;
-      // Find last completed sync, fallback to last sync of any status
-      const completedRuns = colDb.select().from(syncRuns)
-        .where(sql`${syncRuns.status} = 'completed'`)
-        .orderBy(desc(syncRuns.startedAt)).limit(1).all();
-      if (completedRuns.length > 0) {
-        lastSyncAt = completedRuns[0].startedAt;
-      } else {
-        const anyRuns = colDb.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(1).all();
-        if (anyRuns.length > 0) lastSyncAt = anyRuns[0].startedAt;
-      }
     } catch {}
     try { diskSize += statSync(dbPath).size; } catch {}
   }
+  lastSyncAt = getCollection(name)?.lastSyncAt ?? null;
   const home = getFrozenInkHome();
   const colDir = join(home, "collections", name);
   diskSize += getDirectorySize(join(colDir, "markdown"));

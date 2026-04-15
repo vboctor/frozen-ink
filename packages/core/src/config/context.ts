@@ -32,6 +32,17 @@ const collectionEntrySchema = z.object({
    * Example: ["draft.md", "*.wip"]
    */
   hide: z.array(z.string()).optional(),
+  // --- Sync state (written after each sync; replaces collection_state DB table) ---
+  lastSyncAt: z.string().optional(),
+  lastSyncStatus: z.string().optional(),
+  lastSyncCreated: z.number().optional(),
+  lastSyncUpdated: z.number().optional(),
+  lastSyncDeleted: z.number().optional(),
+  lastSyncErrors: z.unknown().array().optional(),
+  // --- Publish state ---
+  lastPublishedAt: z.string().optional(),
+  // --- Incremental sync cursor (replaces sync_state DB table) ---
+  syncCursor: z.unknown().optional(),
 });
 
 /** Site config schema — immutable settings stored in <name>.yml */
@@ -60,7 +71,6 @@ const siteStateSchema = z.object({
   publishedAt: z.string(),
 });
 
-/** Combined site entry for backward compatibility */
 const siteEntrySchema = z.object({
   url: z.string(),
   mcpUrl: z.string(),
@@ -82,35 +92,11 @@ const siteEntrySchema = z.object({
   publishedAt: z.string(),
 });
 
-/** Legacy deployment schema — for migration from publish.yml */
-const legacyDeploymentEntrySchema = z.object({
-  url: z.string(),
-  mcpUrl: z.string(),
-  toolDescription: z.string().optional(),
-  collections: z.array(z.string()),
-  d1DatabaseId: z.string(),
-  d1DatabaseName: z.string().optional(),
-  r2BucketName: z.string(),
-  cfAccountId: z.string().optional(),
-  passwordProtected: z.boolean(),
-  passwordHash: z.string().optional(),
-  publishedAt: z.string(),
-});
-
-// Legacy context.yml schema (for migration)
-const frozenInkSchema = z.object({
-  collections: z.record(collectionEntrySchema).default({}),
-  deployments: z.record(legacyDeploymentEntrySchema).default({}),
-});
-
 // --- Types ---
 
 export type CollectionEntry = z.infer<typeof collectionEntrySchema>;
 export type CollectionEntryInput = z.input<typeof collectionEntrySchema>;
 export type SiteEntry = z.infer<typeof siteEntrySchema>;
-/** @deprecated Use SiteEntry */
-export type DeploymentEntry = SiteEntry;
-export type FrozenInkYaml = z.infer<typeof frozenInkSchema>;
 
 // --- Paths ---
 
@@ -134,16 +120,6 @@ function getSiteStatePath(name: string): string {
   return join(getSitesDir(), name, "state.yml");
 }
 
-/** Legacy publish.yml path */
-function getLegacyPublishPath(): string {
-  return join(getFrozenInkHome(), "publish.yml");
-}
-
-/** Legacy context.yml path */
-function getLegacyContextPath(): string {
-  return join(getFrozenInkHome(), "context.yml");
-}
-
 // --- Atomic YAML write ---
 
 function atomicWriteYaml(filePath: string, data: unknown): void {
@@ -159,110 +135,6 @@ function readYaml<T>(filePath: string): T | null {
   if (!existsSync(filePath)) return null;
   const raw = readFileSync(filePath, "utf-8");
   return (yaml.load(raw) as T) ?? null;
-}
-
-// --- Migration from legacy context.yml ---
-
-/**
- * Migrate legacy context.yml to per-collection .config files and publish.yml.
- * Safe to call multiple times — skips if already migrated.
- */
-export function migrateFromLegacyContext(): void {
-  const legacyPath = getLegacyContextPath();
-  if (!existsSync(legacyPath)) return;
-
-  const raw = readFileSync(legacyPath, "utf-8");
-  const parsed = yaml.load(raw) as Record<string, unknown> | null;
-  if (!parsed) return;
-
-  const ctx = frozenInkSchema.parse(parsed);
-
-  // Migrate collections to per-collection config files
-  for (const [name, entry] of Object.entries(ctx.collections)) {
-    const configPath = getCollectionConfigPath(name);
-    const colDir = dirname(configPath);
-    if (!existsSync(colDir)) {
-      mkdirSync(colDir, { recursive: true });
-    }
-    // Migrate legacy .config -> <name>.yml
-    const legacyConfigPath = join(colDir, ".config");
-    if (existsSync(legacyConfigPath) && !existsSync(configPath)) {
-      renameSync(legacyConfigPath, configPath);
-    } else if (!existsSync(configPath)) {
-      atomicWriteYaml(configPath, entry);
-    }
-  }
-
-  // Also migrate any existing collections that only have .config files
-  const collectionsDir = getCollectionsDir();
-  if (existsSync(collectionsDir)) {
-    for (const name of readdirSync(collectionsDir)) {
-      const colDir = join(collectionsDir, name);
-      try { if (!statSync(colDir).isDirectory()) continue; } catch { continue; }
-      const legacyConfigPath = join(colDir, ".config");
-      const newConfigPath = join(colDir, `${name}.yml`);
-      if (existsSync(legacyConfigPath) && !existsSync(newConfigPath)) {
-        renameSync(legacyConfigPath, newConfigPath);
-      }
-    }
-  }
-
-  // Migrate deployments from context.yml to sites/ directory
-  for (const [name, dep] of Object.entries(ctx.deployments)) {
-    if (!existsSync(getSiteConfigPath(name))) {
-      addSite(name, {
-        url: dep.url,
-        mcpUrl: dep.mcpUrl,
-        toolDescription: dep.toolDescription,
-        collections: dep.collections,
-        database: { type: "cloudflare-d1", id: dep.d1DatabaseId, name: dep.d1DatabaseName },
-        bucket: { type: "cloudflare-r2", name: dep.r2BucketName },
-        password: { protected: dep.passwordProtected, hash: dep.passwordHash },
-        publishedAt: dep.publishedAt,
-      });
-    }
-  }
-
-  // Remove legacy context.yml
-  try { unlinkSync(legacyPath); } catch { /* ignore */ }
-
-  // Clean up legacy master.db files
-  const home = getFrozenInkHome();
-  for (const f of ["master.db", "master.db-wal", "master.db-shm"]) {
-    try { unlinkSync(join(home, f)); } catch { /* ignore */ }
-  }
-
-  // Migrate legacy publish.yml to sites/ directory
-  migrateLegacyPublishYml();
-}
-
-/** Migrate legacy publish.yml to sites/ directory. Safe to call multiple times. */
-function migrateLegacyPublishYml(): void {
-  const publishPath = getLegacyPublishPath();
-  if (!existsSync(publishPath)) return;
-
-  const data = readYaml<Record<string, unknown>>(publishPath);
-  if (!data) return;
-
-  for (const [name, raw] of Object.entries(data)) {
-    if (existsSync(getSiteConfigPath(name))) continue;
-    try {
-      const dep = legacyDeploymentEntrySchema.parse(raw);
-      addSite(name, {
-        url: dep.url,
-        mcpUrl: dep.mcpUrl,
-        toolDescription: dep.toolDescription,
-        collections: dep.collections,
-        database: { type: "cloudflare-d1", id: dep.d1DatabaseId, name: dep.d1DatabaseName },
-        bucket: { type: "cloudflare-r2", name: dep.r2BucketName },
-        password: { protected: dep.passwordProtected, hash: dep.passwordHash },
-        publishedAt: dep.publishedAt,
-      });
-    } catch { /* skip invalid entries */ }
-  }
-
-  // Remove legacy publish.yml
-  try { unlinkSync(publishPath); } catch { /* ignore */ }
 }
 
 // --- Initialization ---
@@ -283,30 +155,11 @@ export function ensureInitialized(): void {
   if (!existsSync(configPath) && !existsSync(legacyConfigPath)) {
     atomicWriteYaml(configPath, { sync: { interval: 900 }, ui: { port: 3000 } });
   }
-  migrateFromLegacyContext();
 }
 
 export function contextExists(): boolean {
   const home = getFrozenInkHome();
   return existsSync(join(home, "collections"));
-}
-
-// --- Legacy compat: loadContext / saveContext ---
-
-export function loadContext(): FrozenInkYaml {
-  return {
-    collections: Object.fromEntries(
-      listCollections().map((c) => {
-        const { name, ...entry } = c;
-        return [name, entry];
-      }),
-    ),
-    deployments: {},
-  };
-}
-
-export function saveContext(_ctx: FrozenInkYaml): void {
-  // No-op: kept for backward compat.
 }
 
 // --- Collection CRUD ---
@@ -462,13 +315,3 @@ export function updateSiteState(name: string, state: { publishedAt: string }): v
   atomicWriteYaml(getSiteStatePath(name), state);
 }
 
-// --- Deprecated aliases for backward compat ---
-
-/** @deprecated Use addSite */
-export const addDeployment = addSite;
-/** @deprecated Use removeSite */
-export const removeDeployment = removeSite;
-/** @deprecated Use getSite */
-export const getDeployment = getSite;
-/** @deprecated Use listSites */
-export const listDeployments = listSites;

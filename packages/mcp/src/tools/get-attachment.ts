@@ -9,9 +9,8 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
-  assets,
 } from "@frozenink/core";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 import {
   buildCollectionDeniedError,
@@ -90,46 +89,51 @@ function buildCandidates(refPath: string, markdownPath: string | null): string[]
       candidates.add(`assets/${relResolved}`);
     }
 
-    const relResolvedNoMd = posix.normalize(posix.join(markdownDir.replace(/^content\/?/, ""), clean));
-    candidates.add(relResolvedNoMd);
-    if (!relResolvedNoMd.startsWith("assets/")) {
-      candidates.add(`assets/${relResolvedNoMd}`);
-    }
+    // markdownPath is now relative to content/ (no prefix to strip)
   }
 
   return Array.from(candidates).filter((c) => !c.startsWith(".."));
 }
 
-/** Searches for an attachment within a single collection DB. Returns the row or undefined. */
+/** Searches for an attachment within a single collection DB using entity JSON assets. */
 function findAttachmentInDb(
   colDb: ReturnType<typeof getCollectionDb>,
   candidates: string[],
   extracted: string,
   sourceEntityId: number | null,
-): { id: number; entityId: number; filename: string; mimeType: string; storagePath: string } | undefined {
-  for (const candidate of candidates) {
-    const rows = sourceEntityId
-      ? colDb
-          .select()
-          .from(assets)
-          .where(and(eq(assets.storagePath, candidate), eq(assets.entityId, sourceEntityId)))
-          .all()
-      : colDb.select().from(assets).where(eq(assets.storagePath, candidate)).all();
+): { entityId: number; filename: string; mimeType: string; storagePath: string } | undefined {
+  const entitiesToSearch = sourceEntityId
+    ? colDb.select().from(entities).where(eq(entities.id, sourceEntityId)).all()
+    : colDb.select().from(entities).all();
 
-    if (rows.length > 0) return rows[0];
+  const candidateSet = new Set(candidates);
+  const fileName = basename(extracted);
+
+  for (const entity of entitiesToSearch) {
+    const entityData: any = entity.data ?? { source: {} };
+    const entityAssets: Array<{ filename: string; mimeType: string; storagePath: string }> = entityData.assets ?? [];
+    for (const att of entityAssets) {
+      if (candidateSet.has(att.storagePath)) {
+        return { entityId: entity.id, ...att };
+      }
+    }
   }
 
   // Fallback: match by filename alone
-  const fileName = basename(extracted);
-  const byFilename = sourceEntityId
-    ? colDb
-        .select()
-        .from(assets)
-        .where(and(eq(assets.filename, fileName), eq(assets.entityId, sourceEntityId)))
-        .all()
-    : colDb.select().from(assets).where(eq(assets.filename, fileName)).all();
+  let filenameMatch: { entityId: number; filename: string; mimeType: string; storagePath: string } | undefined;
+  let matchCount = 0;
+  for (const entity of entitiesToSearch) {
+    const entityData: any = entity.data ?? { source: {} };
+    const entityAssets: Array<{ filename: string; mimeType: string; storagePath: string }> = entityData.assets ?? [];
+    for (const att of entityAssets) {
+      if (att.filename === fileName) {
+        filenameMatch = { entityId: entity.id, ...att };
+        matchCount++;
+      }
+    }
+  }
 
-  return byFilename.length === 1 ? byFilename[0] : undefined;
+  return matchCount === 1 ? filenameMatch : undefined;
 }
 
 async function handleGetAttachment(
@@ -191,7 +195,7 @@ async function handleGetAttachment(
       }
 
       sourceEntityId = sourceEntity.id;
-      sourceMarkdownPath = sourceEntity.markdownPath;
+      sourceMarkdownPath = (sourceEntity.data as import("@frozenink/core").EntityData)?.markdown_path ?? null;
     }
 
     const effectiveCandidates = buildCandidates(extracted, sourceMarkdownPath);

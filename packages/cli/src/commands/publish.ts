@@ -7,21 +7,18 @@ import {
   getCollectionDb,
   ensureInitialized,
   getCollection,
+  updateCollection,
   getCollectionDbPath,
   addSite,
   getSite,
   entities,
-  entityTags,
-  tags,
-  links,
-  assets,
   getModuleDir,
   resolveWorkerBundle,
   resolveUiDist,
 } from "@frozenink/core";
 
-const __moduleDir = getModuleDir(import.meta.url);
 import { eq } from "drizzle-orm";
+const __moduleDir = getModuleDir(import.meta.url);
 import { assertInitialPublishConfirmation } from "./publish-policy";
 
 function randomSuffix(): string {
@@ -191,6 +188,9 @@ export async function publishCollections(
     for (const name of collectionNames) {
       const col = getCollection(name);
       if (!col) throw new Error(`Collection "${name}" not found`);
+      if (col.crawler === "remote") {
+        throw new Error(`Cannot publish "${name}": crawler is "remote". Remote collections are read-only clones.`);
+      }
       const dbPath = getCollectionDbPath(name);
       if (!existsSync(dbPath)) throw new Error(`Collection "${name}" database not found at ${dbPath}`);
     }
@@ -270,22 +270,16 @@ export async function publishCollections(
 
   // --- Phase 2: Upload data ---
 
-  // Read R2 manifest BEFORE dropping D1 tables (needed for stale file cleanup later)
+  // List existing R2 keys for stale file cleanup on updates
   let existingR2Keys = new Set<string>();
   if (!workerOnly && isUpdate) {
     try {
-      onProgress("r2-manifest", "Reading existing R2 manifest...");
-      const manifestJson = await executeD1Command(
-        existingSite!.database.name || d1DatabaseName,
-        "SELECT key FROM r2_manifest",
-      );
-      const parsed = JSON.parse(manifestJson);
-      const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
-      if (Array.isArray(results)) {
-        for (const row of results) existingR2Keys.add(row.key);
-      }
+      const { listR2Objects } = await import("./wrangler-api");
+      onProgress("r2-list", "Listing existing R2 objects...");
+      const keys = await listR2Objects(r2BucketName);
+      for (const key of keys) existingR2Keys.add(key);
     } catch {
-      // Manifest table may not exist on old deployments
+      // May fail on first publish or if bucket doesn't exist yet
     }
   }
 
@@ -295,44 +289,21 @@ export async function publishCollections(
 
     schemaSql.push("DROP TABLE IF EXISTS entities_fts;");
     schemaSql.push("DROP TABLE IF EXISTS r2_manifest;");
-    schemaSql.push("DROP TABLE IF EXISTS links;");
-    schemaSql.push("DROP TABLE IF EXISTS entity_tags;");
-    schemaSql.push("DROP TABLE IF EXISTS tags;");
-    schemaSql.push("DROP TABLE IF EXISTS assets;");
     schemaSql.push("DROP TABLE IF EXISTS entities;");
     schemaSql.push("DROP TABLE IF EXISTS collections_meta;");
     schemaSql.push("");
-    schemaSql.push("CREATE TABLE collections_meta (name TEXT PRIMARY KEY, title TEXT, crawler_type TEXT);");
     schemaSql.push(`CREATE TABLE entities (
-  id INTEGER PRIMARY KEY, collection_name TEXT NOT NULL,
+  id INTEGER PRIMARY KEY,
   external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
   title TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
-  markdown_path TEXT, url TEXT, created_at TEXT, updated_at TEXT
+  content_hash TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`);
-    schemaSql.push("CREATE INDEX idx_entities_collection ON entities(collection_name);");
-    schemaSql.push("CREATE INDEX idx_entities_external ON entities(collection_name, external_id);");
-    schemaSql.push("CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);");
-    schemaSql.push(`CREATE TABLE entity_tags (
-  id INTEGER PRIMARY KEY, collection_name TEXT NOT NULL,
-  entity_id INTEGER NOT NULL, tag_id INTEGER NOT NULL
-);`);
-    schemaSql.push(`CREATE TABLE links (
-  id INTEGER PRIMARY KEY, collection_name TEXT NOT NULL,
-  source_entity_id INTEGER NOT NULL,
-  target_entity_id INTEGER NOT NULL
-);`);
-    schemaSql.push("CREATE INDEX idx_links_target ON links(target_entity_id);");
-    schemaSql.push("CREATE INDEX idx_links_source ON links(source_entity_id);");
-    schemaSql.push(`CREATE TABLE assets (
-  id INTEGER PRIMARY KEY, collection_name TEXT NOT NULL,
-  entity_id INTEGER NOT NULL, filename TEXT NOT NULL,
-  mime_type TEXT NOT NULL, storage_path TEXT NOT NULL
-);`);
-    schemaSql.push("CREATE TABLE r2_manifest (key TEXT PRIMARY KEY);");
+    schemaSql.push("CREATE INDEX idx_entities_external ON entities(external_id);");
     schemaSql.push("");
 
     let entityIdOffset = 0;
-    const MAX_DATA_LEN = 50000;
 
     for (const colName of collectionNames) {
       const col = getCollection(colName)!;
@@ -340,55 +311,13 @@ export async function publishCollections(
       const colDb = getCollectionDb(dbPath);
       const title = col.title || colName;
 
-      schemaSql.push(`INSERT INTO collections_meta (name, title, crawler_type) VALUES ('${escapeSQL(colName)}', '${escapeSQL(title)}', '${escapeSQL(col.crawler)}');`);
-
       const allEntities = colDb.select().from(entities).all();
-      const entityIdMap = new Map<number, number>();
 
       for (const entity of allEntities) {
         entityIdOffset++;
-        entityIdMap.set(entity.id, entityIdOffset);
-        let data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
-        if (data.length > MAX_DATA_LEN) data = data.slice(0, MAX_DATA_LEN);
+        const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
 
-        schemaSql.push(`INSERT INTO entities (id, collection_name, external_id, entity_type, title, data, markdown_path, url, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(colName)}', '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.markdownPath ? `'${escapeSQL(entity.markdownPath)}'` : "NULL"}, ${entity.url ? `'${escapeSQL(entity.url)}'` : "NULL"}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "NULL"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "NULL"});`);
-      }
-
-      // Export tags and entity_tags — resolve tagId to tag name via tags table
-      const tagNameCache: Record<number, string> = {};
-      const remoteTagNameToId: Record<string, number> = {};
-      let remoteTagIdCounter = 0;
-      for (const et of colDb.select().from(entityTags).all()) {
-        const remoteId = entityIdMap.get(et.entityId);
-        if (!remoteId) continue;
-        // Resolve tag name from local tags table
-        let tagName = tagNameCache[et.tagId];
-        if (!tagName) {
-          const [tagRow] = colDb.select().from(tags).where(eq(tags.id, et.tagId)).all();
-          tagName = tagRow?.name ?? `tag_${et.tagId}`;
-          tagNameCache[et.tagId] = tagName;
-        }
-        // Insert into remote tags table if not already done
-        if (!remoteTagNameToId[tagName]) {
-          remoteTagIdCounter++;
-          remoteTagNameToId[tagName] = remoteTagIdCounter;
-          schemaSql.push(`INSERT INTO tags (id, name) VALUES (${remoteTagIdCounter}, '${escapeSQL(tagName)}');`);
-        }
-        const remoteTagId = remoteTagNameToId[tagName];
-        schemaSql.push(`INSERT INTO entity_tags (collection_name, entity_id, tag_id) VALUES ('${escapeSQL(colName)}', ${remoteId}, ${remoteTagId});`);
-      }
-
-      for (const link of colDb.select().from(links).all()) {
-        const remoteSourceId = entityIdMap.get(link.sourceEntityId);
-        const remoteTargetId = entityIdMap.get(link.targetEntityId);
-        if (!remoteSourceId || !remoteTargetId) continue;
-        schemaSql.push(`INSERT INTO links (collection_name, source_entity_id, target_entity_id) VALUES ('${escapeSQL(colName)}', ${remoteSourceId}, ${remoteTargetId});`);
-      }
-
-      for (const att of colDb.select().from(assets).all()) {
-        const remoteId = entityIdMap.get(att.entityId);
-        if (!remoteId) continue;
-        schemaSql.push(`INSERT INTO assets (collection_name, entity_id, filename, mime_type, storage_path) VALUES ('${escapeSQL(colName)}', ${remoteId}, '${escapeSQL(att.filename)}', '${escapeSQL(att.mimeType)}', '${escapeSQL(att.storagePath)}');`);
+        schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
       }
 
       onProgress("export", `Exported "${colName}": ${allEntities.length} entities`);
@@ -405,7 +334,7 @@ export async function publishCollections(
     onProgress("fts", "Building search index...");
     const MAX_FTS_CONTENT = 8000;
     const ftsSql: string[] = [];
-    ftsSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(collection_name UNINDEXED, entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
+    ftsSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
 
     for (const colName of collectionNames) {
       const dbPath = getCollectionDbPath(colName);
@@ -414,9 +343,11 @@ export async function publishCollections(
       const collectionDir = join(home, "collections", colName);
 
       for (const entity of allEntities) {
+        const entityData = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
+        const markdownPath = entityData?.markdown_path ?? null;
         let content = "";
-        if (entity.markdownPath) {
-          const mdPath = join(collectionDir, entity.markdownPath);
+        if (markdownPath) {
+          const mdPath = join(collectionDir, "content", markdownPath);
           if (existsSync(mdPath)) {
             content = readFileSync(mdPath, "utf-8");
           }
@@ -424,17 +355,9 @@ export async function publishCollections(
         if (content.length > MAX_FTS_CONTENT) {
           content = content.slice(0, MAX_FTS_CONTENT);
         }
-        const entityTagNames = colDb.select().from(entityTags)
-          .where(eq(entityTags.entityId, entity.id))
-          .all()
-          .map((t: any) => {
-            const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
-            return tagRow?.name ?? "";
-          })
-          .filter(Boolean)
-          .join(" ");
+        const entityTagNames = (entityData?.tags ?? []).join(" ");
 
-        ftsSql.push(`INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES ('${escapeSQL(colName)}', ${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(entityTagNames)}');`);
+        ftsSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(entityTagNames)}');`);
       }
     }
 
@@ -502,15 +425,19 @@ export async function publishCollections(
       }
     }
 
-    const manifestSql = ["DELETE FROM r2_manifest;"];
-    for (const key of uploadedKeys) {
-      manifestSql.push(`INSERT INTO r2_manifest (key) VALUES ('${escapeSQL(key)}');`);
-    }
-    const manifestFile = writeTempFile(manifestSql.join("\n"), ".sql");
-    try {
-      await executeD1File(d1DatabaseName, manifestFile);
-    } finally {
-      cleanupTempFile(manifestFile);
+    // Upload YAML collection config to R2
+    const { putR2ObjectFromString } = await import("./wrangler-api");
+    onProgress("config", "Uploading collection config to R2...");
+    const collectionsList = collectionNames.map((n) => `- ${n}`).join("\n") + "\n";
+    await putR2ObjectFromString(r2BucketName, "_config/collections.yml", collectionsList, "text/yaml");
+    for (const colName of collectionNames) {
+      const col = getCollection(colName)!;
+      const lines: string[] = [];
+      lines.push(`name: ${colName}`);
+      if (col.title) lines.push(`title: ${col.title}`);
+      lines.push(`crawler: ${col.crawler}`);
+      if (col.description) lines.push(`description: ${col.description}`);
+      await putR2ObjectFromString(r2BucketName, `_config/${colName}.yml`, lines.join("\n") + "\n", "text/yaml");
     }
   }
 
@@ -519,6 +446,14 @@ export async function publishCollections(
   }
   const mcpUrl = `${workerUrl}/mcp`;
   const passwordProtected = passwordHash.length > 0;
+
+  // Update lastPublishedAt in each collection's YAML
+  if (!workerOnly) {
+    const now = new Date().toISOString().replace("T", " ").replace("Z", "");
+    for (const colName of collectionNames) {
+      updateCollection(colName, { lastPublishedAt: now });
+    }
+  }
 
   // Save site
   addSite(workerName, {

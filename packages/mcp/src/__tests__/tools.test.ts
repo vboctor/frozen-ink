@@ -4,13 +4,10 @@ import { dirname, join } from "path";
 import {
   getCollectionDb,
   entities,
-  tags,
-  entityTags,
-  assets,
-  syncRuns,
   SearchIndexer,
   addCollection as coreAddCollection,
-  saveContext,
+  updateCollection,
+  ensureInitialized,
 } from "@frozenink/core";
 import { createMcpServer, type McpServerOptions } from "../server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -27,9 +24,7 @@ function setupTestEnv() {
   // Required so getFrozenInkHome() / listCollections() / getCollection() etc. resolve to TEST_DIR
   process.env.FROZENINK_HOME = TEST_DIR;
 
-  // Create context.yml (required by contextExists() checks in MCP tools/resources)
-  saveContext({ collections: {}, deployments: {} });
-  mkdirSync(join(TEST_DIR, "collections"), { recursive: true });
+  ensureInitialized();
 }
 
 function addCollection(
@@ -72,9 +67,12 @@ function addEntity(
       externalId: data.externalId,
       entityType: data.entityType,
       title: data.title,
-      data: data.data,
-      url: data.url ?? null,
-      markdownPath: data.markdownPath ?? null,
+      data: {
+        source: data.data,
+        url: data.url ?? null,
+        markdown_path: data.markdownPath ?? null,
+        tags: data.tags ?? [],
+      } as any,
     })
     .run();
 
@@ -84,24 +82,7 @@ function addEntity(
     .all()
     .filter((e) => e.externalId === data.externalId);
 
-  const entityId = row.id;
-
-  if (data.tags?.length) {
-    for (const tag of data.tags) {
-      // Insert tag if it doesn't exist, then link to entity
-      const existing = colDb.select().from(tags).all().find((t) => t.name === tag);
-      let tagId: number;
-      if (existing) {
-        tagId = existing.id;
-      } else {
-        colDb.insert(tags).values({ name: tag }).run();
-        tagId = colDb.select().from(tags).all().find((t) => t.name === tag)!.id;
-      }
-      colDb.insert(entityTags).values({ entityId, tagId }).run();
-    }
-  }
-
-  return entityId;
+  return row.id;
 }
 
 function addAttachment(
@@ -115,15 +96,21 @@ function addAttachment(
     content: string;
   },
 ): void {
+  const { eq } = require("drizzle-orm");
   const colDb = getCollectionDb(dbPath);
+  const [entity] = colDb.select().from(entities).where(eq(entities.id, data.entityId)).all();
+  const entityData: any = entity?.data ?? { source: {} };
+  const currentAssets: any[] = entityData.assets ?? [];
+  currentAssets.push({
+    filename: data.filename,
+    mimeType: data.mimeType,
+    storagePath: data.storagePath,
+    hash: "",
+  });
   colDb
-    .insert(assets)
-    .values({
-      entityId: data.entityId,
-      filename: data.filename,
-      mimeType: data.mimeType,
-      storagePath: data.storagePath,
-    })
+    .update(entities)
+    .set({ data: { ...entityData, assets: currentAssets } } as any)
+    .where(eq(entities.id, data.entityId))
     .run();
 
   const attachmentFile = join(TEST_DIR, "collections", collectionName, data.storagePath);
@@ -175,7 +162,7 @@ describe("collection_list tool", () => {
     addEntity(dbPath, { externalId: "issue-1", entityType: "issue", title: "Bug report", data: { number: 1 } });
     addEntity(dbPath, { externalId: "issue-2", entityType: "issue", title: "Feature request", data: { number: 2 } });
 
-    colDb.insert(syncRuns).values({ status: "completed", entitiesCreated: 2, startedAt: "2025-01-15 10:00:00", completedAt: "2025-01-15 10:01:00" }).run();
+    updateCollection("my-repo", { lastSyncStatus: "completed", lastSyncCreated: 2, lastSyncAt: "2025-01-15 10:00:00" });
 
     await setupClient();
     const result = await client.callTool({ name: "collection_list" });
@@ -408,8 +395,8 @@ describe("entity_get_data tool", () => {
     expect(data.id).toBe("issue-5");
     expect(data.entityType).toBe("issue");
     expect(data.title).toBe("Important issue");
-    expect(data.data.number).toBe(5);
-    expect(data.data.state).toBe("open");
+    expect(data.data.source.number).toBe(5);
+    expect(data.data.source.state).toBe("open");
     expect(data.url).toBe("https://github.com/test/get-test/issues/5");
     expect(data.tags).toEqual(["bug", "critical"]);
   });
@@ -418,10 +405,10 @@ describe("entity_get_data tool", () => {
     const { dbPath } = addCollection("with-md");
     const collectionDir = join(TEST_DIR, "collections", "with-md");
     const mdContent = "# Issue 7\n\nBody here.";
-    const mdPath = "markdown/issues/7-test.md";
+    const mdPath = "issues/7-test.md";
 
-    mkdirSync(join(collectionDir, "markdown", "issues"), { recursive: true });
-    writeFileSync(join(collectionDir, mdPath), mdContent);
+    mkdirSync(join(collectionDir, "content", "issues"), { recursive: true });
+    writeFileSync(join(collectionDir, "content", mdPath), mdContent);
 
     addEntity(dbPath, {
       externalId: "issue-7",
@@ -748,14 +735,14 @@ describe("entity_get_attachment tool", () => {
       data: {},
     });
 
-    // Insert DB record but do NOT write the file to disk
+    // Insert asset record into entity data but do NOT write the file to disk
+    const { eq } = require("drizzle-orm");
     const colDb = getCollectionDb(dbPath);
-    colDb.insert(assets).values({
-      entityId,
-      filename: "ghost.png",
-      mimeType: "image/png",
-      storagePath: "attachments/git/zzz/ghost.png",
-    }).run();
+    const [currentRow] = colDb.select({ data: entities.data }).from(entities).where(eq(entities.id, entityId)).all();
+    const currentData: any = currentRow?.data ?? { source: {} };
+    colDb.update(entities).set({
+      data: { ...currentData, assets: [{ filename: "ghost.png", mimeType: "image/png", storagePath: "attachments/git/zzz/ghost.png", hash: "" }] },
+    } as any).where(eq(entities.id, entityId)).run();
 
     await setupClient();
     const result = await client.callTool({

@@ -201,14 +201,65 @@ export async function putR2Object(
 export async function deleteR2Object(bucket: string, key: string): Promise<void> {
   const { apiToken, accountId } = await getCredentials();
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  await fetch(url, {
+  const res = await fetch(url, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${apiToken}` },
   });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`R2 delete failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
+  }
 }
 
 export async function deleteR2Bucket(name: string): Promise<void> {
   await runWrangler(["r2", "bucket", "delete", name], { allowFailure: true });
+}
+
+export async function listR2Objects(bucket: string, prefix?: string): Promise<string[]> {
+  const { apiToken, accountId } = await getCredentials();
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const params = new URLSearchParams();
+    if (prefix) params.set("prefix", prefix);
+    if (cursor) params.set("cursor", cursor);
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects?${params}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiToken}` },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`R2 list failed: ${res.status} ${text.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as {
+      result: { objects: Array<{ key: string }>; truncated: boolean; cursor?: string };
+    };
+    for (const obj of json.result.objects) keys.push(obj.key);
+    cursor = json.result.truncated ? json.result.cursor : undefined;
+  } while (cursor);
+  return keys;
+}
+
+export async function putR2ObjectFromString(
+  bucket: string,
+  key: string,
+  content: string,
+  contentType: string = "text/plain",
+): Promise<void> {
+  const { apiToken, accountId } = await getCredentials();
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      "Content-Type": contentType,
+    },
+    body: content,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`R2 upload failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
+  }
 }
 
 // --- Worker operations (via wrangler CLI) ---
@@ -235,27 +286,25 @@ export function generateWranglerToml(config: {
   passwordHash: string;
   toolDescription?: string;
 }): string {
-  const escapedToolDescription = (config.toolDescription ?? "")
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"');
+  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-  return `name = "${config.workerName}"
-main = "${config.mainScript}"
+  return `name = "${esc(config.workerName)}"
+main = "${esc(config.mainScript)}"
 compatibility_date = "2024-01-01"
 
 [vars]
-PASSWORD_HASH = "${config.passwordHash}"
-WORKER_NAME = "${config.workerName}"
-TOOL_DESCRIPTION = "${escapedToolDescription}"
+PASSWORD_HASH = "${esc(config.passwordHash)}"
+WORKER_NAME = "${esc(config.workerName)}"
+TOOL_DESCRIPTION = "${esc(config.toolDescription ?? "")}"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "${config.d1DatabaseName}"
-database_id = "${config.d1DatabaseId}"
+database_name = "${esc(config.d1DatabaseName)}"
+database_id = "${esc(config.d1DatabaseId)}"
 
 [[r2_buckets]]
 binding = "BUCKET"
-bucket_name = "${config.r2BucketName}"
+bucket_name = "${esc(config.r2BucketName)}"
 `;
 }
 
