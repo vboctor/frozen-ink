@@ -1,19 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { formatTimestamp, type Collection, type Deployment, type PublishProgress, type PublishPreset } from "../../types";
-
-type FormMode = "idle" | "creating" | "editing";
+import { formatTimestamp, type Collection, type PublishProgress } from "../../types";
 
 export default function PublishPanel() {
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [deployments, setDeployments] = useState<Deployment[]>([]);
-  const [presets, setPresets] = useState<PublishPreset[]>([]);
 
-  // Form state
-  const [formMode, setFormMode] = useState<FormMode>("idle");
-  const [editIdx, setEditIdx] = useState<number | null>(null);
-  const [presetName, setPresetName] = useState("");
-  const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
-  const [workerName, setWorkerName] = useState("");
+  // Form state — only applies to the "Publish a Collection" form at the bottom
+  const [selectedCollection, setSelectedCollection] = useState("");
   const [password, setPassword] = useState("");
   const [removePassword, setRemovePassword] = useState(false);
 
@@ -21,65 +13,18 @@ export default function PublishPanel() {
   const [authChecked, setAuthChecked] = useState<boolean | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Publish/unpublish progress
+  // Publish progress
   const [publishing, setPublishing] = useState(false);
-  const [unpublishing, setUnpublishing] = useState<string | null>(null);
   const [progress, setProgress] = useState<PublishProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
     fetch("/api/collections").then((r) => r.json()).then(setCollections).catch(() => {});
-    loadDeployments();
-    loadPresets();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
-  // ESC dismisses the form
-  useEffect(() => {
-    if (formMode === "idle") return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeForm();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [formMode]);
-
-  const loadDeployments = () => {
-    fetch("/api/deployments").then((r) => r.json()).then(setDeployments).catch(() => {});
-  };
-
-  const loadPresets = () => {
-    fetch("/api/publish-presets")
-      .then((r) => r.json())
-      .then((data: PublishPreset[]) => {
-        if (!Array.isArray(data)) {
-          setPresets([]);
-          return;
-        }
-        const normalized = data.map((p) => ({
-          ...p,
-          password: p.password ?? "",
-          removePassword: !!p.removePassword,
-        }));
-        setPresets(normalized);
-      })
-      .catch(() => {});
-  };
-
-  const persistPresets = (updated: PublishPreset[]) => {
-    setPresets(updated);
-    fetch("/api/publish-presets", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ presets: updated }),
-    }).catch(() => {});
-  };
-
-  const getDeployment = (wName: string): Deployment | undefined =>
-    deployments.find((d) => d.name === wName);
-
-  // --- Auth ---
+  const publishedCollections = collections.filter((c) => c.publish);
 
   const checkAuth = () => {
     setAuthError(null);
@@ -92,87 +37,13 @@ export default function PublishPanel() {
       .catch(() => setAuthChecked(false));
   };
 
-  // --- Form ---
-
-  const openCreate = () => {
-    setFormMode("creating");
-    setEditIdx(null);
-    setPresetName("");
-    setWorkerName("");
-    setSelectedCollections([]);
-    setPassword("");
-    setRemovePassword(false);
-  };
-
-  const openEdit = (idx: number) => {
-    const p = presets[idx];
-    setFormMode("editing");
-    setEditIdx(idx);
-    setPresetName(p.name);
-    setWorkerName(p.workerName);
-    setSelectedCollections([...p.collections]);
-    setPassword(p.password);
-    setRemovePassword(!!p.removePassword);
-  };
-
-  const closeForm = () => {
-    setFormMode("idle");
-    setEditIdx(null);
-  };
-
-  const toggleCollection = (name: string) => {
-    setSelectedCollections((prev) =>
-      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
-    );
-  };
-
-  const handleSave = () => {
-    const preset: PublishPreset = {
-      name: presetName || workerName || "Untitled",
-      workerName,
-      collections: selectedCollections,
-      password,
-      removePassword,
-    };
-    if (formMode === "editing" && editIdx !== null) {
-      const updated = [...presets];
-      updated[editIdx] = preset;
-      persistPresets(updated);
-    } else {
-      persistPresets([...presets, preset]);
-    }
-    closeForm();
-  };
-
-  const handleDeleteSite = async (idx: number) => {
-    const preset = presets[idx];
-    const dep = preset ? getDeployment(preset.workerName) : undefined;
-    if (dep) {
-      setUnpublishing(preset.workerName);
-      setError(null);
-      try {
-        const res = await fetch(`/api/deployments/${encodeURIComponent(dep.name)}`, { method: "DELETE" });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({ error: "Unpublish failed" }));
-          setError(data.error || "Unpublish failed");
-        }
-      } catch (err) {
-        setError(String(err));
-      } finally {
-        setUnpublishing(null);
-        loadDeployments();
-      }
-    }
-    persistPresets(presets.filter((_, i) => i !== idx));
-    if (editIdx === idx) closeForm();
-  };
-
-  // --- Publish ---
-
-  const handlePublish = (preset: PublishPreset) => {
-    const existingDeployment = getDeployment(preset.workerName);
-    const isInitialPublish = !existingDeployment;
-    const isPublicInitialPublish = isInitialPublish && !preset.password && !preset.removePassword;
+  const doPublish = (
+    collectionName: string,
+    opts: { password?: string; removePassword?: boolean },
+  ) => {
+    const col = collections.find((c) => c.name === collectionName);
+    const isInitialPublish = !col?.publish;
+    const isPublicInitialPublish = isInitialPublish && !opts.password && !opts.removePassword;
     let forcePublic = false;
 
     if (isPublicInitialPublish) {
@@ -187,14 +58,12 @@ export default function PublishPanel() {
     setProgress(null);
     setError(null);
 
-    fetch("/api/publish", {
+    fetch(`/api/collections/${encodeURIComponent(collectionName)}/publish`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        collections: preset.collections,
-        name: preset.workerName || undefined,
-        password: preset.password || undefined,
-        removePassword: preset.removePassword || undefined,
+        password: opts.password || undefined,
+        removePassword: opts.removePassword || undefined,
         forcePublic: forcePublic || undefined,
       }),
     }).catch(() => {});
@@ -207,15 +76,42 @@ export default function PublishPanel() {
         if (!data.active) {
           if (pollRef.current) clearInterval(pollRef.current);
           setPublishing(false);
-          loadDeployments();
+          fetch("/api/collections").then((r) => r.json()).then(setCollections).catch(() => {});
         }
       } catch {}
     }, 1000);
   };
 
-  // --- Render ---
+  const handleFormPublish = () => {
+    if (!selectedCollection) return;
+    doPublish(selectedCollection, { password, removePassword });
+    setPassword("");
+    setRemovePassword(false);
+  };
 
-  const showingForm = formMode !== "idle";
+  const handleRepublish = (collectionName: string) => {
+    doPublish(collectionName, {});
+  };
+
+  const handleUnpublish = async (collectionName: string) => {
+    const confirmed = window.confirm(
+      `Unpublish "${collectionName}"? This will delete its Cloudflare worker, D1 database, and R2 bucket.`,
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    try {
+      const res = await fetch(`/api/collections/${encodeURIComponent(collectionName)}/unpublish`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Unpublish failed" }));
+        setError(data.error || "Unpublish failed");
+      } else {
+        fetch("/api/collections").then((r) => r.json()).then(setCollections).catch(() => {});
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  };
 
   return (
     <div className="manage-panel">
@@ -233,7 +129,6 @@ export default function PublishPanel() {
       {authError && <div className="form-error" style={{ whiteSpace: "pre-wrap" }}>{authError}</div>}
       {error && <div className="form-error">{error}</div>}
 
-      {/* Progress */}
       {progress && (publishing || progress.error) && (
         <div className="sync-progress">
           <div className="sync-progress-header">
@@ -246,150 +141,115 @@ export default function PublishPanel() {
         </div>
       )}
 
-      {/* Preset list */}
-      {!showingForm && (
-        <>
-          <div className="preset-list">
-            {presets.map((p, i) => {
-              const dep = getDeployment(p.workerName);
-              return (
-                <div key={i} className="preset-card">
-                  <div className="preset-card-header">
-                    <div className="preset-card-title">
-                      <strong>{p.name}</strong>
-                      <span className="preset-worker-name">({p.workerName})</span>
-                      {dep && (
-                        <a
-                          href={dep.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="preset-link"
-                          title="Open published site"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="12" height="12">
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                            <polyline points="15 3 21 3 21 9"/>
-                            <line x1="10" y1="14" x2="21" y2="3"/>
-                          </svg>
-                        </a>
-                      )}
-                    </div>
-                    <div className="preset-card-actions">
-                      <button className="btn btn-sm" onClick={() => openEdit(i)} disabled={publishing}>
-                        Edit
-                      </button>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        onClick={() => handlePublish(p)}
-                        disabled={publishing || p.collections.length === 0 || !p.workerName}
-                      >
-                        {publishing ? "Publishing..." : "Publish"}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="preset-card-details">
-                    <span className="text-muted">Collections: {p.collections.join(", ") || "none"}</span>
-                    <span className="text-muted">
-                      Password: {p.removePassword ? "remove on next publish" : p.password ? "set/rotate on next publish" : "preserve current"}
-                    </span>
-                    {dep && (
-                      <span className="preset-deployment-info">
-                        Published {formatTimestamp(dep.publishedAt)}
-                        {" \u00b7 "}
-                        <a href={dep.url} target="_blank" rel="noopener noreferrer" className="preset-url">{dep.url.replace("https://", "")}</a>
-                      </span>
-                    )}
-                    {!dep && (
-                      <span className="preset-deployment-info text-muted">Not published</span>
-                    )}
-                  </div>
+      {publishedCollections.length > 0 && (
+        <div className="preset-list">
+          <h3>Published Collections</h3>
+          {publishedCollections.map((col) => (
+            <div key={col.name} className="preset-card">
+              <div className="preset-card-header">
+                <div className="preset-card-title">
+                  <strong>{col.title || col.name}</strong>
+                  {col.publish && (
+                    <a
+                      href={col.publish.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="preset-link"
+                      title="Open published site"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="12" height="12">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" y1="14" x2="21" y2="3"/>
+                      </svg>
+                    </a>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <button className="btn btn-sm" onClick={openCreate}>+ New Site</button>
-          </div>
-        </>
-      )}
-
-      {/* Preset form (create or edit) */}
-      {showingForm && (
-        <div className="preset-form">
-          <h3>{formMode === "creating" ? "New Site" : `Edit: ${presets[editIdx!]?.name}`}</h3>
-
-          <div className="form-group">
-            <label>Site Name</label>
-            <input
-              type="text"
-              value={presetName}
-              onChange={(e) => setPresetName(e.target.value)}
-              placeholder="My Publish Config"
-              className="form-input"
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Worker Name</label>
-            <input
-              type="text"
-              value={workerName}
-              onChange={(e) => setWorkerName(e.target.value)}
-              placeholder="fink-my-project"
-              className="form-input"
-            />
-          </div>
-
-          <div className="form-group">
-            <h3>Collections to Publish</h3>
-            {collections.filter((c) => c.enabled).map((col) => (
-              <label key={col.name} className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={selectedCollections.includes(col.name)}
-                  onChange={() => toggleCollection(col.name)}
-                />
-                {col.title || col.name}
-              </label>
-            ))}
-          </div>
-
-          <div className="form-group">
-            <label>Password (optional)</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                if (e.target.value) setRemovePassword(false);
-              }}
-              placeholder="Leave blank to preserve current password setting"
-              className="form-input"
-              disabled={removePassword}
-            />
-            <label className="checkbox-label" style={{ marginTop: 8 }}>
-              <input
-                type="checkbox"
-                checked={removePassword}
-                onChange={(e) => setRemovePassword(e.target.checked)}
-              />
-              Explicitly remove password protection on next publish
-            </label>
-          </div>
-
-          <div className="form-actions">
-            <button className="btn btn-secondary" onClick={closeForm}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={!workerName}>
-              {formMode === "creating" ? "Save Site" : "Update Site"}
-            </button>
-            {formMode === "editing" && editIdx !== null && (
-              <button className="btn btn-danger-solid" style={{ marginLeft: "auto" }} onClick={() => { handleDeleteSite(editIdx); }}>
-                Delete Site
-              </button>
-            )}
-          </div>
+                <div className="preset-card-actions">
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={() => handleRepublish(col.name)}
+                    disabled={publishing}
+                  >
+                    {publishing ? "Publishing..." : "Republish"}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-danger"
+                    onClick={() => handleUnpublish(col.name)}
+                    disabled={publishing}
+                  >
+                    Unpublish
+                  </button>
+                </div>
+              </div>
+              <div className="preset-card-details">
+                {col.publish && (
+                  <>
+                    <span className="preset-deployment-info">
+                      Published {formatTimestamp(col.publish.publishedAt)}
+                      {" \u00b7 "}
+                      <a href={col.publish.url} target="_blank" rel="noopener noreferrer" className="preset-url">{col.publish.url.replace("https://", "")}</a>
+                    </span>
+                    <span className="text-muted">
+                      Password: {col.publish.password?.protected ? "protected" : "public"}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
+
+      <div style={{ marginTop: 16 }}>
+        <h3>Publish a Collection</h3>
+        <div className="form-group">
+          <label>Collection</label>
+          <select
+            className="form-input"
+            value={selectedCollection}
+            onChange={(e) => setSelectedCollection(e.target.value)}
+          >
+            <option value="">Select a collection...</option>
+            {collections.filter((c) => c.enabled).map((col) => (
+              <option key={col.name} value={col.name}>
+                {col.title || col.name} {col.publish ? "(published)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label>Password (optional)</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (e.target.value) setRemovePassword(false);
+            }}
+            placeholder="Leave blank to preserve current password setting"
+            className="form-input"
+            disabled={removePassword}
+          />
+          <label className="checkbox-label" style={{ marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={removePassword}
+              onChange={(e) => setRemovePassword(e.target.checked)}
+            />
+            Remove password protection on next publish
+          </label>
+        </div>
+
+        <button
+          className="btn btn-primary"
+          onClick={handleFormPublish}
+          disabled={publishing || !selectedCollection}
+        >
+          {publishing ? "Publishing..." : "Publish"}
+        </button>
+      </div>
     </div>
   );
 }

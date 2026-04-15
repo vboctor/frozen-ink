@@ -162,6 +162,33 @@ export async function deleteD1(dbName: string): Promise<void> {
   await runWrangler(["d1", "delete", dbName, "-y"], { allowFailure: true });
 }
 
+// --- Retry helper for HTTP APIs ---
+
+let throttleUntil = 0;
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  maxRetries = 5,
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const now = Date.now();
+    if (throttleUntil > now) {
+      await new Promise((r) => setTimeout(r, throttleUntil - now));
+    }
+    const res = await fetch(url, init);
+    if (res.ok || res.status === 404) return res;
+    if (res.status === 429 && attempt < maxRetries) {
+      const delay = Math.min(2000 * 2 ** attempt, 30000);
+      throttleUntil = Date.now() + delay;
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
+    return res;
+  }
+  return fetch(url, init);
+}
+
 // --- R2 operations (bucket via wrangler CLI, objects via HTTP for speed) ---
 
 export async function createR2Bucket(name: string): Promise<void> {
@@ -184,7 +211,7 @@ export async function putR2Object(
   const { apiToken, accountId } = await getCredentials();
   const body = readFileSync(filePath);
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${apiToken}`,
@@ -198,16 +225,69 @@ export async function putR2Object(
   }
 }
 
+export async function putR2String(
+  bucket: string,
+  key: string,
+  content: string,
+  contentType: string = "text/plain",
+): Promise<void> {
+  const { apiToken, accountId } = await getCredentials();
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
+  const res = await fetchWithRetry(url, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": contentType },
+    body: content,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`R2 upload failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
+  }
+}
+
+export async function getR2String(bucket: string, key: string): Promise<string | null> {
+  const { apiToken, accountId } = await getCredentials();
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
+  const res = await fetchWithRetry(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) return null;
+  return res.text();
+}
+
 export async function deleteR2Object(bucket: string, key: string): Promise<void> {
   const { apiToken, accountId } = await getCredentials();
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${apiToken}` },
   });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`R2 delete failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
+  }
+}
+
+export async function deleteR2Objects(bucket: string, keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  const { apiToken, accountId } = await getCredentials();
+  const BATCH_SIZE = 1000;
+  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+    const batch = keys.slice(i, i + BATCH_SIZE);
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects`;
+    const res = await fetchWithRetry(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ keys: batch }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`R2 batch delete failed: ${res.status} ${text.slice(0, 200)}`);
+    }
   }
 }
 
@@ -219,24 +299,21 @@ export async function listR2Objects(bucket: string, prefix?: string): Promise<st
   const { apiToken, accountId } = await getCredentials();
   const keys: string[] = [];
   let cursor: string | undefined;
-  do {
-    const params = new URLSearchParams();
+  for (;;) {
+    const params = new URLSearchParams({ per_page: "1000" });
     if (prefix) params.set("prefix", prefix);
     if (cursor) params.set("cursor", cursor);
     const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects?${params}`;
-    const res = await fetch(url, {
+    const res = await fetchWithRetry(url, {
+      method: "GET",
       headers: { Authorization: `Bearer ${apiToken}` },
     });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`R2 list failed: ${res.status} ${text.slice(0, 200)}`);
-    }
-    const json = (await res.json()) as {
-      result: { objects: Array<{ key: string }>; truncated: boolean; cursor?: string };
-    };
-    for (const obj of json.result.objects) keys.push(obj.key);
-    cursor = json.result.truncated ? json.result.cursor : undefined;
-  } while (cursor);
+    if (!res.ok) break;
+    const data = await res.json() as { result: Array<{ key: string }>; result_info?: { cursor?: string } };
+    for (const obj of data.result ?? []) keys.push(obj.key);
+    cursor = data.result_info?.cursor;
+    if (!cursor || (data.result ?? []).length === 0) break;
+  }
   return keys;
 }
 
@@ -246,20 +323,7 @@ export async function putR2ObjectFromString(
   content: string,
   contentType: string = "text/plain",
 ): Promise<void> {
-  const { apiToken, accountId } = await getCredentials();
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      "Content-Type": contentType,
-    },
-    body: content,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`R2 upload failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
-  }
+  return putR2String(bucket, key, content, contentType);
 }
 
 // --- Worker operations (via wrangler CLI) ---

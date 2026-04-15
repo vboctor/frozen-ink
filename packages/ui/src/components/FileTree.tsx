@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import type { TreeNode } from "../types";
 
 interface FileTreeProps {
   tree: TreeNode[];
+  loading?: boolean;
   selectedFile: string | null;
   onSelect: (path: string, openNewTab: boolean) => void;
 }
@@ -12,12 +13,22 @@ interface TreeItemProps {
   selectedFile: string | null;
   onSelect: (path: string, openNewTab: boolean) => void;
   depth: number;
+  defaultExpanded?: boolean;
 }
 
-function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
+const LARGE_DIR_THRESHOLD = 200;
+const PAGE_SIZE = 200;
+
+function TreeItem({ node, selectedFile, onSelect, depth, defaultExpanded = false }: TreeItemProps) {
   const [expanded, setExpanded] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   if (node.type === "directory") {
+    const children = node.children ?? [];
+    const isLarge = children.length > LARGE_DIR_THRESHOLD;
+    const visibleChildren = isLarge && expanded ? children.slice(0, visibleCount) : children;
+    const hasMore = isLarge && visibleCount < children.length;
+
     return (
       <li className="tree-directory" role="treeitem" aria-expanded={expanded}>
         <button
@@ -31,9 +42,9 @@ function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
             <span className="tree-count">({node.count.toLocaleString()})</span>
           )}
         </button>
-        {expanded && node.children && (
+        {expanded && (
           <ul className="tree-children" role="group">
-            {node.children.map((child) => (
+            {visibleChildren.map((child) => (
               <TreeItem
                 key={child.path}
                 node={child}
@@ -42,6 +53,17 @@ function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
                 depth={depth + 1}
               />
             ))}
+            {hasMore && (
+              <li className="tree-show-more">
+                <button
+                  className="tree-show-more-button"
+                  onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                  style={{ paddingLeft: `${(depth + 1) * 16 + 4}px` }}
+                >
+                  Show more ({(children.length - visibleCount).toLocaleString()} remaining)
+                </button>
+              </li>
+            )}
           </ul>
         )}
       </li>
@@ -73,8 +95,20 @@ function TreeItem({ node, selectedFile, onSelect, depth }: TreeItemProps) {
   );
 }
 
-export default function FileTree({ tree, selectedFile, onSelect }: FileTreeProps) {
+export default function FileTree({ tree, loading, selectedFile, onSelect }: FileTreeProps) {
   const navRef = useRef<HTMLElement>(null);
+
+  const totalFiles = useMemo(() => {
+    function count(nodes: TreeNode[]): number {
+      let n = 0;
+      for (const node of nodes) {
+        if (node.type === "file") n++;
+        if (node.children) n += count(node.children);
+      }
+      return n;
+    }
+    return count(tree);
+  }, [tree]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -98,6 +132,14 @@ export default function FileTree({ tree, selectedFile, onSelect }: FileTreeProps
     }
   }
 
+  if (loading) {
+    return (
+      <div className="file-tree-empty">
+        <p>Loading files…</p>
+      </div>
+    );
+  }
+
   if (tree.length === 0) {
     return (
       <div className="file-tree-empty">
@@ -108,6 +150,9 @@ export default function FileTree({ tree, selectedFile, onSelect }: FileTreeProps
 
   return (
     <nav className="file-tree" aria-label="File tree" ref={navRef} onKeyDown={handleKeyDown}>
+      {totalFiles > 1000 && (
+        <div className="tree-summary">{totalFiles.toLocaleString()} files</div>
+      )}
       <ul role="tree">
         {tree.map((node) => (
           <TreeItem
@@ -116,6 +161,7 @@ export default function FileTree({ tree, selectedFile, onSelect }: FileTreeProps
             selectedFile={selectedFile}
             onSelect={onSelect}
             depth={0}
+            defaultExpanded={tree.length === 1}
           />
         ))}
       </ul>

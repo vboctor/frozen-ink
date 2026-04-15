@@ -7,6 +7,15 @@ import {
 import { getCollections } from "../config";
 import { searchEntities } from "../db/search";
 import { getR2Object } from "../storage/r2";
+import { ThemeEngine } from "@frozenink/core/theme";
+import { GitHubTheme, ObsidianTheme, GitTheme, MantisHubTheme } from "@frozenink/crawlers/themes";
+import { buildRenderContext } from "./api";
+
+const themeEngine = new ThemeEngine();
+themeEngine.register(new GitHubTheme());
+themeEngine.register(new ObsidianTheme());
+themeEngine.register(new GitTheme());
+themeEngine.register(new MantisHubTheme());
 
 /**
  * Handle MCP requests using JSON-RPC over HTTP.
@@ -144,7 +153,7 @@ async function callTool(
       collections.map(async (col) => ({
         name: col.name,
         title: col.title || col.name,
-        entityCount: await getEntityCount(env.DB, col.name),
+        entityCount: await getEntityCount(env.DB),
       })),
     );
     return [{ type: "text", text: JSON.stringify(data) }];
@@ -152,7 +161,6 @@ async function callTool(
 
   if (name === "entity_search") {
     const results = await searchEntities(env.DB, args.query as string, {
-      collectionName: args.collection as string | undefined,
       entityType: args.entityType as string | undefined,
       limit: (args.limit as number | undefined) ?? 20,
     });
@@ -160,14 +168,16 @@ async function callTool(
   }
 
   if (name === "entity_get_data") {
-    const entity = await getEntityByExternalId(env.DB, args.collection as string, args.externalId as string);
+    const collectionName = args.collection as string;
+    const entity = await getEntityByExternalId(env.DB, args.externalId as string);
     if (!entity) return [{ type: "text", text: JSON.stringify({ error: "Entity not found" }) }];
 
+    const col = await (await import("../config")).getCollectionConfig(env.BUCKET, collectionName);
     const entityData = parseEntityData(entity);
     let markdown: string | null = null;
-    if (entityData.markdown_path) {
-      const obj = await getR2Object(env.BUCKET, `${args.collection}/content/${entityData.markdown_path}`);
-      if (obj) markdown = await new Response(obj.body).text();
+    if (entityData.markdown_path && col?.crawler) {
+      const ctx = buildRenderContext(collectionName, col.crawler, entity);
+      markdown = themeEngine.render(ctx);
     }
     return [{
       type: "text",
@@ -180,19 +190,21 @@ async function callTool(
   }
 
   if (name === "entity_get_markdown") {
-    const entity = await getEntityByExternalId(env.DB, args.collection as string, args.externalId as string);
+    const collectionName = args.collection as string;
+    const entity = await getEntityByExternalId(env.DB, args.externalId as string);
     if (!entity) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
     const mdEntityData = parseEntityData(entity);
     if (!mdEntityData.markdown_path) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
 
-    const obj = await getR2Object(env.BUCKET, `${args.collection}/content/${mdEntityData.markdown_path}`);
-    if (!obj) return [{ type: "text", text: JSON.stringify({ error: "Markdown not found" }) }];
+    const col = await (await import("../config")).getCollectionConfig(env.BUCKET, collectionName);
+    if (!col?.crawler) return [{ type: "text", text: JSON.stringify({ error: "Collection not found" }) }];
 
-    const md = await new Response(obj.body).text();
+    const ctx = buildRenderContext(collectionName, col.crawler, entity);
+    const md = themeEngine.render(ctx);
     return [{
       type: "text",
       text: JSON.stringify({
-        collection: args.collection, externalId: entity.external_id,
+        collection: collectionName, externalId: entity.external_id,
         title: entity.title, markdownPath: mdEntityData.markdown_path, markdown: md,
         updatedAt: entity.updated_at,
       }),

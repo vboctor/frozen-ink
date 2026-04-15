@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join, extname } from "path";
 import { createInterface } from "readline";
 import {
@@ -9,17 +9,18 @@ import {
   getCollection,
   updateCollection,
   getCollectionDbPath,
-  addSite,
-  getSite,
+  getCollectionPublishState,
+  updateCollectionPublishState,
   entities,
   getModuleDir,
   resolveWorkerBundle,
   resolveUiDist,
 } from "@frozenink/core";
+import type { EntityData } from "@frozenink/core";
 
-import { eq } from "drizzle-orm";
 const __moduleDir = getModuleDir(import.meta.url);
 import { assertInitialPublishConfirmation } from "./publish-policy";
+import { createGenerateThemeEngine } from "./generate";
 
 function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 8);
@@ -57,6 +58,25 @@ function getMimeType(filePath: string): string {
   return MIME_TYPES[extname(filePath).toLowerCase()] || "application/octet-stream";
 }
 
+async function hashDbFiles(dbPath: string): Promise<string> {
+  const files = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`];
+  const chunks: Uint8Array[] = [];
+  for (const file of files) {
+    if (existsSync(file)) chunks.push(readFileSync(file));
+  }
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const combined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  const hashBuf = await crypto.subtle.digest("SHA-256", combined);
+  return Array.from(new Uint8Array(hashBuf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 async function runConcurrent<T>(
   items: T[],
   concurrency: number,
@@ -75,8 +95,7 @@ async function runConcurrent<T>(
 // --- Reusable publish function ---
 
 export interface PublishOptions {
-  collectionNames: string[];
-  workerName: string;
+  collectionName: string;
   toolDescription?: string;
   password?: string;
   removePassword?: boolean;
@@ -89,7 +108,7 @@ export interface PublishResult {
   workerUrl: string;
   mcpUrl: string;
   toolDescription?: string;
-  collections: string[];
+  collectionName: string;
   isUpdate: boolean;
   workerOnly: boolean;
 }
@@ -106,13 +125,8 @@ async function hashPassword(password: string): Promise<string> {
   return `${salt}:${hashHex}`;
 }
 
-function deriveToolDescriptionFromCollections(collectionNames: string[]): string | undefined {
-  const descriptions = collectionNames
-    .map((name) => getCollection(name)?.mcpToolDescription?.trim())
-    .filter((value): value is string => !!value);
-
-  if (descriptions.length === 0) return undefined;
-  return descriptions.join(" | ");
+function deriveToolDescription(collectionName: string): string | undefined {
+  return getCollection(collectionName)?.mcpToolDescription?.trim() || undefined;
 }
 
 async function promptToolDescription(
@@ -150,7 +164,10 @@ export async function publishCollections(
     executeD1Command,
     createR2Bucket,
     putR2Object,
-    deleteR2Object,
+    putR2String,
+    getR2String,
+    deleteR2Objects,
+    listR2Objects,
     deployWorker,
     generateWranglerToml,
     writeTempFile,
@@ -159,56 +176,50 @@ export async function publishCollections(
 
   await checkWranglerAuth();
 
-  const { workerName, workerOnly = false, removePassword = false, forcePublic = false } = options;
-  let toolDescription = options.toolDescription?.trim() || undefined;
+  const { collectionName, removePassword = false, forcePublic = false } = options;
+  let { workerOnly = false } = options;
+  const workerName = collectionName;
   const password = options.password?.trim();
   if (password && removePassword) {
     throw new Error("Cannot use --password and --remove-password together.");
   }
-  let collectionNames = [...options.collectionNames];
+  const collectionNames = [collectionName];
 
-  const existingSite = getSite(workerName);
-  const isUpdate = !!existingSite;
+  const col = getCollection(collectionName);
+  if (!col) throw new Error(`Collection "${collectionName}" not found`);
 
-  if (workerOnly && !existingSite) {
-    throw new Error(`Site "${workerName}" not found. --worker-only only works for existing sites.`);
+  let toolDescription = options.toolDescription?.trim()
+    || col.description?.trim()
+    || col.mcpToolDescription?.trim()
+    || undefined;
+
+  const existingPublish = getCollectionPublishState(collectionName);
+  const isUpdate = !!existingPublish;
+
+  // Password-only changes on existing deployments only need a worker redeploy
+  if (isUpdate && !workerOnly && (password || removePassword)) {
+    workerOnly = true;
+    onProgress("info", "Password change — deploying worker only");
   }
 
-  if (workerOnly && existingSite) {
-    collectionNames = existingSite.collections;
-    if (!toolDescription) {
-      toolDescription = existingSite.toolDescription;
-    }
+  if (workerOnly && !existingPublish) {
+    throw new Error(`Collection "${collectionName}" has not been published. --worker-only only works for published collections.`);
   }
 
   const home = getFrozenInkHome();
 
-  // Validate collections
+  // Validate collection database
   if (!workerOnly) {
-    for (const name of collectionNames) {
-      const col = getCollection(name);
-      if (!col) throw new Error(`Collection "${name}" not found`);
-      if (col.crawler === "remote") {
-        throw new Error(`Cannot publish "${name}": crawler is "remote". Remote collections are read-only clones.`);
-      }
-      const dbPath = getCollectionDbPath(name);
-      if (!existsSync(dbPath)) throw new Error(`Collection "${name}" database not found at ${dbPath}`);
+    const dbPath = getCollectionDbPath(collectionName);
+    if (!existsSync(dbPath)) throw new Error(`Collection "${collectionName}" database not found at ${dbPath}`);
+    if (col.crawler === "remote") {
+      throw new Error(`Cannot publish "${collectionName}": crawler is "remote". Remote collections are read-only clones.`);
     }
   }
 
-  let d1DatabaseName: string;
-  let d1DatabaseId: string;
-  let r2BucketName: string;
-  if (workerOnly) {
-    const site = existingSite!;
-    d1DatabaseName = site.database.name || `${workerName}-db`;
-    d1DatabaseId = site.database.id;
-    r2BucketName = site.bucket.name;
-  } else {
-    d1DatabaseName = `${workerName}-db`;
-    d1DatabaseId = "";
-    r2BucketName = `${workerName}-files`;
-  }
+  let d1DatabaseName = `${workerName}-db`;
+  let d1DatabaseId = "";
+  let r2BucketName = `${workerName}-files`;
 
   // Password behavior:
   // - New password supplied: rotate hash.
@@ -219,20 +230,18 @@ export async function publishCollections(
     passwordHash = await hashPassword(password);
   } else if (removePassword) {
     passwordHash = "";
-  } else if (existingSite?.password?.hash) {
-    passwordHash = existingSite.password.hash;
-  } else if (isUpdate && existingSite?.password?.protected) {
+  } else if (existingPublish?.password?.hash) {
+    passwordHash = existingPublish.password.hash;
+  } else if (isUpdate && existingPublish?.password?.protected) {
     throw new Error(
-      `Site "${workerName}" is password protected but no reusable password hash is stored locally. ` +
+      `Collection "${collectionName}" is password protected but no reusable password hash is stored locally. ` +
       "Re-publish with --password <new-password> to rotate credentials or --remove-password to disable protection.",
     );
   }
 
   assertInitialPublishConfirmation({ isUpdate, workerOnly, passwordHash, forcePublic });
 
-  // --- Phase 1: Create resources + deploy worker ---
-  // The worker must be deployed before data so the site is reachable
-  // even while data is still uploading.
+  // --- Phase 1: Create infrastructure + deploy worker ---
 
   if (!workerOnly) {
     onProgress("d1", "Setting up D1 database...");
@@ -244,7 +253,6 @@ export async function publishCollections(
   onProgress("r2", "Setting up R2 bucket...");
   await createR2Bucket(r2BucketName);
 
-  // Deploy worker (before data upload)
   onProgress("deploy", "Deploying worker...");
   const workerBundlePath = resolveWorkerBundle(__moduleDir);
   if (!workerBundlePath || !existsSync(workerBundlePath)) {
@@ -268,114 +276,11 @@ export async function publishCollections(
     cleanupTempFile(tomlFile);
   }
 
-  // --- Phase 2: Upload data ---
+  // --- Phase 2: R2 uploads (before D1 rebuild so the site stays live on old data) ---
 
-  // List existing R2 keys for stale file cleanup on updates
-  let existingR2Keys = new Set<string>();
-  if (!workerOnly && isUpdate) {
-    try {
-      const { listR2Objects } = await import("./wrangler-api");
-      onProgress("r2-list", "Listing existing R2 objects...");
-      const keys = await listR2Objects(r2BucketName);
-      for (const key of keys) existingR2Keys.add(key);
-    } catch {
-      // May fail on first publish or if bucket doesn't exist yet
-    }
-  }
-
-  if (!workerOnly) {
-    onProgress("export", "Building database export...");
-    const schemaSql: string[] = [];
-
-    schemaSql.push("DROP TABLE IF EXISTS entities_fts;");
-    schemaSql.push("DROP TABLE IF EXISTS r2_manifest;");
-    schemaSql.push("DROP TABLE IF EXISTS entities;");
-    schemaSql.push("DROP TABLE IF EXISTS collections_meta;");
-    schemaSql.push("");
-    schemaSql.push(`CREATE TABLE entities (
-  id INTEGER PRIMARY KEY,
-  external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
-  title TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
-  content_hash TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);`);
-    schemaSql.push("CREATE INDEX idx_entities_external ON entities(external_id);");
-    schemaSql.push("");
-
-    let entityIdOffset = 0;
-
-    for (const colName of collectionNames) {
-      const col = getCollection(colName)!;
-      const dbPath = getCollectionDbPath(colName);
-      const colDb = getCollectionDb(dbPath);
-      const title = col.title || colName;
-
-      const allEntities = colDb.select().from(entities).all();
-
-      for (const entity of allEntities) {
-        entityIdOffset++;
-        const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
-
-        schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
-      }
-
-      onProgress("export", `Exported "${colName}": ${allEntities.length} entities`);
-    }
-
-    onProgress("d1-upload", "Uploading schema and data to D1...");
-    const schemaFile = writeTempFile(schemaSql.join("\n"), ".sql");
-    try {
-      await executeD1File(d1DatabaseName, schemaFile);
-    } finally {
-      cleanupTempFile(schemaFile);
-    }
-
-    onProgress("fts", "Building search index...");
-    const MAX_FTS_CONTENT = 8000;
-    const ftsSql: string[] = [];
-    ftsSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
-
-    for (const colName of collectionNames) {
-      const dbPath = getCollectionDbPath(colName);
-      const colDb = getCollectionDb(dbPath);
-      const allEntities = colDb.select().from(entities).all();
-      const collectionDir = join(home, "collections", colName);
-
-      for (const entity of allEntities) {
-        const entityData = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
-        const markdownPath = entityData?.markdown_path ?? null;
-        let content = "";
-        if (markdownPath) {
-          const mdPath = join(collectionDir, "content", markdownPath);
-          if (existsSync(mdPath)) {
-            content = readFileSync(mdPath, "utf-8");
-          }
-        }
-        if (content.length > MAX_FTS_CONTENT) {
-          content = content.slice(0, MAX_FTS_CONTENT);
-        }
-        const entityTagNames = (entityData?.tags ?? []).join(" ");
-
-        ftsSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${entity.id}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(content)}', '${escapeSQL(entityTagNames)}');`);
-      }
-    }
-
-    onProgress("fts-upload", "Uploading search index to D1...");
-    const FTS_BATCH_SIZE = 200;
-    for (let i = 0; i < ftsSql.length; i += FTS_BATCH_SIZE) {
-      const batch = ftsSql.slice(i, i + FTS_BATCH_SIZE);
-      const batchFile = writeTempFile(batch.join("\n"), ".sql");
-      try {
-        await executeD1File(d1DatabaseName, batchFile);
-      } finally {
-        cleanupTempFile(batchFile);
-      }
-    }
-  }
-
-  // R2 uploads
   const uiDistDir = resolveUiDist(__moduleDir) ?? "";
+  let fileSizes = new Map<string, number>();
+
   if (workerOnly) {
     const uiUploads: Array<{ r2Key: string; fullPath: string }> = [];
     if (existsSync(uiDistDir)) {
@@ -385,16 +290,35 @@ export async function publishCollections(
     }
     if (uiUploads.length > 0) {
       onProgress("r2-upload", `Uploading ${uiUploads.length} UI asset(s) to R2...`);
-      await runConcurrent(uiUploads, 10, async ({ r2Key, fullPath }) => {
+      await runConcurrent(uiUploads, 3, async ({ r2Key, fullPath }) => {
         await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
       });
     }
   } else {
-    // existingR2Keys was populated before D1 tables were dropped (see above)
+    // Read R2 manifest from D1 (still intact — D1 hasn't been rebuilt yet)
+    const existingR2Manifest = new Map<string, number>();
+    if (isUpdate) {
+      try {
+        onProgress("r2-manifest", "Reading existing R2 manifest...");
+        const manifestJson = await executeD1Command(
+          d1DatabaseName,
+          "SELECT key, size FROM r2_manifest",
+        );
+        const parsed = JSON.parse(manifestJson);
+        const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
+        if (Array.isArray(results)) {
+          for (const row of results) existingR2Manifest.set(row.key, row.size ?? -1);
+        }
+      } catch {
+        // Manifest table may not exist or lack size column on old deployments
+      }
+    }
+
     const uploads: Array<{ r2Key: string; fullPath: string }> = [];
     for (const colName of collectionNames) {
       const collectionDir = join(home, "collections", colName);
       for (const file of collectFiles(join(collectionDir, "content"))) {
+        if (file.relativePath.endsWith(".md") || file.relativePath.endsWith(".yml")) continue;
         uploads.push({ r2Key: `${colName}/content/${file.relativePath}`, fullPath: file.fullPath });
       }
     }
@@ -404,40 +328,194 @@ export async function publishCollections(
       }
     }
 
-    onProgress("r2-upload", `Uploading ${uploads.length} files to R2...`);
-    const uploadedKeys = new Set<string>();
+    const toUpload: Array<{ r2Key: string; fullPath: string }> = [];
+    let skippedCount = 0;
+    for (const { r2Key, fullPath } of uploads) {
+      const localSize = statSync(fullPath).size;
+      fileSizes.set(r2Key, localSize);
+      if (existingR2Manifest.get(r2Key) === localSize) {
+        skippedCount++;
+      } else {
+        toUpload.push({ r2Key, fullPath });
+      }
+    }
+    if (skippedCount > 0) {
+      onProgress("r2-upload", `${skippedCount} unchanged files skipped, uploading ${toUpload.length}...`);
+    } else {
+      onProgress("r2-upload", `Uploading ${toUpload.length} files to R2...`);
+    }
+
     let uploadCount = 0;
-    await runConcurrent(uploads, 10, async ({ r2Key, fullPath }) => {
+    const pendingManifest: Array<{ key: string; size: number }> = [];
+    const CHECKPOINT_INTERVAL = 500;
+
+    const flushManifestCheckpoint = async () => {
+      if (pendingManifest.length === 0) return;
+      const batch = pendingManifest.splice(0);
+      const sql = batch
+        .map((e) => `INSERT OR REPLACE INTO r2_manifest (key, size) VALUES ('${escapeSQL(e.key)}', ${e.size});`)
+        .join("\n");
+      const tmpFile = writeTempFile(sql, ".sql");
+      try {
+        await executeD1File(d1DatabaseName, tmpFile);
+      } finally {
+        cleanupTempFile(tmpFile);
+      }
+    };
+
+    await runConcurrent(toUpload, 3, async ({ r2Key, fullPath }) => {
       await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
-      uploadedKeys.add(r2Key);
+      pendingManifest.push({ key: r2Key, size: fileSizes.get(r2Key)! });
       uploadCount++;
-      if (uploadCount % 50 === 0) {
-        onProgress("r2-upload", `${uploadCount}/${uploads.length} files uploaded...`);
+      if (uploadCount % CHECKPOINT_INTERVAL === 0) {
+        onProgress("r2-upload", `${uploadCount}/${toUpload.length} files uploaded`);
+        await flushManifestCheckpoint();
       }
     });
-    onProgress("r2-upload", `Uploaded ${uploadCount} files to R2`);
+    await flushManifestCheckpoint();
 
-    if (isUpdate && existingR2Keys.size > 0) {
-      const staleKeys = [...existingR2Keys].filter((key) => !uploadedKeys.has(key));
-      if (staleKeys.length > 0) {
-        onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
-        await runConcurrent(staleKeys, 10, async (key) => deleteR2Object(r2BucketName, key));
+    // Stale cleanup via R2 list (source of truth)
+    let deletedCount = 0;
+    if (isUpdate) {
+      const allKeys = new Set(fileSizes.keys());
+      onProgress("r2-cleanup", "Checking for stale R2 files...");
+      try {
+        const remoteKeys = await listR2Objects(r2BucketName);
+        const staleKeys = remoteKeys.filter((key) => !allKeys.has(key) && !key.endsWith("/db-digest"));
+        if (staleKeys.length > 0) {
+          onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
+          await deleteR2Objects(r2BucketName, staleKeys);
+          deletedCount = staleKeys.length;
+        }
+      } catch {
+        onProgress("r2-cleanup", "Warning: could not list R2 objects for stale cleanup");
       }
     }
 
-    // Upload YAML collection config to R2
-    const { putR2ObjectFromString } = await import("./wrangler-api");
+    const totalFiles = uploads.length;
+    const parts = [`${uploadCount} uploaded`];
+    if (deletedCount > 0) parts.push(`${deletedCount} deleted`);
+    if (skippedCount > 0) parts.push(`${skippedCount} unchanged`);
+    onProgress("r2-upload", `${parts.join(", ")} out of ${totalFiles} total`);
+  }
+
+  // --- Phase 3: D1 rebuild (destructive — done last to minimize downtime) ---
+
+  let dbDigest = "";
+  if (!workerOnly) {
+    const dbPath = getCollectionDbPath(collectionName);
+    dbDigest = await hashDbFiles(dbPath);
+
+    let remoteDigest: string | null = null;
+    if (isUpdate) {
+      try {
+        remoteDigest = await getR2String(r2BucketName, `${collectionName}/db-digest`);
+      } catch { /* ignore — treat as no digest */ }
+    }
+    const skipD1 = isUpdate && remoteDigest === dbDigest;
+
+    if (skipD1) {
+      onProgress("d1-build", `Database unchanged (digest match) — skipping D1 rebuild`);
+    } else {
+      onProgress("d1-build", "Building D1 payload...");
+      const schemaSql: string[] = [];
+
+      schemaSql.push("DROP TABLE IF EXISTS entities_fts;");
+      schemaSql.push("DROP TABLE IF EXISTS r2_manifest;");
+      schemaSql.push("DROP TABLE IF EXISTS entities;");
+      schemaSql.push("DROP TABLE IF EXISTS collections_meta;");
+      schemaSql.push("");
+      schemaSql.push(`CREATE TABLE entities (
+  id INTEGER PRIMARY KEY,
+  external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
+  title TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
+  content_hash TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);`);
+      schemaSql.push("CREATE INDEX idx_entities_external ON entities(external_id);");
+      schemaSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
+      schemaSql.push("");
+
+      const themeEngine = createGenerateThemeEngine();
+      const MAX_FTS_CONTENT = 8000;
+
+      let entityIdOffset = 0;
+
+      for (const colName of collectionNames) {
+        const col = getCollection(colName)!;
+        const dbPath = getCollectionDbPath(colName);
+        const colDb = getCollectionDb(dbPath);
+
+        const allEntities = colDb.select().from(entities).all();
+
+        for (const entity of allEntities) {
+          entityIdOffset++;
+          const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
+
+          schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
+
+          // FTS inline via theme engine
+          const entityDataParsed: EntityData = typeof entity.data === "object" ? entity.data as EntityData : JSON.parse(entity.data as string);
+          const entityTagNames = (entityDataParsed.tags ?? []).join(" ");
+          let ftsContent = "";
+          if (entityDataParsed.markdown_path && themeEngine.has(col.crawler)) {
+            try {
+              ftsContent = themeEngine.render({
+                entity: {
+                  externalId: entity.externalId,
+                  entityType: entity.entityType,
+                  title: entity.title,
+                  data: (entityDataParsed.source ?? {}) as Record<string, unknown>,
+                  url: entityDataParsed.url ?? undefined,
+                  tags: entityDataParsed.tags ?? [],
+                },
+                collectionName: colName,
+                crawlerType: col.crawler,
+              });
+            } catch { /* fall back to empty content */ }
+          }
+          if (ftsContent.length > MAX_FTS_CONTENT) ftsContent = ftsContent.slice(0, MAX_FTS_CONTENT);
+
+          schemaSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(ftsContent)}', '${escapeSQL(entityTagNames)}');`);
+        }
+
+        onProgress("d1-build", `Built "${colName}": ${allEntities.length} entities`);
+      }
+
+      // Upload in batches (D1 has execution time limits on large SQL files)
+      const D1_BATCH_SIZE = 500;
+      const totalBatches = Math.ceil(schemaSql.length / D1_BATCH_SIZE);
+      onProgress("d1-upload", `Uploading to D1 (${totalBatches} batches)...`);
+      let batchCount = 0;
+      for (let i = 0; i < schemaSql.length; i += D1_BATCH_SIZE) {
+        const batch = schemaSql.slice(i, i + D1_BATCH_SIZE);
+        const batchFile = writeTempFile(batch.join("\n"), ".sql");
+        try {
+          await executeD1File(d1DatabaseName, batchFile);
+          batchCount++;
+          if (batchCount % 5 === 0 || batchCount === totalBatches) {
+            onProgress("d1-upload", `Uploading to D1... ${batchCount}/${totalBatches} batches`);
+          }
+        } finally {
+          cleanupTempFile(batchFile);
+        }
+      }
+      await putR2String(r2BucketName, `${collectionName}/db-digest`, dbDigest);
+    } // else: D1 rebuild
+
+    // Upload collection config YAML to R2 (needed by new worker architecture)
     onProgress("config", "Uploading collection config to R2...");
     const collectionsList = collectionNames.map((n) => `- ${n}`).join("\n") + "\n";
-    await putR2ObjectFromString(r2BucketName, "_config/collections.yml", collectionsList, "text/yaml");
+    await putR2String(r2BucketName, "_config/collections.yml", collectionsList, "text/yaml");
     for (const colName of collectionNames) {
-      const col = getCollection(colName)!;
+      const colConfig = getCollection(colName)!;
       const lines: string[] = [];
       lines.push(`name: ${colName}`);
-      if (col.title) lines.push(`title: ${col.title}`);
-      lines.push(`crawler: ${col.crawler}`);
-      if (col.description) lines.push(`description: ${col.description}`);
-      await putR2ObjectFromString(r2BucketName, `_config/${colName}.yml`, lines.join("\n") + "\n", "text/yaml");
+      if (colConfig.title) lines.push(`title: ${colConfig.title}`);
+      lines.push(`crawler: ${colConfig.crawler}`);
+      if (colConfig.description) lines.push(`description: ${colConfig.description}`);
+      await putR2String(r2BucketName, `_config/${colName}.yml`, lines.join("\n") + "\n", "text/yaml");
     }
   }
 
@@ -447,24 +525,13 @@ export async function publishCollections(
   const mcpUrl = `${workerUrl}/mcp`;
   const passwordProtected = passwordHash.length > 0;
 
-  // Update lastPublishedAt in each collection's YAML
-  if (!workerOnly) {
-    const now = new Date().toISOString().replace("T", " ").replace("Z", "");
-    for (const colName of collectionNames) {
-      updateCollection(colName, { lastPublishedAt: now });
-    }
-  }
-
-  // Save site
-  addSite(workerName, {
+  // Save publish state on the collection
+  updateCollectionPublishState(collectionName, {
     url: workerUrl,
     mcpUrl,
-    toolDescription,
-    collections: collectionNames,
-    database: { type: "cloudflare-d1", id: d1DatabaseId, name: d1DatabaseName },
-    bucket: { type: "cloudflare-r2", name: r2BucketName },
     password: { protected: passwordProtected, hash: passwordHash || undefined },
     publishedAt: new Date().toISOString(),
+    ...(dbDigest ? { dbDigest } : {}),
   });
 
   onProgress("done", "Publish completed");
@@ -474,7 +541,7 @@ export async function publishCollections(
     workerUrl,
     mcpUrl,
     toolDescription,
-    collections: collectionNames,
+    collectionName,
     isUpdate,
     workerOnly,
   };
@@ -483,44 +550,37 @@ export async function publishCollections(
 // --- CLI command ---
 
 export const publishCommand = new Command("publish")
-  .description("Publish collections to Cloudflare as a password-protected website with MCP access")
-  .argument("[collections...]", "Collection names to publish")
+  .description("Publish a collection to Cloudflare as a password-protected website with MCP access")
+  .argument("<collection>", "Collection name to publish")
   .option("--password <password>", "Password to protect access")
   .option("--remove-password", "Explicitly remove password protection")
   .option("--public", "Explicitly allow public access on initial publish (skip confirmation prompt)")
   .option("--tool-description <description>", "Tool description advertised to MCP clients")
-  .option("--name <name>", "Worker name (default: fink-<first-collection>-<random>)")
-  .option("--worker-only", "Deploy worker code only (skip D1/R2 data upload); requires --name for an existing deployment")
-  .action(async (collectionNamesArg: string[], opts: {
+  .option("--worker-only", "Deploy worker code only (skip D1/R2 data upload)")
+  .action(async (collectionNameArg: string, opts: {
     password?: string;
     removePassword?: boolean;
     public?: boolean;
     toolDescription?: string;
-    name?: string;
     workerOnly?: boolean;
   }) => {
     try {
       ensureInitialized();
 
       const workerOnly = !!opts.workerOnly;
-      const collectionNames = collectionNamesArg ?? [];
+      const collectionName = collectionNameArg;
 
-      if (!workerOnly && collectionNames.length === 0) {
-        console.error("No collections specified. Provide at least one collection name.");
-        process.exit(1);
-      }
-      if (workerOnly && !opts.name) {
-        console.error("--worker-only requires --name <deployment-name>.");
+      if (!collectionName) {
+        console.error("No collection specified.");
         process.exit(1);
       }
 
-      const workerName = opts.name || `fink-${collectionNames[0]}-${randomSuffix()}`;
       let forcePublic = !!opts.public;
       let toolDescription = opts.toolDescription?.trim() || undefined;
 
       if (!forcePublic && !opts.password && !workerOnly) {
-        const existingSite = getSite(workerName);
-        const isInitialPublish = !existingSite;
+        const existingPublish = getCollectionPublishState(collectionName);
+        const isInitialPublish = !existingPublish;
         if (isInitialPublish && process.stdin.isTTY && process.stdout.isTTY) {
           console.warn("\nWARNING: No password was provided.");
           console.warn("This initial publish will make collection data publicly accessible.");
@@ -538,14 +598,13 @@ export const publishCommand = new Command("publish")
       }
 
       if (!workerOnly && !toolDescription) {
-        const derived = deriveToolDescriptionFromCollections(collectionNames);
+        const derived = deriveToolDescription(collectionName);
         toolDescription = await promptToolDescription(derived);
       }
 
       const result = await publishCollections(
         {
-          collectionNames,
-          workerName,
+          collectionName,
           toolDescription,
           password: opts.password,
           removePassword: opts.removePassword,
@@ -558,7 +617,7 @@ export const publishCommand = new Command("publish")
       const verb = result.workerOnly ? "Deployed" : (result.isUpdate ? "Updated" : "Published");
       const summary = result.workerOnly
         ? "latest worker code to Cloudflare (data unchanged)"
-        : `${result.collections.length} collection(s) to Cloudflare`;
+        : `collection "${result.collectionName}" to Cloudflare`;
       console.log(`\n${verb} ${summary}!\n`);
       console.log(`Worker:  ${result.workerName}`);
       console.log(`Website: ${result.workerUrl}`);

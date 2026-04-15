@@ -6,7 +6,6 @@ import {
 } from "@frozenink/core";
 import { CollectionList } from "./CollectionList.js";
 import { SyncView } from "./SyncView.js";
-import { PublishView } from "./PublishView.js";
 import { SettingsView } from "./SettingsView.js";
 import { SearchView } from "./SearchView.js";
 
@@ -14,7 +13,6 @@ export type Screen =
   | "home"
   | "collections"
   | "sync"
-  | "publish"
   | "settings"
   | "search";
 
@@ -27,10 +25,9 @@ interface MenuItem {
 }
 
 const ALL_MENU_ITEMS: MenuItem[] = [
-  { key: "c", label: "Collections", description: "View, manage, add, export, and sync your data sources", screen: "collections" },
+  { key: "c", label: "Collections", description: "View, manage, add, publish, export, and sync your data sources", screen: "collections" },
   { key: "s", label: "Sync", description: "Sync all enabled collections at once", screen: "sync", requiresCollections: true },
   { key: "f", label: "Search", description: "Full-text search across all synced content", screen: "search", requiresCollections: true },
-  { key: "p", label: "Publish", description: "Publish to Cloudflare and manage deployments", screen: "publish", requiresCollections: true },
   { key: "g", label: "Settings", description: "Configure sync interval, concurrency, and logging", screen: "settings" },
 ];
 
@@ -121,7 +118,6 @@ export function App(): React.ReactElement {
       <Box flexDirection="column" paddingX={1}>
         {screen === "collections" && <CollectionList onNavigate={setScreen} />}
         {screen === "sync" && <SyncView />}
-        {screen === "publish" && <PublishView onDone={() => setScreen("home")} />}
         {screen === "settings" && <SettingsView />}
         {screen === "search" && <SearchView />}
       </Box>

@@ -68,14 +68,12 @@ describe("FileTree", () => {
     const user = userEvent.setup();
     render(<FileTree tree={sampleTree} selectedFile={null} onSelect={() => {}} />);
 
-    // Files should be visible initially (directories expanded by default)
+    // Files visible initially (directories expanded by default)
     expect(screen.getByText("1-first-issue")).toBeInTheDocument();
 
     // Click the directory toggle to collapse
     const issuesToggle = screen.getByText("issues").closest("button")!;
     await user.click(issuesToggle);
-
-    // Files should be hidden
     expect(screen.queryByText("1-first-issue")).not.toBeInTheDocument();
 
     // Click again to expand

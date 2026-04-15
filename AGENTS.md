@@ -18,7 +18,7 @@ packages/
       subprocess.ts       spawn() wrapper (Bun.spawn ↔ child_process.spawn)
       paths.ts            getModuleDir() replaces import.meta.dir
     config/               Zod schemas, defaults, loader (reads ~/.frozenink/config.json)
-                          context.ts — context.yml management (collections + deployments CRUD)
+                          context.ts — collection CRUD + publish state management
     crawler/              Crawler interface, CrawlerRegistry, SyncEngine
     db/                   Drizzle ORM schemas (collection-schema.ts), client factory
     export/               Static site export (markdown + HTML)
@@ -48,15 +48,13 @@ packages/
     tui/                         Interactive TUI (Ink + React)
       index.tsx                  Entry point, renders the Ink app
       components/App.tsx         Main app shell with keyboard navigation
-      components/Dashboard.tsx   Status overview (collections + deployments)
-      components/CollectionList.tsx  Collection CRUD (enable/disable, rename, delete, edit title)
+      components/CollectionList.tsx  Collection CRUD (enable/disable, rename, delete, edit title, publish/unpublish)
       components/AddCollection.tsx   Step-by-step collection creation wizard
       components/SyncView.tsx    Sync with real-time progress
-      components/PublishView.tsx  Publish wizard (new/update/worker-only)
       components/ExportView.tsx  Export to markdown/HTML
       components/SettingsView.tsx Settings management (sync interval, concurrency, retries, log level)
       components/SearchView.tsx  Full-text search
-      components/DeploymentList.tsx  View/unpublish deployments
+      components/McpConfigView.tsx MCP configuration per collection
       components/SelectInput.tsx Reusable arrow-key select component
       components/TextInput.tsx   Reusable text input component
 
@@ -128,17 +126,17 @@ The CLI includes an interactive TUI built with Ink (React for terminals). It pro
 | Collection CRUD | CollectionList + CollectionForm | CollectionList + AddCollection |
 | Enable/disable collections | Toggle in CollectionList | [t] key in CollectionList |
 | Sync with progress | SyncPanel + SyncProgress | SyncView with real-time output |
-| Publish wizard | PublishPanel with presets | PublishView (new/update/worker-only) |
+| Publish/unpublish | PublishPanel | [p]/[u] keys in CollectionList |
 | Export markdown/HTML | ExportPanel | ExportView |
 | Settings (sync, logging) | SettingsPanel | SettingsView |
-| Deployment management | DeploymentList | DeploymentList with unpublish |
+| Publish status | CollectionList (Published column) | CollectionList (Published column) |
 | Full-text search | SearchBar (browse mode) | SearchView |
 | Rename/delete collections | CollectionList actions | [r]/[x] keys in CollectionList |
 | Edit title | CollectionForm | [n] key in CollectionList |
 
-**Navigation**: Keyboard shortcuts `[d]`ashboard, `[c]`ollections, `[a]`dd, `[s]`ync, `[p]`ublish, `[e]`xport, `[f]`ind/search, `[v]` deployments, `[g]` settings. ESC goes back, `q` quits.
+**Navigation**: Keyboard shortcuts `[c]`ollections, `[s]`ync, `[f]`ind/search, `[g]` settings. Within Collections: `[p]`ublish, `[u]`npublish, `[s]`ync, `[e]`xport, `[m]`cp. ESC goes back, `q` quits.
 
-**Architecture**: The TUI uses Ink 7 with React 19 to render terminal UI components. Each screen is a standalone React component in `packages/cli/src/tui/components/`. The TUI reuses the same core logic as the CLI commands (e.g., `publishCollections()`, `unpublishDeployment()`, `exportStaticSite()`).
+**Architecture**: The TUI uses Ink 7 with React 19 to render terminal UI components. Each screen is a standalone React component in `packages/cli/src/tui/components/`. The TUI reuses the same core logic as the CLI commands (e.g., `publishCollections()`, `unpublishCollection()`, `exportStaticSite()`).
 
 ### UI Mode Architecture
 
@@ -219,34 +217,29 @@ interface Crawler {
 
 ### Collection Registry (context.yml)
 
-Frozen Ink uses `~/.frozenink/context.yml` as the collection registry (replacing the previous `master.db`). The file is managed by `packages/core/src/config/context.ts` with atomic writes and Zod validation.
+Each collection is configured via `~/.frozenink/collections/<name>/<name>.yml`, managed by `packages/core/src/config/context.ts` with atomic writes and Zod validation.
 
 ```yaml
-collections:
-  my-github:
-    title: "My GitHub Issues"     # optional, defaults to name
-    crawler: github
-    enabled: true                 # optional, defaults to true
-    syncInterval: 3600            # optional
-    config:
-      owner: user
-      repo: repo
-    credentials:
-      token: ghp_xxx
-
-deployments:
-  my-pub:
-    url: https://my-pub.example.workers.dev
-    mcpUrl: https://my-pub.example.workers.dev/mcp
-    collections: [my-github, my-notes]
-    d1DatabaseId: abc-123-def
-    r2BucketName: my-pub-files
-    cfAccountId: abc123
-    passwordProtected: true
-    publishedAt: "2026-04-05T12:00:00Z"
+# ~/.frozenink/collections/my-github/my-github.yml
+title: "My GitHub Issues"     # optional, defaults to name
+crawler: github
+enabled: true                 # optional, defaults to true
+syncInterval: 3600            # optional
+config:
+  owner: user
+  repo: repo
+credentials:
+  token: ghp_xxx
+publish:                       # present only if published
+  url: https://my-github.example.workers.dev
+  mcpUrl: https://my-github.example.workers.dev/mcp
+  password:
+    protected: true
+    hash: "salt:hex"
+  publishedAt: "2026-04-05T12:00:00Z"
 ```
 
-Key functions: `loadContext()`, `saveContext()`, `getCollection()`, `listCollections()`, `addCollection()`, `getCollectionDbPath()`, `addDeployment()`, `getDeployment()`.
+Key functions: `getCollection()`, `listCollections()`, `addCollection()`, `getCollectionDbPath()`, `getCollectionPublishState()`, `updateCollectionPublishState()`, `clearCollectionPublishState()`, `listPublishedCollections()`.
 
 Collection DB path is inferred: `~/.frozenink/collections/{name}/data.db` (no explicit `dbPath` stored).
 
@@ -323,8 +316,8 @@ Tables are created via raw SQL `CREATE IF NOT EXISTS` in `client.ts` (no migrati
 
 | Content | Storage | Rationale |
 |---------|---------|-----------|
-| Crawler config, credentials | context.yml | Human-readable YAML, single source of truth |
-| Deployment metadata | context.yml (`deployments` section) | No secrets — only URLs, resource IDs |
+| Crawler config, credentials | Per-collection `<name>.yml` | Human-readable YAML, single source of truth |
+| Publish state | Per-collection `<name>.yml` (`publish` field) | URLs, password hash, publish timestamp |
 | Entity metadata + structured data | Collection DB (`entities.data` JSON) | Queryable, FTS-indexed |
 | Sync cursors / pagination state | Collection DB (`sync_state.cursor` JSON) | Survives restarts, enables incremental sync |
 | Sync run audit log | Collection DB (`sync_runs`) | Queryable history |
@@ -340,13 +333,13 @@ Tables are created via raw SQL `CREATE IF NOT EXISTS` in `client.ts` (no migrati
 
 ```text
 ~/.frozenink/                               -- default workspace (CLI + desktop)
-  config.json                                -- app configuration
-  context.yml                                -- collection registry + deployment metadata
+  frozenink.yml                              -- app configuration
   workspaces.json                            -- desktop app workspace registry
   collections/
     <name>/
-      data.db                                -- collection database (entities, sync state, etc.)
-      markdown/                              -- rendered markdown files
+      <name>.yml                             -- collection config (crawler, credentials, publish state)
+      db/data.db                             -- collection database (entities, sync state, etc.)
+      content/                               -- rendered markdown files
         commits/abc1234-fix-bug.md
         issues/42-login-error.md
         notes/daily/2024-01-15.md
@@ -355,7 +348,7 @@ Tables are created via raw SQL `CREATE IF NOT EXISTS` in `client.ts` (no migrati
         git/abc1234/logo.png
 ```
 
-A workspace is any directory with a `context.yml` and `collections/` subdirectory. The CLI defaults to `~/.frozenink/`. The desktop app can create and switch between multiple workspaces at arbitrary paths, each functioning as an independent `FROZENINK_HOME`.
+A workspace is any directory with a `frozenink.yml` and `collections/` subdirectory. The CLI defaults to `~/.frozenink/`. The desktop app can create and switch between multiple workspaces at arbitrary paths, each functioning as an independent `FROZENINK_HOME`.
 
 ### Publishing to Cloudflare
 
@@ -476,7 +469,7 @@ See `packages/desktop/electron-builder.yml` for build targets (macOS DMG, Window
 - `packages/core/src/compat/` — Runtime compatibility layer (Bun ↔ Node.js/Electron)
 - `packages/core/src/crawler/interface.ts` — `Crawler`, `CrawlerEntityData`, `SyncResult` interfaces
 - `packages/core/src/crawler/sync-engine.ts` — `SyncEngine` that orchestrates crawl->render->store
-- `packages/core/src/config/context.ts` — `loadContext()`, `saveContext()`, collection + deployment CRUD
+- `packages/core/src/config/context.ts` — collection CRUD + publish state management
 - `packages/core/src/db/collection-schema.ts` — `entities`, `entity_tags`, `attachments`, `sync_state`, `sync_runs`
 - `packages/core/src/db/client.ts` — `getCollectionDb()` with raw SQL CREATE IF NOT EXISTS
 - `packages/core/src/export/static-site.ts` — `exportStaticSite()` for markdown/HTML export
@@ -568,9 +561,8 @@ Active when `mode === "desktop"` (set by the Electron main process). These are s
 | `POST /api/sync` | Sync all enabled collections |
 | `GET /api/sync/status` | Current sync progress (poll every 500ms) |
 | `GET /api/collections/:name/sync-runs` | Sync history (last 20 runs) |
-| `GET /api/deployments` | List Cloudflare deployments |
-| `DELETE /api/deployments/:name` | Remove a deployment record |
-| `POST /api/publish` | Publish to Cloudflare |
+| `POST /api/collections/:name/publish` | Publish collection to Cloudflare |
+| `POST /api/collections/:name/unpublish` | Remove a published collection |
 | `GET /api/publish/status` | Publish progress (poll) |
 | `POST /api/export` | Export collections to folder |
 | `GET /api/export/status` | Export progress (poll) |

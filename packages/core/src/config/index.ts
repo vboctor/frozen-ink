@@ -11,6 +11,10 @@ export {
   removeCollection,
   updateCollection,
   renameCollection,
+  getCollectionPublishState,
+  updateCollectionPublishState,
+  clearCollectionPublishState,
+  listPublishedCollections,
   addSite,
   removeSite,
   getSite,
@@ -18,5 +22,7 @@ export {
   updateSiteState,
   type CollectionEntry,
   type CollectionEntryInput,
+  type PublishState,
+  type FrozenInkYaml,
   type SiteEntry,
 } from "./context";

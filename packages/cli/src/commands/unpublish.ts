@@ -2,9 +2,8 @@ import { Command } from "commander";
 import { createInterface } from "readline";
 import {
   ensureInitialized,
-  getSite,
-  removeSite,
-  type SiteEntry,
+  getCollection,
+  clearCollectionPublishState,
 } from "@frozenink/core";
 
 async function confirm(message: string): Promise<boolean> {
@@ -21,11 +20,11 @@ export type UnpublishProgressCallback = (step: string, detail: string) => void;
 
 /**
  * Core unpublish logic: delete Cloudflare resources (Worker, R2, D1) and
- * remove the deployment from context.yml.
+ * clear the collection's publish state.
  * Callable from both CLI and management API.
  */
-export async function unpublishDeployment(
-  deployment: SiteEntry & { name: string },
+export async function unpublishCollection(
+  collectionName: string,
   onProgress: UnpublishProgressCallback = () => {},
 ): Promise<void> {
   const {
@@ -33,75 +32,73 @@ export async function unpublishDeployment(
     deleteWorker,
     deleteR2Object,
     deleteR2Bucket,
-    deleteD1,
+    deleteR2Objects,
     listR2Objects,
+    deleteD1,
   } = await import("./wrangler-api");
 
   await checkWranglerAuth();
 
-  // 1. Delete worker
-  onProgress("worker", `Deleting worker "${deployment.name}"...`);
-  try {
-    await deleteWorker(deployment.name);
-  } catch (err) {
-    onProgress("worker", `Warning: could not delete worker: ${err}`);
-  }
+  const workerName = collectionName;
+  const d1DatabaseName = `${workerName}-db`;
+  const r2BucketName = `${workerName}-files`;
 
-  // 2. Try deleting R2 bucket (may fail if non-empty)
-  const r2BucketName = deployment.bucket.name;
-  onProgress("r2", "Deleting R2 bucket...");
+  // 1. Empty and delete R2 bucket
+  onProgress("r2", "Listing R2 objects...");
   try {
-    await deleteR2Bucket(r2BucketName);
-  } catch {
-    // Bucket may need to be emptied first — list and delete all objects
-    onProgress("r2", "R2 bucket not empty, emptying via R2 list...");
-    try {
-      const keys = await listR2Objects(r2BucketName);
-      for (const key of keys) {
-        await deleteR2Object(r2BucketName, key);
-      }
-      await deleteR2Bucket(r2BucketName);
-      onProgress("r2", "R2 bucket deleted");
-    } catch {
-      onProgress("r2", `Warning: could not fully clean R2 bucket "${r2BucketName}". You may need to empty it via the Cloudflare dashboard.`);
+    const keys = await listR2Objects(r2BucketName);
+    if (keys.length > 0) {
+      onProgress("r2", `Deleting ${keys.length} objects from R2...`);
+      await deleteR2Objects(r2BucketName, keys);
     }
+    onProgress("r2", "Deleting R2 bucket...");
+    await deleteR2Bucket(r2BucketName);
+  } catch (err) {
+    onProgress("r2", `Warning: could not fully clean R2 bucket "${r2BucketName}": ${err}`);
   }
 
-  // 3. Delete D1 database
-  const d1Name = deployment.database.name || `${deployment.name}-db`;
+  // 2. Delete D1 database
   onProgress("d1", "Deleting D1 database...");
   try {
-    await deleteD1(d1Name);
+    await deleteD1(d1DatabaseName);
   } catch (err) {
     onProgress("d1", `Warning: could not delete D1 database: ${err}`);
   }
 
-  // 4. Remove site directory
-  removeSite(deployment.name);
-  onProgress("done", `Site "${deployment.name}" removed`);
+  // 3. Delete worker
+  onProgress("worker", `Deleting worker "${workerName}"...`);
+  try {
+    await deleteWorker(workerName);
+  } catch (err) {
+    onProgress("worker", `Warning: could not delete worker: ${err}`);
+  }
+
+  // 4. Clear publish state from collection config
+  clearCollectionPublishState(collectionName);
+  onProgress("done", `Collection "${collectionName}" unpublished`);
 }
 
 // --- CLI command ---
 
 export const unpublishCommand = new Command("unpublish")
-  .description("Remove a published deployment from Cloudflare")
-  .argument("<name-or-url>", "Worker name or URL of the site")
+  .description("Remove a published collection from Cloudflare")
+  .argument("<collection>", "Collection name to unpublish")
   .option("--force", "Skip confirmation")
-  .action(async (nameOrUrl: string, opts: {
+  .action(async (collectionName: string, opts: {
     force?: boolean;
   }) => {
     try {
       ensureInitialized();
 
-      const deployment = getSite(nameOrUrl);
-      if (!deployment) {
-        console.error(`Site "${nameOrUrl}" not found`);
+      const col = getCollection(collectionName);
+      if (!col) {
+        console.error(`Collection "${collectionName}" not found`);
         process.exit(1);
       }
 
       if (!opts.force) {
         const ok = await confirm(
-          `This will delete worker "${deployment.name}", its D1 database, and R2 bucket. Continue?`,
+          `This will delete the Cloudflare worker, D1 database, and R2 bucket for "${collectionName}" (if they exist). Continue?`,
         );
         if (!ok) {
           console.log("Cancelled");
@@ -109,8 +106,8 @@ export const unpublishCommand = new Command("unpublish")
         }
       }
 
-      console.log(`Unpublishing "${deployment.name}"...`);
-      await unpublishDeployment(deployment, (step, detail) => {
+      console.log(`Unpublishing "${collectionName}"...`);
+      await unpublishCollection(collectionName, (step, detail) => {
         console.log(`  [${step}] ${detail}`);
       });
     } catch (err: unknown) {

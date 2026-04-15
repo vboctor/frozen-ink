@@ -5,10 +5,11 @@ import { join, basename } from "path";
 import {
   ensureInitialized,
   listCollections,
-  listSites,
   getCollection,
   getCollectionDb,
   getCollectionDbPath,
+  getCollectionPublishState,
+  clearCollectionPublishState,
   getFrozenInkHome,
   updateCollection,
   removeCollection,
@@ -32,6 +33,8 @@ import { AddCollection } from "./AddCollection.js";
 import { ExportView } from "./ExportView.js";
 import { SearchView } from "./SearchView.js";
 import { McpConfigView } from "./McpConfigView.js";
+import { publishCollections, type PublishOptions } from "../../commands/publish.js";
+import { unpublishCollection } from "../../commands/unpublish.js";
 import type { Screen } from "./App.js";
 
 type Mode =
@@ -43,7 +46,13 @@ type Mode =
   | "mcp"
   | "confirm-delete"
   | "confirm-full-sync"
-  | "syncing";
+  | "syncing"
+  | "publish-menu"
+  | "publish-password"
+  | "publishing"
+  | "publish-done"
+  | "confirm-unpublish"
+  | "unpublishing";
 
 // Fixed-width columns
 const W_CHECK = 6;
@@ -51,6 +60,7 @@ const W_NAME = 20;
 const W_TITLE = 22;
 const W_TYPE = 12;
 const W_ENTITIES = 10;
+const W_PUBLISHED = 14;
 
 function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -475,8 +485,59 @@ export function CollectionList({
   const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
   const [syncElapsedMs, setSyncElapsedMs] = useState(0);
   const [editingCollection, setEditingCollection] = useState("");
+  const [publishLog, setPublishLog] = useState<string[]>([]);
+  const [publishStatus, setPublishStatus] = useState("");
+  const [publishLastStep, setPublishLastStep] = useState("");
+  const [publishError, setPublishError] = useState("");
+  const [publishStartTime, setPublishStartTime] = useState<number | null>(null);
+  const [publishElapsedMs, setPublishElapsedMs] = useState(0);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  const hasSyncedData = useCallback((name: string) => existsSync(getCollectionDbPath(name)), []);
+
+  const startPublish = useCallback((name: string, opts?: { password?: string; removePassword?: boolean }) => {
+    const isUpdate = !!getCollectionPublishState(name);
+    const password = opts?.password || undefined;
+    const removePassword = opts?.removePassword;
+    const forcePublic = !password && !removePassword && !isUpdate;
+    setEditingCollection(name);
+    setPublishLog([]);
+    setPublishStatus("");
+    setPublishLastStep("");
+    setPublishError("");
+    setPublishStartTime(Date.now());
+    setMode("publishing");
+    let lastStep = "";
+    let lastDetail = "";
+    const addLogEntry = (entry: string) => {
+      setPublishLog((log) => log[log.length - 1] === entry ? log : [...log, entry]);
+    };
+    publishCollections(
+      { collectionName: name, password, removePassword, forcePublic },
+      (step, detail) => {
+        if (step !== lastStep && lastStep) {
+          addLogEntry(`[${lastStep}] ${lastDetail} ✓`);
+        }
+        lastStep = step;
+        lastDetail = detail;
+        setPublishLastStep(step);
+        setPublishStatus(detail);
+      },
+    ).then(() => {
+      if (lastStep) addLogEntry(`[${lastStep}] ${lastDetail} ✓`);
+      setPublishStatus("");
+      setPublishStartTime(null);
+      setMessage(`Published "${name}"`);
+      setMode("publish-done");
+      refresh();
+    }).catch((err) => {
+      setPublishStatus("");
+      setPublishStartTime(null);
+      setPublishError(err instanceof Error ? err.message : String(err));
+      setMode("publish-done");
+    });
+  }, [refresh]);
 
   useEffect(() => {
     if (syncStartTime === null) return;
@@ -486,9 +547,16 @@ export function CollectionList({
     return () => clearInterval(interval);
   }, [syncStartTime]);
 
+  useEffect(() => {
+    if (publishStartTime === null) return;
+    const interval = setInterval(() => {
+      setPublishElapsedMs(Date.now() - publishStartTime);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [publishStartTime]);
+
   ensureInitialized();
   const collections = listCollections();
-  const allSites = listSites();
   const current = collections[cursor] ?? null;
 
   // Detail stats for selected collection
@@ -548,10 +616,6 @@ export function CollectionList({
       } catch { /* ignore */ }
     }
   }
-
-  const relatedSites = current
-    ? allSites.filter((d: { collections: string[] }) => d.collections.includes(current.name))
-    : [];
 
   const sourceDetails = current
     ? getSourceDetails(current.crawler, current.config as Record<string, unknown>)
@@ -626,6 +690,13 @@ export function CollectionList({
     refresh();
   }, [current, refresh]);
 
+  const handlePublishPasswordSubmit = useCallback(() => {
+    if (editingCollection) {
+      startPublish(editingCollection, { password: inputValue.trim() || undefined });
+    }
+    setInputValue("");
+  }, [inputValue, editingCollection, startPublish]);
+
   const handleRenameSubmit = useCallback(() => {
     if (!current || !inputValue) { setMode("list"); return; }
     if (!isValidCollectionKey(inputValue)) { setMessage("Invalid key. Use letters, numbers, dashes, underscores."); setMode("list"); return; }
@@ -672,6 +743,68 @@ export function CollectionList({
       if (input === "e" && current) { setEditingCollection(current.name); setMode("export"); }
       if (input === "f" && current) { setEditingCollection(current.name); setMode("search"); }
       if (input === "m" && current) { setEditingCollection(current.name); setMode("mcp"); }
+      if (input === "p" && current && hasSyncedData(current.name)) {
+        setEditingCollection(current.name);
+        setMode("publish-menu");
+      }
+    } else if (mode === "publish-menu") {
+      if (key.escape) { setMode("list"); return; }
+      if (input === "p") {
+        setInputValue("");
+        setMode("publish-password");
+      }
+      if (input === "u") {
+        setMode("confirm-unpublish");
+      }
+      if (input === "r" && (current?.publish as any)?.password?.protected) {
+        startPublish(editingCollection, { removePassword: true });
+      }
+    } else if (mode === "confirm-unpublish") {
+      if (input === "y" && editingCollection) {
+        setMode("unpublishing");
+        setPublishLog([]);
+        setPublishStatus("");
+        setPublishLastStep("");
+        setPublishError("");
+        setPublishStartTime(Date.now());
+        let lastStep = "";
+        let lastDetail = "";
+        const addLogEntry = (entry: string) => {
+          setPublishLog((log) => log[log.length - 1] === entry ? log : [...log, entry]);
+        };
+        unpublishCollection(editingCollection, (step, detail) => {
+          if (step !== lastStep && lastStep) {
+            addLogEntry(`[${lastStep}] ${lastDetail} ✓`);
+          }
+          lastStep = step;
+          lastDetail = detail;
+          setPublishLastStep(step);
+          setPublishStatus(detail);
+        }).then(() => {
+          if (lastStep) addLogEntry(`[${lastStep}] ${lastDetail} ✓`);
+          setPublishStatus("");
+          setPublishStartTime(null);
+          setMessage(`Unpublished "${editingCollection}". Local data preserved.`);
+          setMode("publish-done");
+          refresh();
+        }).catch((err) => {
+          setPublishStatus("");
+          setPublishStartTime(null);
+          setPublishError(err instanceof Error ? err.message : String(err));
+          setMode("publish-done");
+        });
+      } else {
+        setMode("publish-menu");
+      }
+    } else if (mode === "publish-done") {
+      if (key.return || key.escape) {
+        setPublishLog([]);
+        setPublishStatus("");
+        setPublishLastStep("");
+        setPublishError("");
+        setMessage("");
+        setMode("list");
+      }
     } else if (mode === "confirm-full-sync") {
       if (input === "y" && current) {
         startSync(undefined, "full");
@@ -730,6 +863,92 @@ export function CollectionList({
     return <McpConfigView collectionName={editingCollection} onDone={() => { setMode("list"); refresh(); }} />;
   }
 
+  if (mode === "publish-menu") {
+    const isPublished = !!(current?.publish);
+    const isProtected = !!(current?.publish as any)?.password?.protected;
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        <Text bold>Publishing: {editingCollection}</Text>
+        {isPublished && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text dimColor>URL: {(current!.publish as any).url}</Text>
+            <Text dimColor>Status: {isProtected ? "password protected" : "public"}</Text>
+          </Box>
+        )}
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="cyan">[p] Publish{isPublished ? " (update)" : ""}</Text>
+          <Text>[u] Unpublish</Text>
+          <Text color={isPublished && isProtected ? undefined : "gray"}>[r] Remove password{!isPublished ? " (not published)" : !isProtected ? " (already public)" : ""}</Text>
+        </Box>
+        <Box marginTop={1}><Text dimColor>ESC back</Text></Box>
+      </Box>
+    );
+  }
+
+  if (mode === "publish-password") {
+    const existingState = getCollectionPublishState(editingCollection);
+    const isProtected = !!existingState?.password?.protected;
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        <Text bold>Publish: {editingCollection}</Text>
+        <Box marginTop={1} flexDirection="column">
+          {existingState ? (
+            <>
+              <Text dimColor>Currently: {isProtected ? "password protected" : "public (no password)"}</Text>
+              <Text dimColor>Leave blank to keep current setting, or enter a new password.</Text>
+            </>
+          ) : (
+            <Text dimColor>Enter a password to protect access, or leave blank for public.</Text>
+          )}
+          <Box marginTop={1}>
+            <TextInput label="Password" value={inputValue} onChange={setInputValue} onSubmit={handlePublishPasswordSubmit} mask />
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === "confirm-unpublish") {
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        <Text color="red">Unpublish "{editingCollection}"?</Text>
+        <Text dimColor>This removes the Cloudflare worker, D1 database, and R2 bucket.</Text>
+        <Text dimColor>Local collection data is preserved.</Text>
+        <Box marginTop={1}><Text>Continue? (y/n)</Text></Box>
+      </Box>
+    );
+  }
+
+  if (mode === "publishing" || mode === "unpublishing") {
+    const label = mode === "publishing" ? "Publishing" : "Unpublishing";
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        <Text bold color="yellow">{label} "{editingCollection}"... ({formatElapsed(publishElapsedMs)})</Text>
+        <Box flexDirection="column" marginLeft={1} marginTop={1}>
+          {publishLog.map((line: string, i: number) => <Text key={i} dimColor>{line}</Text>)}
+          {publishLastStep && <Text color="cyan">[{publishLastStep}] {publishStatus}</Text>}
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode === "publish-done") {
+    return (
+      <Box flexDirection="column" paddingY={1}>
+        {publishError ? (
+          <Text color="red" bold>Failed</Text>
+        ) : (
+          <Text color="green" bold>{message}</Text>
+        )}
+        <Box flexDirection="column" marginLeft={1} marginTop={1}>
+          {publishLog.map((line, i) => <Text key={i} dimColor>{line}</Text>)}
+          {publishError && <Text color="red">{publishError}</Text>}
+        </Box>
+        <Box marginTop={1}><Text dimColor>Press Enter to continue</Text></Box>
+      </Box>
+    );
+  }
+
   if (mode === "syncing") {
     return (
       <Box flexDirection="column" paddingY={1}>
@@ -770,15 +989,17 @@ export function CollectionList({
         <Text bold dimColor>{pad("Title", W_TITLE)}</Text>
         <Text bold dimColor>{pad("Type", W_TYPE)}</Text>
         <Text bold dimColor>{pad("Entities", W_ENTITIES)}</Text>
+        <Text bold dimColor>{pad("Published", W_PUBLISHED)}</Text>
         <Text bold dimColor>Last Sync</Text>
       </Box>
 
       {/* Table rows */}
       <Box flexDirection="column" marginLeft={1}>
-        {collections.map((col: { name: string; title?: string; crawler: string; enabled: boolean }, i: number) => {
+        {collections.map((col: { name: string; title?: string; crawler: string; enabled: boolean; publish?: { publishedAt: string } }, i: number) => {
           const stats = getRowStats(col.name);
           const selected = i === cursor;
           const checkbox = col.enabled ? "[x] " : "[ ] ";
+          const publishedLabel = col.publish ? formatRelative(new Date(col.publish.publishedAt)) : "—";
           return (
             <Box key={col.name}>
               <Text color={selected ? "cyan" : undefined}>{selected ? "❯ " : "  "}</Text>
@@ -787,6 +1008,7 @@ export function CollectionList({
               <Text dimColor>{pad(col.title || "", W_TITLE)}</Text>
               <Text dimColor>{pad(col.crawler, W_TYPE)}</Text>
               <Text color={!col.enabled ? "gray" : undefined}>{pad(stats.entityCount, W_ENTITIES)}</Text>
+              <Text color={col.publish ? "green" : "gray"}>{pad(publishedLabel, W_PUBLISHED)}</Text>
               <Text dimColor>{stats.lastSync}</Text>
             </Box>
           );
@@ -824,17 +1046,15 @@ export function CollectionList({
           ) : (
             <Text dimColor>No sync runs yet</Text>
           )}
-          {relatedSites.length > 0 && (
+          {current.publish && (
             <Box flexDirection="column" marginTop={1}>
-              <Text dimColor bold>Sites:</Text>
-              {relatedSites.map((site: { name: string; url: string; password?: { protected: boolean } }) => (
-                <Box key={site.name} gap={1} marginLeft={1}>
-                  <Text>{site.name}</Text>
-                  <Text dimColor>→</Text>
-                  <Text color="blue">{site.url}</Text>
-                  <Text color={site.password?.protected ? "green" : "yellow"}>[{site.password?.protected ? "protected" : "public"}]</Text>
-                </Box>
-              ))}
+              <Text dimColor bold>Published:</Text>
+              <Box gap={1} marginLeft={1}>
+                <Text color="blue">{(current.publish as { url: string }).url}</Text>
+                <Text color={(current.publish as { password?: { protected: boolean } }).password?.protected ? "green" : "yellow"}>
+                  [{(current.publish as { password?: { protected: boolean } }).password?.protected ? "protected" : "public"}]
+                </Text>
+              </Box>
             </Box>
           )}
         </Box>
@@ -851,6 +1071,7 @@ export function CollectionList({
       <Box marginTop={1} gap={2}>
         <Text dimColor>[Enter] Edit</Text>
         <Text dimColor>[s] Sync</Text>
+        {current && hasSyncedData(current.name) && <Text dimColor>[p] Publishing</Text>}
         <Text dimColor>[f] Search</Text>
         <Text dimColor>[e] Export</Text>
         <Text dimColor>[m] MCP</Text>

@@ -1,3 +1,13 @@
+export interface PublishState {
+  url: string;
+  mcpUrl: string;
+  password?: {
+    protected: boolean;
+    hash?: string;
+  };
+  publishedAt: string;
+}
+
 export interface Collection {
   name: string;
   title: string;
@@ -7,6 +17,7 @@ export interface Collection {
   syncInterval: number;
   createdAt: string;
   updatedAt: string;
+  publish?: PublishState;
 }
 
 export interface TreeNode {
@@ -65,17 +76,6 @@ export interface SyncProgress {
   error: string | null;
 }
 
-export interface Deployment {
-  name: string;
-  url: string;
-  mcpUrl: string;
-  collections: string[];
-  d1DatabaseId: string;
-  r2BucketName: string;
-  passwordProtected: boolean;
-  publishedAt: string;
-}
-
 export interface ExportRequest {
   collections: string[];
   outputDir: string;
@@ -98,14 +98,6 @@ export interface PublishProgress {
 }
 
 export type UIMode = "browse" | "manage";
-
-export interface PublishPreset {
-  name: string;
-  workerName: string;
-  collections: string[];
-  password: string;
-  removePassword?: boolean;
-}
 
 export interface CollectionConfig {
   name: string;

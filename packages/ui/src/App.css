@@ -653,6 +653,28 @@ body {
   font-size: 13px;
 }
 
+.tree-summary {
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.tree-show-more-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 0;
+  width: 100%;
+  text-align: left;
+}
+
+.tree-show-more-button:hover {
+  text-decoration: underline;
+}
+
 .tree-toggle,
 .tree-file-button {
   display: flex;

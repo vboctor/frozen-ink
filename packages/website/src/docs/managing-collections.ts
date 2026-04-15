@@ -43,7 +43,7 @@ export const managingCollectionsPage = renderDocsPage({
       </ul>
     </li>
   </ul>
-  <p>Collections are independent of each other — syncing, disabling, or removing one has no effect on the others.</p>
+  <p>Collections are independent of each other — syncing, disabling, publishing, or removing one has no effect on the others.</p>
 
   <h2 id="add-github">GitHub collection</h2>
   <p>A GitHub collection syncs <strong>issues and pull requests</strong> from one repository via the GitHub REST API.</p>

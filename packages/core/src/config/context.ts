@@ -8,11 +8,20 @@ import { getFrozenInkHome } from "./loader";
 // --- Zod Schemas ---
 
 const assetsConfigSchema = z.object({
-  /** Allowed file extensions (with dot). Defaults to common image formats. */
   extensions: z.array(z.string()).optional(),
-  /** Maximum file size in KB. Defaults to 10240 (10 MB). */
   maxSize: z.number().optional(),
 }).optional();
+
+const publishStateSchema = z.object({
+  url: z.string(),
+  mcpUrl: z.string(),
+  password: z.object({
+    protected: z.boolean(),
+    hash: z.string().optional(),
+  }).optional(),
+  publishedAt: z.string(),
+  dbDigest: z.string().optional(),
+});
 
 const collectionEntrySchema = z.object({
   title: z.string().optional(),
@@ -32,6 +41,7 @@ const collectionEntrySchema = z.object({
    * Example: ["draft.md", "*.wip"]
    */
   hide: z.array(z.string()).optional(),
+  publish: publishStateSchema.optional(),
   // --- Sync state (written after each sync; replaces collection_state DB table) ---
   lastSyncAt: z.string().optional(),
   lastSyncStatus: z.string().optional(),
@@ -43,6 +53,20 @@ const collectionEntrySchema = z.object({
   lastPublishedAt: z.string().optional(),
   // --- Incremental sync cursor (replaces sync_state DB table) ---
   syncCursor: z.unknown().optional(),
+});
+
+const legacyDeploymentEntrySchema = z.object({
+  url: z.string(),
+  mcpUrl: z.string(),
+  toolDescription: z.string().optional(),
+  collections: z.array(z.string()),
+  d1DatabaseId: z.string(),
+  d1DatabaseName: z.string().optional(),
+  r2BucketName: z.string(),
+  cfAccountId: z.string().optional(),
+  passwordProtected: z.boolean(),
+  passwordHash: z.string().optional(),
+  publishedAt: z.string(),
 });
 
 /** Site config schema — immutable settings stored in <name>.yml */
@@ -92,10 +116,17 @@ const siteEntrySchema = z.object({
   publishedAt: z.string(),
 });
 
+const frozenInkSchema = z.object({
+  collections: z.record(collectionEntrySchema).default({}),
+  deployments: z.record(legacyDeploymentEntrySchema).default({}),
+});
+
 // --- Types ---
 
 export type CollectionEntry = z.infer<typeof collectionEntrySchema>;
 export type CollectionEntryInput = z.input<typeof collectionEntrySchema>;
+export type PublishState = z.infer<typeof publishStateSchema>;
+export type FrozenInkYaml = z.infer<typeof frozenInkSchema>;
 export type SiteEntry = z.infer<typeof siteEntrySchema>;
 
 // --- Paths ---
@@ -120,6 +151,14 @@ function getSiteStatePath(name: string): string {
   return join(getSitesDir(), name, "state.yml");
 }
 
+function getLegacyPublishPath(): string {
+  return join(getFrozenInkHome(), "publish.yml");
+}
+
+function getLegacyContextPath(): string {
+  return join(getFrozenInkHome(), "context.yml");
+}
+
 // --- Atomic YAML write ---
 
 function atomicWriteYaml(filePath: string, data: unknown): void {
@@ -137,19 +176,144 @@ function readYaml<T>(filePath: string): T | null {
   return (yaml.load(raw) as T) ?? null;
 }
 
+// --- Migration ---
+
+export function migrateFromLegacyContext(): void {
+  const legacyPath = getLegacyContextPath();
+  if (existsSync(legacyPath)) {
+    const raw = readFileSync(legacyPath, "utf-8");
+    const parsed = yaml.load(raw) as Record<string, unknown> | null;
+    if (parsed) {
+      const ctx = frozenInkSchema.parse(parsed);
+
+      for (const [name, entry] of Object.entries(ctx.collections)) {
+        const configPath = getCollectionConfigPath(name);
+        const colDir = dirname(configPath);
+        if (!existsSync(colDir)) {
+          mkdirSync(colDir, { recursive: true });
+        }
+        const legacyConfigPath = join(colDir, ".config");
+        if (existsSync(legacyConfigPath) && !existsSync(configPath)) {
+          renameSync(legacyConfigPath, configPath);
+        } else if (!existsSync(configPath)) {
+          atomicWriteYaml(configPath, entry);
+        }
+      }
+
+      for (const [_name, dep] of Object.entries(ctx.deployments)) {
+        if (dep.collections.length > 0) {
+          const colName = dep.collections[0];
+          const col = getCollection(colName);
+          if (col && !col.publish) {
+            updateCollectionPublishState(colName, {
+              url: dep.url,
+              mcpUrl: dep.mcpUrl,
+              password: { protected: dep.passwordProtected, hash: dep.passwordHash },
+              publishedAt: dep.publishedAt,
+            });
+          }
+        }
+      }
+
+      try { unlinkSync(legacyPath); } catch { /* ignore */ }
+    }
+  }
+
+  const collectionsDir = getCollectionsDir();
+  if (existsSync(collectionsDir)) {
+    for (const name of readdirSync(collectionsDir)) {
+      const colDir = join(collectionsDir, name);
+      try { if (!statSync(colDir).isDirectory()) continue; } catch { continue; }
+      const legacyConfigPath = join(colDir, ".config");
+      const newConfigPath = join(colDir, `${name}.yml`);
+      if (existsSync(legacyConfigPath) && !existsSync(newConfigPath)) {
+        renameSync(legacyConfigPath, newConfigPath);
+      }
+    }
+  }
+
+  const home = getFrozenInkHome();
+  for (const f of ["master.db", "master.db-wal", "master.db-shm"]) {
+    try { unlinkSync(join(home, f)); } catch { /* ignore */ }
+  }
+
+  migrateLegacyPublishYml();
+  migrateLegacySites();
+}
+
+export function migrateLegacyPublishYml(): void {
+  const publishPath = getLegacyPublishPath();
+  if (!existsSync(publishPath)) return;
+
+  const data = readYaml<Record<string, unknown>>(publishPath);
+  if (!data) return;
+
+  for (const [_name, raw] of Object.entries(data)) {
+    try {
+      const dep = legacyDeploymentEntrySchema.parse(raw);
+      if (dep.collections.length > 0) {
+        const colName = dep.collections[0];
+        const col = getCollection(colName);
+        if (col && !col.publish) {
+          updateCollectionPublishState(colName, {
+            url: dep.url,
+            mcpUrl: dep.mcpUrl,
+            password: { protected: dep.passwordProtected, hash: dep.passwordHash },
+            publishedAt: dep.publishedAt,
+          });
+        }
+      }
+    } catch { /* skip invalid entries */ }
+  }
+
+  try { unlinkSync(publishPath); } catch { /* ignore */ }
+}
+
+export function migrateLegacySites(): void {
+  const sitesDir = getSitesDir();
+  if (!existsSync(sitesDir)) return;
+
+  try {
+    for (const name of readdirSync(sitesDir)) {
+      const dirPath = join(sitesDir, name);
+      try { if (!statSync(dirPath).isDirectory()) continue; } catch { continue; }
+      const configPath = join(dirPath, `${name}.yml`);
+      if (!existsSync(configPath)) continue;
+      try {
+        const configRaw = readFileSync(configPath, "utf-8");
+        const config = yaml.load(configRaw) as Record<string, unknown> | null;
+        if (!config) continue;
+        const stateRaw = readYaml<Record<string, unknown>>(join(dirPath, "state.yml"));
+        const publishedAt = (stateRaw?.publishedAt as string) ?? new Date().toISOString();
+        const collections = (config.collections as string[]) ?? [];
+        if (collections.length > 0) {
+          const colName = collections[0];
+          const col = getCollection(colName);
+          if (col && !col.publish) {
+            updateCollectionPublishState(colName, {
+              url: config.url as string,
+              mcpUrl: config.mcpUrl as string,
+              password: config.password as { protected: boolean; hash?: string } | undefined,
+              publishedAt,
+            });
+          }
+        }
+      } catch { /* skip invalid */ }
+    }
+  } catch { /* ignore */ }
+
+  try {
+    const { rmSync } = require("fs");
+    rmSync(sitesDir, { recursive: true, force: true });
+  } catch { /* ignore */ }
+}
+
 // --- Initialization ---
 
-/**
- * Ensure the Frozen Ink home directory is initialized.
- * Creates collections/ and sites/ directories if they don't exist.
- * Also runs legacy migrations. Safe to call multiple times.
- */
 export function ensureInitialized(): void {
   const home = getFrozenInkHome();
   mkdirSync(home, { recursive: true });
   mkdirSync(join(home, "collections"), { recursive: true });
-  mkdirSync(join(home, "sites"), { recursive: true });
-  // Create default frozenink.yml if it doesn't exist (and no legacy config.json)
   const configPath = join(home, "frozenink.yml");
   const legacyConfigPath = join(home, "config.json");
   if (!existsSync(configPath) && !existsSync(legacyConfigPath)) {
@@ -160,6 +324,48 @@ export function ensureInitialized(): void {
 export function contextExists(): boolean {
   const home = getFrozenInkHome();
   return existsSync(join(home, "collections"));
+}
+
+// --- Legacy compat ---
+
+export function loadContext(): FrozenInkYaml {
+  return {
+    collections: Object.fromEntries(
+      listCollections().map((c) => {
+        const { name, ...entry } = c;
+        return [name, entry];
+      }),
+    ),
+    deployments: {},
+  };
+}
+
+export function saveContext(_ctx: FrozenInkYaml): void {}
+
+// --- Collection Publish State ---
+
+export function getCollectionPublishState(name: string): PublishState | null {
+  const col = getCollection(name);
+  return col?.publish ?? null;
+}
+
+export function updateCollectionPublishState(name: string, state: PublishState): void {
+  const existing = getCollection(name);
+  if (!existing) return;
+  const { name: _name, ...entry } = existing;
+  const updated = { ...entry, publish: state };
+  atomicWriteYaml(getCollectionConfigPath(name), updated);
+}
+
+export function clearCollectionPublishState(name: string): void {
+  const existing = getCollection(name);
+  if (!existing) return;
+  const { name: _name, publish: _publish, ...rest } = existing;
+  atomicWriteYaml(getCollectionConfigPath(name), rest);
+}
+
+export function listPublishedCollections(): Array<CollectionEntry & { name: string }> {
+  return listCollections().filter((c) => !!c.publish);
 }
 
 // --- Collection CRUD ---
@@ -220,7 +426,6 @@ export function addCollection(name: string, entry: CollectionEntryInput): void {
 }
 
 export function removeCollection(name: string): void {
-  // Only removes the config file; the caller is responsible for deleting the directory.
   const configPath = getCollectionConfigPath(name);
   try { unlinkSync(configPath); } catch { /* ignore */ }
 }
@@ -237,7 +442,6 @@ export function renameCollection(oldName: string, newName: string): void {
   const existing = getCollection(oldName);
   if (!existing) return;
   const { name: _name, ...entry } = existing;
-  // Write new config, remove old config
   const newDir = join(getCollectionsDir(), newName);
   mkdirSync(newDir, { recursive: true });
   atomicWriteYaml(getCollectionConfigPath(newName), entry);
@@ -314,4 +518,3 @@ export function listSites(): Array<SiteEntry & { name: string }> {
 export function updateSiteState(name: string, state: { publishedAt: string }): void {
   atomicWriteYaml(getSiteStatePath(name), state);
 }
-

@@ -16,7 +16,7 @@ import {
 } from "@frozenink/core";
 import { sql } from "drizzle-orm";
 import { publishCollections, type PublishOptions } from "../../commands/publish.js";
-import { unpublishDeployment } from "../../commands/unpublish.js";
+import { unpublishCollection } from "../../commands/unpublish.js";
 import { TextInput } from "./TextInput.js";
 
 type View = "deployments" | "publish-wizard";
@@ -145,7 +145,7 @@ export function PublishView({
     try {
       const dep = getSite(currentDep.name);
       if (!dep) { setDepError("Deployment not found"); setDepMode("error-delete"); return; }
-      await unpublishDeployment(dep, (step, detail) => setDepProgress((p) => [...p, `[${step}] ${detail}`]));
+      await unpublishCollection(currentDep.name, (step: string, detail: string) => setDepProgress((p) => [...p, `[${step}] ${detail}`]));
       setDepMessage(`Deployment "${currentDep.name}" removed.`);
       setDepMode("done-delete");
     } catch (err: unknown) {
@@ -172,8 +172,7 @@ export function PublishView({
     setPubProgress([]);
     try {
       const opts: PublishOptions = {
-        collectionNames: [...selectedCollections],
-        workerName,
+        collectionName: [...selectedCollections][0],
         password: password || undefined,
         forcePublic: !password,
         workerOnly,

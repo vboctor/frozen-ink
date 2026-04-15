@@ -16,8 +16,7 @@ import {
   removeCollection,
   updateCollection,
   renameCollection,
-  listSites,
-  removeSite,
+  clearCollectionPublishState,
   loadConfig,
   SyncEngine,
   ThemeEngine,
@@ -89,8 +88,7 @@ let exportProgress: ExportProgress = {
 
 type PublishCollectionsFn = (
   options: {
-    collectionNames: string[];
-    workerName: string;
+    collectionName: string;
     toolDescription?: string;
     password?: string;
     removePassword?: boolean;
@@ -335,24 +333,15 @@ export function handleManagementRequest(req: Request): Response | null {
     }]);
   }
 
-  // --- Sites (deployments) ---
+  // --- Collection Publish ---
 
-  // GET /api/deployments
-  if (path === "/api/deployments" && method === "GET") {
-    return jsonResponse(listSites());
-  }
-
-  // DELETE /api/deployments/:name — full Cloudflare teardown
-  const deleteDepMatch = path.match(/^\/api\/deployments\/([^/]+)$/);
-  if (deleteDepMatch && method === "DELETE") {
-    const name = decodeURIComponent(deleteDepMatch[1]);
+  // POST /api/collections/:name/unpublish — full Cloudflare teardown
+  const unpublishColMatch = path.match(/^\/api\/collections\/([^/]+)\/unpublish$/);
+  if (unpublishColMatch && method === "POST") {
+    const name = decodeURIComponent(unpublishColMatch[1]);
     return handleAsync(async () => {
-      const { getSite: getSiteEntry } = await import("@frozenink/core");
-      const site = getSiteEntry(name);
-      if (!site) return errorResponse("Site not found", 404);
-
-      const { unpublishDeployment } = await import("./unpublish");
-      await unpublishDeployment(site, (step, detail) => {
+      const { unpublishCollection } = await import("./unpublish");
+      await unpublishCollection(name, (step, detail) => {
         console.log(`  [unpublish:${step}] ${detail}`);
       });
       return jsonResponse({ ok: true });
@@ -456,40 +445,6 @@ export function handleManagementRequest(req: Request): Response | null {
     });
   }
 
-  // --- Publish Presets ---
-
-  // GET /api/publish-presets
-  if (path === "/api/publish-presets" && method === "GET") {
-    const home = getFrozenInkHome();
-    const configPath = join(home, "frozenink.yml");
-    let presets: unknown[] = [];
-    if (existsSync(configPath)) {
-      try {
-        const raw = (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {};
-        presets = (raw.publish_presets as unknown[]) ?? [];
-      } catch {}
-    }
-    return jsonResponse(presets);
-  }
-
-  // PUT /api/publish-presets
-  if (path === "/api/publish-presets" && method === "PUT") {
-    return handleAsync(async () => {
-      const body = await readBody(req);
-      const presets = body.presets as unknown[];
-      const home = getFrozenInkHome();
-      const configPath = join(home, "frozenink.yml");
-
-      let existing: Record<string, unknown> = {};
-      if (existsSync(configPath)) {
-        try { existing = (yaml.load(readFileSync(configPath, "utf-8")) as Record<string, unknown>) ?? {}; } catch {}
-      }
-      existing.publish_presets = presets;
-      writeFileSync(configPath, yaml.dump(existing, { lineWidth: -1, noRefs: true, sortKeys: false }), "utf-8");
-      return jsonResponse({ ok: true });
-    });
-  }
-
   // --- Cloudflare auth check ---
 
   // POST /api/cloudflare/check-auth
@@ -507,13 +462,15 @@ export function handleManagementRequest(req: Request): Response | null {
 
   // --- Publish ---
 
-  // POST /api/publish
-  if (path === "/api/publish" && method === "POST") {
+  // POST /api/collections/:name/publish
+  const publishColMatch = path.match(/^\/api\/collections\/([^/]+)\/publish$/);
+  if (publishColMatch && method === "POST") {
     return handleAsync(async () => {
+      const name = decodeURIComponent(publishColMatch[1]);
       const body = await readBody(req);
       publishProgress = { active: true, step: "starting", detail: "", error: null };
       // Fire and forget — the UI polls /api/publish/status
-      triggerPublish(body).catch(() => {});
+      triggerPublish({ ...body, collectionName: name }).catch(() => {});
       return jsonResponse({ ok: true });
     });
   }
@@ -643,15 +600,14 @@ async function triggerPublish(opts: Record<string, unknown>): Promise<void> {
   try {
     const publishCollections = publishCollectionsOverride
       ?? (await import("./publish")).publishCollections;
-    const collectionNames = (opts.collections as string[]) ?? [];
-    const workerName = (opts.name as string) ?? "";
+    const collectionName = (opts.collectionName as string) ?? "";
     const toolDescription = opts.toolDescription as string | undefined;
     const password = opts.password as string | undefined;
     const removePassword = opts.removePassword as boolean | undefined;
     const forcePublic = opts.forcePublic as boolean | undefined;
 
     await publishCollections(
-      { collectionNames, workerName, toolDescription, password, removePassword, forcePublic },
+      { collectionName, toolDescription, password, removePassword, forcePublic },
       (step, detail) => {
         publishProgress = { ...publishProgress, step, detail };
       },
