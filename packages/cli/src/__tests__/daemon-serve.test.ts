@@ -61,9 +61,12 @@ function addTestCollection(
         externalId: "issue-1",
         entityType: "issue",
         title: "Test Issue One",
-        data: { number: 1, body: "First test issue body" },
-        url: "https://github.com/test/repo/issues/1",
-        markdownPath: "content/issues/issue-1.md",
+        data: {
+          source: { number: 1, body: "First test issue body" },
+          url: "https://github.com/test/repo/issues/1",
+          markdown_path: "issues/issue-1.md",
+          tags: ["bug", "critical"],
+        },
       })
       .run();
 
@@ -73,17 +76,12 @@ function addTestCollection(
         externalId: "pr-2",
         entityType: "pull_request",
         title: "Test Pull Request",
-        data: { number: 2, body: "PR description" },
-        url: "https://github.com/test/repo/pull/2",
-        markdownPath: "content/pull-requests/pr-2.md",
+        data: {
+          source: { number: 2, body: "PR description" },
+          url: "https://github.com/test/repo/pull/2",
+          markdown_path: "pull-requests/pr-2.md",
+        },
       })
-      .run();
-
-    const entityRows = colDb.select().from(entities).all();
-    colDb
-      .update(entities)
-      .set({ tags: ["bug", "critical"] })
-      .where(eq(entities.id, entityRows[0].id))
       .run();
 
     mkdirSync(join(collectionDir, "content", "issues"), { recursive: true });
@@ -98,10 +96,24 @@ function addTestCollection(
 
     if (opts.addEntities) {
       const entityRows = colDb.select().from(entities).all();
+      const entityData = entityRows[0].data as {
+        source: Record<string, unknown>;
+        assets?: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }>;
+      };
       colDb
         .update(entities)
         .set({
-          assets: [{ filename: "screenshot.png", mimeType: "image/png", storagePath: "attachments/issue-1/screenshot.png", hash: "" }],
+          data: {
+            ...entityData,
+            assets: [
+              {
+                filename: "screenshot.png",
+                mimeType: "image/png",
+                storagePath: "attachments/issue-1/screenshot.png",
+                hash: "",
+              },
+            ],
+          },
         })
         .where(eq(entities.id, entityRows[0].id))
         .run();

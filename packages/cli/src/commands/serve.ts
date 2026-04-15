@@ -437,16 +437,19 @@ export function createApiServer(
           .offset(offset)
           .all();
 
-        const result = rows.map((row: any) => ({
-          id: row.id,
-          externalId: row.externalId,
-          entityType: row.entityType,
-          title: row.title,
-          url: row.url,
-          tags: row.tags ?? [],
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-        }));
+        const result = rows.map((row: any) => {
+          const entityData = (row.data ?? {}) as EntityData;
+          return {
+            id: row.id,
+            externalId: row.externalId,
+            entityType: row.entityType,
+            title: row.title,
+            url: entityData.url ?? undefined,
+            tags: entityData.tags ?? [],
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          };
+        });
 
         return jsonResponse({
           entities: result,
