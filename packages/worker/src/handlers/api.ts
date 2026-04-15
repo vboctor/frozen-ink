@@ -1,17 +1,21 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import {
-  getCollections,
-  getCollection,
   getEntities,
   getEntityByExternalId,
   getEntityByMarkdownPath,
   getEntityMarkdownPathByExternalId,
-  getEntityTags,
   getEntityCount,
   getBacklinks,
   getOutgoingLinks,
+  getEntitiesByExternalIds,
+  getFullManifest,
+  parseEntityTags,
+  parseOutLinks,
+  parseInLinks,
+  parseAssets,
 } from "../db/client";
+import { getCollections, getCollectionConfig } from "../config";
 import { searchEntities } from "../db/search";
 import { getR2Object, getMimeType } from "../storage/r2";
 import { ThemeEngine } from "@frozenink/core/theme";
@@ -27,7 +31,7 @@ const api = new Hono<{ Bindings: Env }>();
 
 // GET /api/collections
 api.get("/api/collections", async (c) => {
-  const collections = await getCollections(c.env.DB);
+  const collections = await getCollections(c.env.BUCKET);
   const result = await Promise.all(
     collections.map(async (col) => ({
       name: col.name,
@@ -41,16 +45,16 @@ api.get("/api/collections", async (c) => {
 // GET /api/collections/:name/html-support
 api.get("/api/collections/:name/html-support", async (c) => {
   const name = c.req.param("name");
-  const col = await getCollection(c.env.DB, name);
-  if (!col?.crawler_type) return c.json({ supported: false });
-  return c.json({ supported: themeEngine.hasHtmlRenderer(col.crawler_type) });
+  const col = await getCollectionConfig(c.env.BUCKET, name);
+  if (!col?.crawler) return c.json({ supported: false });
+  return c.json({ supported: themeEngine.hasHtmlRenderer(col.crawler) });
 });
 
 // GET /api/collections/:name/html/*
 api.get("/api/collections/:name/html/*", async (c) => {
   const name = c.req.param("name");
-  const col = await getCollection(c.env.DB, name);
-  if (!col?.crawler_type || !themeEngine.hasHtmlRenderer(col.crawler_type)) {
+  const col = await getCollectionConfig(c.env.BUCKET, name);
+  if (!col?.crawler || !themeEngine.hasHtmlRenderer(col.crawler)) {
     return c.text("HTML not supported for this collection", 404);
   }
 
@@ -61,20 +65,17 @@ api.get("/api/collections/:name/html/*", async (c) => {
   if (!entity) return c.text("Entity not found", 404);
 
   const [tags, allEntities] = await Promise.all([
-    getEntityTags(c.env.DB, name, entity.id),
+    Promise.resolve(parseEntityTags(entity)),
     c.env.DB.prepare("SELECT external_id, markdown_path FROM entities WHERE collection_name = ?")
       .bind(name)
       .all<{ external_id: string; markdown_path: string | null }>()
       .then((r) => r.results ?? []),
   ]);
 
-  // Build synchronous externalId → relative path map for cross-reference resolution
   const entityPathMap = new Map<string, string>();
   for (const row of allEntities) {
     if (!row.markdown_path) continue;
-    const prefix = "content/";
-    const rel = row.markdown_path.startsWith(prefix) ? row.markdown_path.slice(prefix.length) : row.markdown_path;
-    entityPathMap.set(row.external_id, rel.endsWith(".md") ? rel.slice(0, -3) : rel);
+    entityPathMap.set(row.external_id, row.markdown_path.endsWith(".md") ? row.markdown_path.slice(0, -3) : row.markdown_path);
   }
 
   const data = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
@@ -89,7 +90,7 @@ api.get("/api/collections/:name/html/*", async (c) => {
       tags,
     },
     collectionName: name,
-    crawlerType: col.crawler_type,
+    crawlerType: col.crawler,
     lookupEntityPath: (externalId) => entityPathMap.get(externalId),
   });
   if (!html) return c.text("HTML rendering failed", 500);
@@ -102,7 +103,6 @@ api.get("/api/collections/:name/tree", async (c) => {
   const name = c.req.param("name");
   const prefix = `${name}/content/`;
 
-  // Fetch root config (content/content.yml) for collection-root-level settings (e.g. hide list)
   const rootConfigObj = await c.env.BUCKET.get(`${prefix}content.yml`);
   const rootConfig = rootConfigObj ? parseFolderConfig(await rootConfigObj.text()) : {};
   const rootHide = rootConfig.hide ?? [];
@@ -111,7 +111,6 @@ api.get("/api/collections/:name/tree", async (c) => {
   const mdPaths = listed.objects
     .map((o) => o.key.slice(prefix.length))
     .filter((p) => p.endsWith(".md"))
-    // Apply root-level hide patterns to files at the root (no subdirectory)
     .filter((p) => {
       const parts = p.split("/");
       if (parts.length === 1 && rootHide.length > 0) {
@@ -120,26 +119,18 @@ api.get("/api/collections/:name/tree", async (c) => {
       return true;
     });
 
-  // Fetch entity titles from D1 to display instead of raw filenames
   const titleByPath = new Map<string, string>();
   try {
     const { results } = await c.env.DB.prepare(
       "SELECT markdown_path, title FROM entities WHERE collection_name = ? AND markdown_path IS NOT NULL AND title IS NOT NULL",
     ).bind(name).all<{ markdown_path: string; title: string }>();
-    const mdPrefix = "content/";
     for (const row of results ?? []) {
-      const rel = row.markdown_path.startsWith(mdPrefix)
-        ? row.markdown_path.slice(mdPrefix.length)
-        : row.markdown_path;
-      titleByPath.set(rel, row.title);
+      titleByPath.set(row.markdown_path, row.title);
     }
   } catch {
     // If title lookup fails, fall back to filenames
   }
 
-  // Derive unique folder paths from md paths and fetch each folder's yml config
-  // directly by key — avoids relying on R2 list pagination (yml files sort
-  // alphabetically after digit-prefixed md files and can fall beyond 1000-object limit).
   const folderPaths = new Set<string>();
   for (const mdPath of mdPaths) {
     const parts = mdPath.split("/");
@@ -158,7 +149,6 @@ api.get("/api/collections/:name/tree", async (c) => {
     }),
   );
 
-  // Build tree from paths with folder configs applied
   const tree = buildTreeFromPaths(mdPaths, titleByPath, folderConfigs);
   return c.json(tree);
 });
@@ -168,7 +158,7 @@ api.get("/api/collections/:name/default-file", async (c) => {
   const name = c.req.param("name");
   const entities = await getEntities(c.env.DB, name, { limit: 1 });
   const first = entities[0];
-  const filePath = first?.markdown_path?.replace(/^content\//, "") ?? null;
+  const filePath = first?.markdown_path ?? null;
   return c.json({ file: filePath });
 });
 
@@ -196,26 +186,75 @@ api.get("/api/collections/:name/entities", async (c) => {
 
   const rows = await getEntities(c.env.DB, name, { limit, offset, entityType });
 
-  const result = await Promise.all(
-    rows.map(async (row) => {
-      const tags = await getEntityTags(c.env.DB, name, row.id);
-      return {
-        id: row.id,
-        externalId: row.external_id,
-        entityType: row.entity_type,
-        title: row.title,
-        url: row.url,
-        tags,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      };
-    }),
-  );
+  const result = rows.map((row) => ({
+    id: row.id,
+    externalId: row.external_id,
+    entityType: row.entity_type,
+    title: row.title,
+    url: row.url,
+    tags: parseEntityTags(row),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
 
   return c.json({
     entities: result,
     pagination: { limit, offset, count: result.length },
   });
+});
+
+// GET /api/collections/:name/manifest
+api.get("/api/collections/:name/manifest", async (c) => {
+  const name = c.req.param("name");
+  const col = await getCollectionConfig(c.env.BUCKET, name);
+  if (!col) return c.json({ error: "Collection not found" }, 404);
+
+  const manifest = await getFullManifest(c.env.DB, name);
+  const entitiesStr = manifest
+    .map((e) => `${e.externalId}\t${e.hash}`)
+    .join("\n");
+
+  return c.json({
+    version: 1,
+    capabilities: ["bulk-entities", "html-render"],
+    collection: {
+      name: col.name,
+      title: col.title || col.name,
+      crawlerType: col.crawler,
+    },
+    entities: entitiesStr,
+  });
+});
+
+// GET /api/collections/:name/entities/bulk?externalIds=...
+api.get("/api/collections/:name/entities/bulk", async (c) => {
+  const name = c.req.param("name");
+  const idsParam = c.req.query("externalIds") || "";
+  const externalIds = idsParam.split(",").filter(Boolean).slice(0, 50);
+
+  if (externalIds.length === 0) {
+    return c.json({ entities: [] });
+  }
+
+  const rows = await getEntitiesByExternalIds(c.env.DB, name, externalIds);
+
+  const result = rows.map((row) => ({
+    externalId: row.external_id,
+    entityType: row.entity_type,
+    title: row.title,
+    data: typeof row.data === "string" ? JSON.parse(row.data) : row.data,
+    hash: row.content_hash ?? "",
+    markdownPath: row.markdown_path,
+    url: row.url,
+    tags: parseEntityTags(row),
+    outLinks: parseOutLinks(row),
+    inLinks: parseInLinks(row),
+    assets: parseAssets(row),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+
+  return c.json({ entities: result });
 });
 
 // GET /api/search
@@ -233,12 +272,10 @@ api.get("/api/search", async (c) => {
     limit,
   });
 
-  // Look up markdown paths
   const enriched = await Promise.all(
     results.map(async (r) => {
       const entity = await getEntityByExternalId(c.env.DB, r.collectionName, r.externalId);
-      const rawPath = entity?.markdown_path ?? null;
-      const markdownPath = rawPath ? rawPath.replace(/^content\//, "") : null;
+      const markdownPath = entity?.markdown_path ?? null;
       return { ...r, title: entity?.title ?? r.title, collection: r.collectionName, markdownPath, snippet: r.snippet };
     }),
   );
@@ -254,12 +291,11 @@ api.get("/api/collections/:name/backlinks/:externalId", async (c) => {
   const targetEntity = await getEntityByExternalId(c.env.DB, name, externalId);
   if (!targetEntity) return c.json({ error: "Entity not found" }, 404);
 
-  const links = await getBacklinks(c.env.DB, name, targetEntity.id);
+  const links = await getBacklinks(c.env.DB, name, externalId);
 
   const results = links.map(({ entity }) => {
-    const relPath = entity.markdown_path?.replace(/^content\//, "");
-    const displayTitle = relPath
-      ? relPath.replace(/\.md$/, "").split("/").pop()!
+    const displayTitle = entity.markdown_path
+      ? entity.markdown_path.replace(/\.md$/, "").split("/").pop()!
       : entity.title;
     return {
       entityId: entity.id,
@@ -281,18 +317,15 @@ api.get("/api/collections/:name/outgoing-links/:externalId", async (c) => {
   const sourceEntity = await getEntityByExternalId(c.env.DB, name, externalId);
   if (!sourceEntity) return c.json({ error: "Entity not found" }, 404);
 
-  const links = await getOutgoingLinks(c.env.DB, name, sourceEntity.id);
+  const links = await getOutgoingLinks(c.env.DB, name, sourceEntity);
 
   const results = links
     .filter(({ entity }) => entity !== null)
     .map(({ entity }) => {
-      const relPath = entity!.markdown_path
-        ? entity!.markdown_path.replace(/^content\//, "")
-        : null;
-      const displayTitle = relPath
-        ? relPath.replace(/\.md$/, "").split("/").pop()!
+      const displayTitle = entity!.markdown_path
+        ? entity!.markdown_path.replace(/\.md$/, "").split("/").pop()!
         : entity!.title;
-      return { title: displayTitle, markdownPath: relPath };
+      return { title: displayTitle, markdownPath: entity!.markdown_path };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 
@@ -339,7 +372,6 @@ function parseFolderConfig(content: string): { visible?: boolean; sort?: "ASC" |
     if (key === "visible") config.visible = val.trim() !== "false";
     if (key === "sort") config.sort = val.trim() === "DESC" ? "DESC" : "ASC";
     if (key === "hide") {
-      // Parse inline YAML array: [item1, item2] or ["item1", "item2"]
       const arrayMatch = val.trim().match(/^\[(.+)\]$/);
       if (arrayMatch) {
         config.hide = arrayMatch[1]
@@ -352,7 +384,6 @@ function parseFolderConfig(content: string): { visible?: boolean; sort?: "ASC" |
   return config;
 }
 
-// Helper to build tree from flat file paths, honoring folder yml configs
 function buildTreeFromPaths(
   paths: string[],
   titleByPath: Map<string, string> = new Map(),
@@ -404,7 +435,6 @@ function buildTreeFromPaths(
     }
   }
 
-  // Sort: directories first (ASC), files per-folder config (ASC or DESC); prune hidden dirs/files
   function sortTree(nodes: TreeNode[], parentPath: string = ""): TreeNode[] {
     const config = parentPath ? folderConfigs.get(parentPath) : undefined;
     const sortOrder = config?.sort ?? "ASC";

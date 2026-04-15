@@ -9,7 +9,7 @@ import {
   getCollectionDbPath,
   getFrozenInkHome,
   entities,
-  syncRuns,
+  collectionState,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
@@ -21,7 +21,7 @@ import {
   gitTheme,
   mantisHubTheme,
 } from "@frozenink/crawlers";
-import { sql, desc } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 
 type SyncMode = "skip" | "incremental" | "full";
 type ViewMode = "select" | "syncing" | "done";
@@ -62,9 +62,9 @@ function getLastSync(name: string): string {
   if (!existsSync(dbPath)) return "never";
   try {
     const colDb = getCollectionDb(dbPath);
-    const runs = colDb.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(1).all();
-    if (runs.length > 0 && runs[0].startedAt) {
-      const d = new Date(runs[0].startedAt + "Z");
+    const rows = colDb.select().from(collectionState).where(eq(collectionState.id, 1)).all();
+    if (rows.length > 0 && rows[0].lastSyncAt) {
+      const d = new Date(rows[0].lastSyncAt + "Z");
       if (!isNaN(d.getTime())) return formatRelative(d);
     }
   } catch {}

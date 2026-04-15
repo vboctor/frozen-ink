@@ -15,7 +15,7 @@ import {
   renameCollection,
   isValidCollectionKey,
   entities,
-  syncRuns,
+  collectionState,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
@@ -27,7 +27,7 @@ import {
   gitTheme,
   mantisHubTheme,
 } from "@frozenink/crawlers";
-import { desc, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { TextInput } from "./TextInput.js";
 import { AddCollection } from "./AddCollection.js";
 import { ExportView } from "./ExportView.js";
@@ -89,13 +89,13 @@ function getRowStats(name: string): RowStats {
   try {
     const colDb = getCollectionDb(dbPath);
     const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
-    const runs = colDb.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(1).all();
+    const rows = colDb.select().from(collectionState).where(eq(collectionState.id, 1)).all();
     let lastSync = "never";
-    if (runs.length > 0 && runs[0].startedAt) {
-      const d = new Date(runs[0].startedAt + "Z");
+    if (rows.length > 0 && rows[0].lastSyncAt) {
+      const d = new Date(rows[0].lastSyncAt + "Z");
       if (!isNaN(d.getTime())) {
         lastSync = formatRelative(d);
-        if (runs[0].status === "failed") lastSync += " (failed)";
+        if (rows[0].lastSyncStatus === "failed") lastSync += " (failed)";
       }
     }
     return { entityCount: String(total), lastSync };
@@ -493,12 +493,12 @@ export function CollectionList({
   let entityCount = 0;
   let entityTypeCounts: Array<{ type: string; count: number }> = [];
   let collectionSize = "";
-  let lastRun: {
-    status: string;
-    startedAt: string | null;
-    entitiesCreated: number;
-    entitiesUpdated: number;
-    entitiesDeleted: number;
+  let lastState: {
+    lastSyncStatus: string | null;
+    lastSyncAt: string | null;
+    lastSyncCreated: number | null;
+    lastSyncUpdated: number | null;
+    lastSyncDeleted: number | null;
   } | null = null;
   let lastSyncTime = "";
   if (current && mode === "list") {
@@ -532,11 +532,11 @@ export function CollectionList({
           } catch { /* ignore */ }
         }
 
-        const runs = colDb.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(1).all();
-        if (runs.length > 0) {
-          lastRun = runs[0];
-          if (runs[0].startedAt) {
-            const d = new Date(runs[0].startedAt + "Z");
+        const stateRows = colDb.select().from(collectionState).where(eq(collectionState.id, 1)).all();
+        if (stateRows.length > 0) {
+          lastState = stateRows[0];
+          if (stateRows[0].lastSyncAt) {
+            const d = new Date(stateRows[0].lastSyncAt + "Z");
             if (!isNaN(d.getTime())) lastSyncTime = formatRelative(d);
           }
         }
@@ -811,10 +811,10 @@ export function CollectionList({
             )}
             {collectionSize ? <Text> - {collectionSize}</Text> : null}
           </Text>
-          {lastRun ? (
+          {lastState ? (
             <Box gap={2}>
-              <Text>Last sync: <Text dimColor>{lastSyncTime}</Text> <Text color={lastRun.status === "completed" ? "green" : "red"}>({lastRun.status})</Text></Text>
-              <Text><Text color="green">+{lastRun.entitiesCreated}</Text> <Text color="yellow">~{lastRun.entitiesUpdated}</Text> <Text color="red">-{lastRun.entitiesDeleted}</Text></Text>
+              <Text>Last sync: <Text dimColor>{lastSyncTime}</Text> <Text color={lastState.lastSyncStatus === "completed" ? "green" : "red"}>({lastState.lastSyncStatus})</Text></Text>
+              <Text><Text color="green">+{lastState.lastSyncCreated ?? 0}</Text> <Text color="yellow">~{lastState.lastSyncUpdated ?? 0}</Text> <Text color="red">-{lastState.lastSyncDeleted ?? 0}</Text></Text>
             </Box>
           ) : (
             <Text dimColor>No sync runs yet</Text>

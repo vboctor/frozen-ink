@@ -22,7 +22,7 @@ import {
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
-  syncRuns,
+  collectionState,
   entities,
 } from "@frozenink/core";
 import {
@@ -277,16 +277,22 @@ export function handleManagementRequest(req: Request): Response | null {
 
     const colDb = getCollectionDb(dbPath);
     const allEntities = colDb.select().from(entities).all();
-    const [lastRun] = colDb
+    const [state] = colDb
       .select()
-      .from(syncRuns)
-      .orderBy(desc(syncRuns.startedAt))
-      .limit(1)
+      .from(collectionState)
+      .where(eq(collectionState.id, 1))
       .all();
 
     return jsonResponse({
       entityCount: allEntities.length,
-      lastSyncRun: lastRun ?? null,
+      lastSyncRun: state ? {
+        status: state.lastSyncStatus,
+        startedAt: state.lastSyncAt,
+        entitiesCreated: state.lastSyncCreated,
+        entitiesUpdated: state.lastSyncUpdated,
+        entitiesDeleted: state.lastSyncDeleted,
+        errors: state.lastSyncErrors,
+      } : null,
     });
   }
 
@@ -321,20 +327,27 @@ export function handleManagementRequest(req: Request): Response | null {
     return jsonResponse(syncProgress);
   }
 
-  // GET /api/collections/:name/sync-runs
+  // GET /api/collections/:name/sync-runs (returns last sync state wrapped in an array for backward compat)
   const syncRunsMatch = path.match(/^\/api\/collections\/([^/]+)\/sync-runs$/);
   if (syncRunsMatch && method === "GET") {
     const name = decodeURIComponent(syncRunsMatch[1]);
     const dbPath = getCollectionDbPath(name);
     if (!existsSync(dbPath)) return jsonResponse([]);
     const colDb = getCollectionDb(dbPath);
-    const runs = colDb
+    const [state] = colDb
       .select()
-      .from(syncRuns)
-      .orderBy(desc(syncRuns.startedAt))
-      .limit(20)
+      .from(collectionState)
+      .where(eq(collectionState.id, 1))
       .all();
-    return jsonResponse(runs);
+    if (!state?.lastSyncAt) return jsonResponse([]);
+    return jsonResponse([{
+      status: state.lastSyncStatus,
+      startedAt: state.lastSyncAt,
+      entitiesCreated: state.lastSyncCreated,
+      entitiesUpdated: state.lastSyncUpdated,
+      entitiesDeleted: state.lastSyncDeleted,
+      errors: state.lastSyncErrors,
+    }]);
   }
 
   // --- Sites (deployments) ---

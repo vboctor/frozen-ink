@@ -46,7 +46,7 @@ beforeEach(async () => {
     SyncEngine: class {},
     ThemeEngine: class { register() {} },
     LocalStorageBackend: class {},
-    syncRuns: {},
+    collectionState: {},
     entities: {},
     tags: {},
     entityTags: {},

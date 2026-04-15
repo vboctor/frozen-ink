@@ -11,8 +11,6 @@ import {
   CollectionEntry,
   type FolderConfig,
   entities,
-  entityTags,
-  tags,
 } from "@frozenink/core";
 import { eq, sql } from "drizzle-orm";
 import { createDefaultRegistry } from "@frozenink/crawlers";
@@ -23,7 +21,7 @@ type Log = (msg: string) => void;
 type ColDb = ReturnType<typeof getCollectionDb>;
 
 /** Build entity path lookup for theme cross-reference resolution. */
-function makeEntityPathLookup(colDb: ColDb, basePath: string): (id: string) => string | undefined {
+function makeEntityPathLookup(colDb: ColDb): (id: string) => string | undefined {
   return (externalId: string) => {
     const rows = colDb
       .select({ markdownPath: entities.markdownPath })
@@ -32,13 +30,12 @@ function makeEntityPathLookup(colDb: ColDb, basePath: string): (id: string) => s
       .all();
     const mdPath = rows[0]?.markdownPath;
     if (!mdPath) return undefined;
-    const rel = mdPath.startsWith(`${basePath}/`) ? mdPath.slice(basePath.length + 1) : mdPath;
-    return rel.endsWith(".md") ? rel.slice(0, -3) : rel;
+    return mdPath.endsWith(".md") ? mdPath.slice(0, -3) : mdPath;
   };
 }
 
 /** Build stem-matching wikilink resolver (for Obsidian-style [[bare name]] links). */
-function makeResolveWikilink(colDb: ColDb, basePath: string): (target: string) => string | undefined {
+function makeResolveWikilink(colDb: ColDb): (target: string) => string | undefined {
   const allRows = colDb
     .select({ externalId: entities.externalId, markdownPath: entities.markdownPath })
     .from(entities)
@@ -49,10 +46,7 @@ function makeResolveWikilink(colDb: ColDb, basePath: string): (target: string) =
 
   for (const row of allRows) {
     if (!row.markdownPath) continue;
-    const rel = row.markdownPath.startsWith(`${basePath}/`)
-      ? row.markdownPath.slice(basePath.length + 1)
-      : row.markdownPath;
-    const noExt = rel.endsWith(".md") ? rel.slice(0, -3) : rel;
+    const noExt = row.markdownPath.endsWith(".md") ? row.markdownPath.slice(0, -3) : row.markdownPath;
     byExtId.set(row.externalId, noExt);
     const stem = row.externalId.replace(/\.md$/, "");
     const stemName = stem.includes("/") ? stem.split("/").pop()! : stem;
@@ -215,8 +209,8 @@ async function checkSamples(
     .groupBy(entities.entityType)
     .all();
 
-  const lookupEntityPath = makeEntityPathLookup(colDb, basePath);
-  const resolveWikilink = makeResolveWikilink(colDb, basePath);
+  const lookupEntityPath = makeEntityPathLookup(colDb);
+  const resolveWikilink = makeResolveWikilink(colDb);
 
   let sampled = 0;
   let titleMismatches = 0;
@@ -234,17 +228,7 @@ async function checkSamples(
       if (!entity.markdownPath) continue;
       sampled++;
 
-      // Load tags for accurate rendering
-      const entityTagNames = colDb
-        .select()
-        .from(entityTags)
-        .where(eq(entityTags.entityId, entity.id))
-        .all()
-        .map((t: any) => {
-          const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
-          return tagRow?.name ?? "";
-        })
-        .filter(Boolean);
+      const entityTagNames: string[] = (entity as any).tags ?? [];
 
       const ctx = {
         entity: {
@@ -270,7 +254,7 @@ async function checkSamples(
       // Check markdown: compare on-disk file against fresh render
       let onDisk: string | null = null;
       try {
-        onDisk = await storage.read(entity.markdownPath);
+        onDisk = await storage.read(`${basePath}/${entity.markdownPath}`);
       } catch { /* file missing */ }
 
       // Re-render with the derived title (same logic as generateCollection)

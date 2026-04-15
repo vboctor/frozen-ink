@@ -12,37 +12,16 @@ export const entities = sqliteTable("entities", {
   markdownMtime: real("markdown_mtime"),
   markdownSize: integer("markdown_size"),
   url: text("url"),
+  tags: text("tags", { mode: "json" }).$type<string[]>(),
+  outLinks: text("out_links", { mode: "json" }).$type<string[]>(),
+  inLinks: text("in_links", { mode: "json" }).$type<string[]>(),
+  assets: text("assets", { mode: "json" }).$type<Array<{ filename: string; mimeType: string; storagePath: string; hash: string }>>(),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`(datetime('now'))`),
-});
-
-export const tags = sqliteTable("tags", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name").notNull().unique(),
-});
-
-export const entityTags = sqliteTable("entity_tags", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  entityId: integer("entity_id")
-    .notNull()
-    .references(() => entities.id),
-  tagId: integer("tag_id")
-    .notNull()
-    .references(() => tags.id),
-});
-
-export const assets = sqliteTable("assets", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  entityId: integer("entity_id")
-    .notNull()
-    .references(() => entities.id),
-  filename: text("filename").notNull(),
-  mimeType: text("mime_type").notNull(),
-  storagePath: text("storage_path").notNull(),
 });
 
 export const syncState = sqliteTable("sync_state", {
@@ -55,26 +34,14 @@ export const syncState = sqliteTable("sync_state", {
     .default(sql`(datetime('now'))`),
 });
 
-export const syncRuns = sqliteTable("sync_runs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  status: text("status").notNull(),
-  syncType: text("sync_type").notNull().default("incremental"),
-  entitiesCreated: integer("entities_created").notNull().default(0),
-  entitiesUpdated: integer("entities_updated").notNull().default(0),
-  entitiesDeleted: integer("entities_deleted").notNull().default(0),
-  errors: text("errors", { mode: "json" }).$type<unknown[]>(),
-  startedAt: text("started_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
-  completedAt: text("completed_at"),
+export const collectionState = sqliteTable("collection_state", {
+  id: integer("id").primaryKey(),
+  lastSyncStatus: text("last_sync_status"),
+  lastSyncAt: text("last_sync_at"),
+  lastSyncCreated: integer("last_sync_created").default(0),
+  lastSyncUpdated: integer("last_sync_updated").default(0),
+  lastSyncDeleted: integer("last_sync_deleted").default(0),
+  lastSyncErrors: text("last_sync_errors", { mode: "json" }).$type<unknown[]>(),
+  lastPublishedAt: text("last_published_at"),
 });
 
-export const links = sqliteTable("links", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  sourceEntityId: integer("source_entity_id")
-    .notNull()
-    .references(() => entities.id),
-  targetEntityId: integer("target_entity_id")
-    .notNull()
-    .references(() => entities.id),
-});

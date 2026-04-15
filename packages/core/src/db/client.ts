@@ -38,27 +38,12 @@ export function getCollectionDb(dbPath: string) {
       markdown_mtime REAL,
       markdown_size INTEGER,
       url TEXT,
+      tags TEXT,
+      out_links TEXT,
+      in_links TEXT,
+      assets TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS tags (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE
-    );
-
-    CREATE TABLE IF NOT EXISTS entity_tags (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      entity_id INTEGER NOT NULL REFERENCES entities(id),
-      tag_id INTEGER NOT NULL REFERENCES tags(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS assets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      entity_id INTEGER NOT NULL REFERENCES entities(id),
-      filename TEXT NOT NULL,
-      mime_type TEXT NOT NULL,
-      storage_path TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS sync_state (
@@ -69,39 +54,56 @@ export function getCollectionDb(dbPath: string) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS sync_runs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      status TEXT NOT NULL,
-      sync_type TEXT NOT NULL DEFAULT 'incremental',
-      entities_created INTEGER NOT NULL DEFAULT 0,
-      entities_updated INTEGER NOT NULL DEFAULT 0,
-      entities_deleted INTEGER NOT NULL DEFAULT 0,
-      errors TEXT,
-      started_at TEXT NOT NULL DEFAULT (datetime('now')),
-      completed_at TEXT
+    CREATE TABLE IF NOT EXISTS collection_state (
+      id INTEGER PRIMARY KEY,
+      last_sync_status TEXT,
+      last_sync_at TEXT,
+      last_sync_created INTEGER DEFAULT 0,
+      last_sync_updated INTEGER DEFAULT 0,
+      last_sync_deleted INTEGER DEFAULT 0,
+      last_sync_errors TEXT,
+      last_published_at TEXT
     );
 
-    CREATE TABLE IF NOT EXISTS links (
+    CREATE TABLE IF NOT EXISTS clone_sync_state (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      source_entity_id INTEGER NOT NULL REFERENCES entities(id),
-      target_entity_id INTEGER NOT NULL REFERENCES entities(id)
+      source_url TEXT NOT NULL,
+      protocol_version INTEGER NOT NULL DEFAULT 1,
+      last_manifest TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
-
-    CREATE INDEX IF NOT EXISTS idx_links_target ON links(target_entity_id);
-    CREATE INDEX IF NOT EXISTS idx_links_source ON links(source_entity_id);
   `);
 
-  // Migrations: add columns to existing tables
+  // Migration: migrate sync_runs → collection_state
   try {
-    sqlite.exec("ALTER TABLE sync_runs ADD COLUMN sync_type TEXT NOT NULL DEFAULT 'incremental'");
+    const hasSyncRuns = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sync_runs'").get();
+    if (hasSyncRuns) {
+      const lastRun = sqlite.prepare("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1").get() as any;
+      if (lastRun) {
+        sqlite.exec(`INSERT OR REPLACE INTO collection_state (id, last_sync_status, last_sync_at, last_sync_created, last_sync_updated, last_sync_deleted, last_sync_errors) VALUES (1, '${lastRun.status}', '${lastRun.started_at}', ${lastRun.entities_created}, ${lastRun.entities_updated}, ${lastRun.entities_deleted}, ${lastRun.errors ? `'${String(lastRun.errors).replace(/'/g, "''")}'` : "NULL"})`);
+      }
+      sqlite.exec("DROP TABLE sync_runs");
+    }
   } catch {
-    // Column already exists — expected on new databases
+    // Migration may have already run
   }
+
+  // Migrations: add columns to existing tables
   try {
     sqlite.exec("ALTER TABLE sync_state ADD COLUMN crawler_version TEXT");
   } catch {
     // Column already exists — expected on new databases
   }
+  for (const col of ["tags", "out_links", "in_links", "assets"]) {
+    try {
+      sqlite.exec(`ALTER TABLE entities ADD COLUMN ${col} TEXT`);
+    } catch {
+      // Column already exists
+    }
+  }
+
+  // Migration: strip content/ prefix from markdown_path
+  sqlite.exec(`UPDATE entities SET markdown_path = substr(markdown_path, 9) WHERE markdown_path LIKE 'content/%'`);
 
   return db;
 }

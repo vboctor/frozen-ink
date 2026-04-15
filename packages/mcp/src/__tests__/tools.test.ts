@@ -4,10 +4,7 @@ import { dirname, join } from "path";
 import {
   getCollectionDb,
   entities,
-  tags,
-  entityTags,
-  assets,
-  syncRuns,
+  collectionState,
   SearchIndexer,
   addCollection as coreAddCollection,
   saveContext,
@@ -87,18 +84,11 @@ function addEntity(
   const entityId = row.id;
 
   if (data.tags?.length) {
-    for (const tag of data.tags) {
-      // Insert tag if it doesn't exist, then link to entity
-      const existing = colDb.select().from(tags).all().find((t) => t.name === tag);
-      let tagId: number;
-      if (existing) {
-        tagId = existing.id;
-      } else {
-        colDb.insert(tags).values({ name: tag }).run();
-        tagId = colDb.select().from(tags).all().find((t) => t.name === tag)!.id;
-      }
-      colDb.insert(entityTags).values({ entityId, tagId }).run();
-    }
+    colDb
+      .update(entities)
+      .set({ tags: data.tags })
+      .where(require("drizzle-orm").eq(entities.id, entityId))
+      .run();
   }
 
   return entityId;
@@ -115,15 +105,20 @@ function addAttachment(
     content: string;
   },
 ): void {
+  const { eq } = require("drizzle-orm");
   const colDb = getCollectionDb(dbPath);
+  const [entity] = colDb.select().from(entities).where(eq(entities.id, data.entityId)).all();
+  const currentAssets: any[] = (entity as any)?.assets ?? [];
+  currentAssets.push({
+    filename: data.filename,
+    mimeType: data.mimeType,
+    storagePath: data.storagePath,
+    hash: "",
+  });
   colDb
-    .insert(assets)
-    .values({
-      entityId: data.entityId,
-      filename: data.filename,
-      mimeType: data.mimeType,
-      storagePath: data.storagePath,
-    })
+    .update(entities)
+    .set({ assets: currentAssets })
+    .where(eq(entities.id, data.entityId))
     .run();
 
   const attachmentFile = join(TEST_DIR, "collections", collectionName, data.storagePath);
@@ -175,7 +170,7 @@ describe("collection_list tool", () => {
     addEntity(dbPath, { externalId: "issue-1", entityType: "issue", title: "Bug report", data: { number: 1 } });
     addEntity(dbPath, { externalId: "issue-2", entityType: "issue", title: "Feature request", data: { number: 2 } });
 
-    colDb.insert(syncRuns).values({ status: "completed", entitiesCreated: 2, startedAt: "2025-01-15 10:00:00", completedAt: "2025-01-15 10:01:00" }).run();
+    colDb.insert(collectionState).values({ id: 1, lastSyncStatus: "completed", lastSyncCreated: 2, lastSyncAt: "2025-01-15 10:00:00" }).run();
 
     await setupClient();
     const result = await client.callTool({ name: "collection_list" });
@@ -418,10 +413,10 @@ describe("entity_get_data tool", () => {
     const { dbPath } = addCollection("with-md");
     const collectionDir = join(TEST_DIR, "collections", "with-md");
     const mdContent = "# Issue 7\n\nBody here.";
-    const mdPath = "markdown/issues/7-test.md";
+    const mdPath = "issues/7-test.md";
 
-    mkdirSync(join(collectionDir, "markdown", "issues"), { recursive: true });
-    writeFileSync(join(collectionDir, mdPath), mdContent);
+    mkdirSync(join(collectionDir, "content", "issues"), { recursive: true });
+    writeFileSync(join(collectionDir, "content", mdPath), mdContent);
 
     addEntity(dbPath, {
       externalId: "issue-7",
@@ -748,14 +743,12 @@ describe("entity_get_attachment tool", () => {
       data: {},
     });
 
-    // Insert DB record but do NOT write the file to disk
+    // Insert asset record as entity JSON but do NOT write the file to disk
+    const { eq } = require("drizzle-orm");
     const colDb = getCollectionDb(dbPath);
-    colDb.insert(assets).values({
-      entityId,
-      filename: "ghost.png",
-      mimeType: "image/png",
-      storagePath: "attachments/git/zzz/ghost.png",
-    }).run();
+    colDb.update(entities).set({
+      assets: [{ filename: "ghost.png", mimeType: "image/png", storagePath: "attachments/git/zzz/ghost.png", hash: "" }],
+    }).where(eq(entities.id, entityId)).run();
 
     await setupClient();
     const result = await client.callTool({

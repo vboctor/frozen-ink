@@ -6,9 +6,9 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
-  syncRuns,
+  collectionState,
 } from "@frozenink/core";
-import { desc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 export const statusCommand = new Command("status")
   .description("Show sync status for all collections")
@@ -38,22 +38,20 @@ export const statusCommand = new Command("status")
       const entityRows = colDb.select().from(entities).all();
       console.log(`  Entities: ${entityRows.length}`);
 
-      // Last sync run
-      const runs = colDb
+      // Last sync state
+      const [state] = colDb
         .select()
-        .from(syncRuns)
-        .orderBy(desc(syncRuns.startedAt))
-        .limit(1)
+        .from(collectionState)
+        .where(eq(collectionState.id, 1))
         .all();
 
-      if (runs.length > 0) {
-        const run = runs[0];
-        console.log(`  Last sync: ${run.startedAt} (${run.status})`);
+      if (state?.lastSyncAt) {
+        console.log(`  Last sync: ${state.lastSyncAt} (${state.lastSyncStatus})`);
         console.log(
-          `  Created: ${run.entitiesCreated}, Updated: ${run.entitiesUpdated}, Deleted: ${run.entitiesDeleted}`,
+          `  Created: ${state.lastSyncCreated}, Updated: ${state.lastSyncUpdated}, Deleted: ${state.lastSyncDeleted}`,
         );
-        if (run.errors && (run.errors as unknown[]).length > 0) {
-          console.log(`  Errors: ${JSON.stringify(run.errors)}`);
+        if (state.lastSyncErrors && (state.lastSyncErrors as unknown[]).length > 0) {
+          console.log(`  Errors: ${JSON.stringify(state.lastSyncErrors)}`);
         }
       } else {
         console.log("  No sync runs yet");

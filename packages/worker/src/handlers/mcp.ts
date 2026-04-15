@@ -1,10 +1,10 @@
 import type { Env } from "../types";
 import {
-  getCollections,
   getEntityByExternalId,
-  getEntityTags,
+  parseEntityTags,
   getEntityCount,
 } from "../db/client";
+import { getCollections } from "../config";
 import { searchEntities } from "../db/search";
 import { getR2Object } from "../storage/r2";
 
@@ -139,7 +139,7 @@ async function callTool(
   env: Env,
 ): Promise<Array<{ type: string; text: string }>> {
   if (name === "collection_list") {
-    const collections = await getCollections(env.DB);
+    const collections = await getCollections(env.BUCKET);
     const data = await Promise.all(
       collections.map(async (col) => ({
         name: col.name,
@@ -163,10 +163,10 @@ async function callTool(
     const entity = await getEntityByExternalId(env.DB, args.collection as string, args.externalId as string);
     if (!entity) return [{ type: "text", text: JSON.stringify({ error: "Entity not found" }) }];
 
-    const tags = await getEntityTags(env.DB, args.collection as string, entity.id);
+    const tags = parseEntityTags(entity);
     let markdown: string | null = null;
     if (entity.markdown_path) {
-      const obj = await getR2Object(env.BUCKET, `${args.collection}/${entity.markdown_path}`);
+      const obj = await getR2Object(env.BUCKET, `${args.collection}/content/${entity.markdown_path}`);
       if (obj) markdown = await new Response(obj.body).text();
     }
     return [{
@@ -183,7 +183,7 @@ async function callTool(
     const entity = await getEntityByExternalId(env.DB, args.collection as string, args.externalId as string);
     if (!entity?.markdown_path) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
 
-    const obj = await getR2Object(env.BUCKET, `${args.collection}/${entity.markdown_path}`);
+    const obj = await getR2Object(env.BUCKET, `${args.collection}/content/${entity.markdown_path}`);
     if (!obj) return [{ type: "text", text: JSON.stringify({ error: "Markdown not found" }) }];
 
     const md = await new Response(obj.body).text();

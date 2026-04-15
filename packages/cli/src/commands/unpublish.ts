@@ -34,7 +34,7 @@ export async function unpublishDeployment(
     deleteR2Object,
     deleteR2Bucket,
     deleteD1,
-    executeD1Command,
+    listR2Objects,
   } = await import("./wrangler-api");
 
   await checkWranglerAuth();
@@ -53,17 +53,12 @@ export async function unpublishDeployment(
   try {
     await deleteR2Bucket(r2BucketName);
   } catch {
-    // Bucket may need to be emptied first — try manifest-based cleanup
-    onProgress("r2", "R2 bucket not empty, emptying via manifest...");
-    const d1Name = deployment.database.name || `${deployment.name}-db`;
+    // Bucket may need to be emptied first — list and delete all objects
+    onProgress("r2", "R2 bucket not empty, emptying via R2 list...");
     try {
-      const manifestJson = await executeD1Command(d1Name, "SELECT key FROM r2_manifest");
-      const parsed = JSON.parse(manifestJson);
-      const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
-      if (Array.isArray(results)) {
-        for (const row of results as Array<{ key: string }>) {
-          await deleteR2Object(r2BucketName, row.key);
-        }
+      const keys = await listR2Objects(r2BucketName);
+      for (const key of keys) {
+        await deleteR2Object(r2BucketName, key);
       }
       await deleteR2Bucket(r2BucketName);
       onProgress("r2", "R2 bucket deleted");

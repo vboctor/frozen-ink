@@ -9,9 +9,6 @@ import {
   getCollection,
   getCollectionDbPath,
   entities,
-  entityTags,
-  tags,
-  links,
   ThemeEngine,
   LocalStorageBackend,
   SearchIndexer,
@@ -86,11 +83,7 @@ export async function generateCollection(
       .all();
     const markdownPath = rows[0]?.markdownPath;
     if (!markdownPath) return undefined;
-    const base = `${markdownBasePath}/`;
-    const relative = markdownPath.startsWith(base)
-      ? markdownPath.slice(base.length)
-      : markdownPath;
-    return relative.endsWith(".md") ? relative.slice(0, -3) : relative;
+    return markdownPath.endsWith(".md") ? markdownPath.slice(0, -3) : markdownPath;
   };
 
   // Build stem-matching wikilink resolver (for Obsidian [[bare name]] links)
@@ -100,11 +93,9 @@ export async function generateCollection(
     .all();
   const byExtId = new Map<string, string>();
   const byStem = new Map<string, string>();
-  const base = `${markdownBasePath}/`;
   for (const r of allEntityRows) {
     if (!r.markdownPath) continue;
-    const rel = r.markdownPath.startsWith(base) ? r.markdownPath.slice(base.length) : r.markdownPath;
-    const noExt = rel.endsWith(".md") ? rel.slice(0, -3) : rel;
+    const noExt = r.markdownPath.endsWith(".md") ? r.markdownPath.slice(0, -3) : r.markdownPath;
     byExtId.set(r.externalId, noExt);
     const stem = r.externalId.replace(/\.md$/, "");
     const stemName = stem.includes("/") ? stem.split("/").pop()! : stem;
@@ -122,23 +113,13 @@ export async function generateCollection(
 
   const indexer = new SearchIndexer(dbPath);
   indexer.clearIndex();
-  colDb.delete(links).run();
 
   const allEntities = colDb.select().from(entities).all();
   let generated = 0;
   let renamed = 0;
 
   for (const entity of allEntities) {
-    const entityTagNames = colDb
-      .select()
-      .from(entityTags)
-      .where(eq(entityTags.entityId, entity.id))
-      .all()
-      .map((t: any) => {
-        const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
-        return tagRow?.name ?? "";
-      })
-      .filter(Boolean);
+    const entityTagNames: string[] = (entity as any).tags ?? [];
 
     // Re-derive title from stored data (no API call needed).
     const baseCtx = {
@@ -160,13 +141,14 @@ export async function generateCollection(
 
     const renderCtx = derivedTitle ? { ...baseCtx, entity: { ...baseCtx.entity, title } } : baseCtx;
 
-    const newPath = `${markdownBasePath}/${themeEngine.getFilePath(renderCtx)}`;
+    const newPath = themeEngine.getFilePath(renderCtx);
+    const newStoragePath = `${markdownBasePath}/${newPath}`;
     const markdown = themeEngine.render(renderCtx);
 
     // Handle rename: delete old file if path changed
     if (entity.markdownPath && entity.markdownPath !== newPath) {
       try {
-        await storage.delete(entity.markdownPath);
+        await storage.delete(`${markdownBasePath}/${entity.markdownPath}`);
       } catch {
         // File may already be gone
       }
@@ -174,8 +156,8 @@ export async function generateCollection(
     }
 
     // Write new markdown file
-    await storage.write(newPath, markdown);
-    const fileStat = await storage.stat(newPath);
+    await storage.write(newStoragePath, markdown);
+    const fileStat = await storage.stat(newStoragePath);
 
     // Update entity record with new path, mtime, and re-derived title
     colDb
@@ -199,33 +181,50 @@ export async function generateCollection(
       tags: entityTagNames,
     });
 
-    // Rebuild entity links
-    const sourceFile = newPath.startsWith(markdownBasePath + "/")
-      ? newPath.slice(markdownBasePath.length + 1)
-      : undefined;
-    const targets = extractWikilinks(markdown, sourceFile);
+    // Rebuild entity outLinks
+    const targets = extractWikilinks(markdown, newPath);
+    const outLinkExternalIds: string[] = [];
     for (const target of targets) {
-      const targetPath = `${markdownBasePath}/${target}.md`;
+      const targetPath = `${target}.md`;
       const [targetEntity] = colDb
-        .select({ id: entities.id })
+        .select({ externalId: entities.externalId })
         .from(entities)
         .where(eq(entities.markdownPath, targetPath))
         .all();
       if (targetEntity) {
-        colDb
-          .insert(links)
-          .values({
-            sourceEntityId: entity.id,
-            targetEntityId: targetEntity.id,
-          })
-          .run();
+        outLinkExternalIds.push(targetEntity.externalId);
       }
     }
+    colDb
+      .update(entities)
+      .set({ outLinks: outLinkExternalIds })
+      .where(eq(entities.id, entity.id))
+      .run();
 
     generated++;
   }
 
   indexer.close();
+
+  // Rebuild inLinks from outLinks
+  const allEntitiesForInLinks = colDb.select().from(entities).all();
+  const inLinksMap = new Map<string, string[]>();
+  for (const e of allEntitiesForInLinks) {
+    const outLinks: string[] = (e.outLinks as string[] | null) ?? [];
+    for (const targetExtId of outLinks) {
+      const existing = inLinksMap.get(targetExtId) ?? [];
+      existing.push(e.externalId);
+      inLinksMap.set(targetExtId, existing);
+    }
+  }
+  for (const e of allEntitiesForInLinks) {
+    const newInLinks = inLinksMap.get(e.externalId) ?? [];
+    colDb
+      .update(entities)
+      .set({ inLinks: newInLinks })
+      .where(eq(entities.id, e.id))
+      .run();
+  }
 
   // Write folder config yml files (visible/sort settings)
   await writeFolderConfigFiles(themeEngine, col.crawler, storage, markdownBasePath);

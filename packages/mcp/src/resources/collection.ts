@@ -8,9 +8,9 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
-  syncRuns,
+  collectionState,
 } from "@frozenink/core";
-import { desc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
 import {
   buildCollectionDeniedError,
@@ -137,15 +137,14 @@ export function registerCollectionResources(
         const colDb = getCollectionDb(dbPath);
         entityCount = colDb.select().from(entities).all().length;
 
-        const runs = colDb
+        const [state] = colDb
           .select()
-          .from(syncRuns)
-          .orderBy(desc(syncRuns.startedAt))
-          .limit(1)
+          .from(collectionState)
+          .where(eq(collectionState.id, 1))
           .all();
 
-        if (runs.length > 0) {
-          lastSyncTime = runs[0].startedAt;
+        if (state?.lastSyncAt) {
+          lastSyncTime = state.lastSyncAt;
         }
       }
 
