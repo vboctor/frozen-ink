@@ -2,11 +2,8 @@ export { configSchema, type FrozenInkConfig, type SyncConfig, type UiConfig } fr
 export { defaultConfig } from "./defaults";
 export { loadConfig, getFrozenInkHome } from "./loader";
 export {
-  loadContext,
-  saveContext,
   contextExists,
   ensureInitialized,
-  migrateFromLegacyContext,
   getCollection,
   listCollections,
   getCollectionDbPath,
@@ -18,8 +15,14 @@ export {
   updateCollectionPublishState,
   clearCollectionPublishState,
   listPublishedCollections,
+  addSite,
+  removeSite,
+  getSite,
+  listSites,
+  updateSiteState,
   type CollectionEntry,
   type CollectionEntryInput,
   type PublishState,
   type FrozenInkYaml,
+  type SiteEntry,
 } from "./context";

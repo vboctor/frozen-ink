@@ -42,6 +42,17 @@ const collectionEntrySchema = z.object({
    */
   hide: z.array(z.string()).optional(),
   publish: publishStateSchema.optional(),
+  // --- Sync state (written after each sync; replaces collection_state DB table) ---
+  lastSyncAt: z.string().optional(),
+  lastSyncStatus: z.string().optional(),
+  lastSyncCreated: z.number().optional(),
+  lastSyncUpdated: z.number().optional(),
+  lastSyncDeleted: z.number().optional(),
+  lastSyncErrors: z.unknown().array().optional(),
+  // --- Publish state ---
+  lastPublishedAt: z.string().optional(),
+  // --- Incremental sync cursor (replaces sync_state DB table) ---
+  syncCursor: z.unknown().optional(),
 });
 
 const legacyDeploymentEntrySchema = z.object({
@@ -58,6 +69,53 @@ const legacyDeploymentEntrySchema = z.object({
   publishedAt: z.string(),
 });
 
+/** Site config schema — immutable settings stored in <name>.yml */
+const siteConfigSchema = z.object({
+  url: z.string(),
+  mcpUrl: z.string(),
+  toolDescription: z.string().optional(),
+  collections: z.array(z.string()),
+  database: z.object({
+    type: z.string(),
+    id: z.string(),
+    name: z.string().optional(),
+  }),
+  bucket: z.object({
+    type: z.string(),
+    name: z.string(),
+  }),
+  password: z.object({
+    protected: z.boolean(),
+    hash: z.string().optional(),
+  }).optional(),
+});
+
+/** Site state schema — mutable state stored in state.yml */
+const siteStateSchema = z.object({
+  publishedAt: z.string(),
+});
+
+const siteEntrySchema = z.object({
+  url: z.string(),
+  mcpUrl: z.string(),
+  toolDescription: z.string().optional(),
+  collections: z.array(z.string()),
+  database: z.object({
+    type: z.string(),
+    id: z.string(),
+    name: z.string().optional(),
+  }),
+  bucket: z.object({
+    type: z.string(),
+    name: z.string(),
+  }),
+  password: z.object({
+    protected: z.boolean(),
+    hash: z.string().optional(),
+  }).optional(),
+  publishedAt: z.string(),
+});
+
 const frozenInkSchema = z.object({
   collections: z.record(collectionEntrySchema).default({}),
   deployments: z.record(legacyDeploymentEntrySchema).default({}),
@@ -69,6 +127,7 @@ export type CollectionEntry = z.infer<typeof collectionEntrySchema>;
 export type CollectionEntryInput = z.input<typeof collectionEntrySchema>;
 export type PublishState = z.infer<typeof publishStateSchema>;
 export type FrozenInkYaml = z.infer<typeof frozenInkSchema>;
+export type SiteEntry = z.infer<typeof siteEntrySchema>;
 
 // --- Paths ---
 
@@ -86,6 +145,10 @@ function getSitesDir(): string {
 
 function getSiteConfigPath(name: string): string {
   return join(getSitesDir(), name, `${name}.yml`);
+}
+
+function getSiteStatePath(name: string): string {
+  return join(getSitesDir(), name, "state.yml");
 }
 
 function getLegacyPublishPath(): string {
@@ -178,7 +241,7 @@ export function migrateFromLegacyContext(): void {
   migrateLegacySites();
 }
 
-function migrateLegacyPublishYml(): void {
+export function migrateLegacyPublishYml(): void {
   const publishPath = getLegacyPublishPath();
   if (!existsSync(publishPath)) return;
 
@@ -206,7 +269,7 @@ function migrateLegacyPublishYml(): void {
   try { unlinkSync(publishPath); } catch { /* ignore */ }
 }
 
-function migrateLegacySites(): void {
+export function migrateLegacySites(): void {
   const sitesDir = getSitesDir();
   if (!existsSync(sitesDir)) return;
 
@@ -256,7 +319,6 @@ export function ensureInitialized(): void {
   if (!existsSync(configPath) && !existsSync(legacyConfigPath)) {
     atomicWriteYaml(configPath, { sync: { interval: 900 }, ui: { port: 3000 } });
   }
-  migrateFromLegacyContext();
 }
 
 export function contextExists(): boolean {
@@ -384,4 +446,75 @@ export function renameCollection(oldName: string, newName: string): void {
   mkdirSync(newDir, { recursive: true });
   atomicWriteYaml(getCollectionConfigPath(newName), entry);
   try { unlinkSync(getCollectionConfigPath(oldName)); } catch { /* ignore */ }
+}
+
+// --- Site CRUD (sites/<name>/) ---
+
+export function addSite(name: string, entry: SiteEntry): void {
+  const { publishedAt, ...config } = entry;
+  const siteDir = join(getSitesDir(), name);
+  mkdirSync(siteDir, { recursive: true });
+  atomicWriteYaml(getSiteConfigPath(name), config);
+  atomicWriteYaml(getSiteStatePath(name), { publishedAt });
+}
+
+export function removeSite(name: string): void {
+  const siteDir = join(getSitesDir(), name);
+  if (existsSync(siteDir)) {
+    const { rmSync } = require("fs");
+    rmSync(siteDir, { recursive: true, force: true });
+  }
+}
+
+export function getSite(nameOrUrl: string): (SiteEntry & { name: string }) | null {
+  // Try by name first
+  const configPath = getSiteConfigPath(nameOrUrl);
+  if (existsSync(configPath)) {
+    try {
+      const configRaw = readFileSync(configPath, "utf-8");
+      const config = yaml.load(configRaw) as Record<string, unknown> | null;
+      if (!config) return null;
+      const stateRaw = readYaml<Record<string, unknown>>(getSiteStatePath(nameOrUrl));
+      const publishedAt = (stateRaw?.publishedAt as string) ?? new Date().toISOString();
+      const parsed = siteEntrySchema.parse({ ...config, publishedAt });
+      return { ...parsed, name: nameOrUrl };
+    } catch { return null; }
+  }
+  // Try by URL
+  for (const site of listSites()) {
+    if (site.url === nameOrUrl || site.mcpUrl === nameOrUrl) {
+      return site;
+    }
+  }
+  return null;
+}
+
+export function listSites(): Array<SiteEntry & { name: string }> {
+  const sitesDir = getSitesDir();
+  if (!existsSync(sitesDir)) return [];
+
+  const results: Array<SiteEntry & { name: string }> = [];
+  try {
+    for (const name of readdirSync(sitesDir)) {
+      const dirPath = join(sitesDir, name);
+      try { if (!statSync(dirPath).isDirectory()) continue; } catch { continue; }
+      const configPath = join(dirPath, `${name}.yml`);
+      if (!existsSync(configPath)) continue;
+      try {
+        const configRaw = readFileSync(configPath, "utf-8");
+        const config = yaml.load(configRaw) as Record<string, unknown> | null;
+        if (!config) continue;
+        const stateRaw = readYaml<Record<string, unknown>>(join(dirPath, "state.yml"));
+        const publishedAt = (stateRaw?.publishedAt as string) ?? new Date().toISOString();
+        const parsed = siteEntrySchema.parse({ ...config, publishedAt });
+        results.push({ ...parsed, name });
+      } catch { /* skip invalid */ }
+    }
+  } catch { /* ignore */ }
+
+  return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function updateSiteState(name: string, state: { publishedAt: string }): void {
+  atomicWriteYaml(getSiteStatePath(name), state);
 }

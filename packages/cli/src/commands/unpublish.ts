@@ -32,6 +32,7 @@ export async function unpublishCollection(
     deleteWorker,
     deleteR2Object,
     deleteR2Bucket,
+    deleteR2Objects,
     listR2Objects,
     deleteD1,
   } = await import("./wrangler-api");
@@ -48,14 +49,7 @@ export async function unpublishCollection(
     const keys = await listR2Objects(r2BucketName);
     if (keys.length > 0) {
       onProgress("r2", `Deleting ${keys.length} objects from R2...`);
-      let deleted = 0;
-      for (const key of keys) {
-        await deleteR2Object(r2BucketName, key);
-        deleted++;
-        if (deleted % 500 === 0) {
-          onProgress("r2", `${deleted}/${keys.length} objects deleted`);
-        }
-      }
+      await deleteR2Objects(r2BucketName, keys);
     }
     onProgress("r2", "Deleting R2 bucket...");
     await deleteR2Bucket(r2BucketName);

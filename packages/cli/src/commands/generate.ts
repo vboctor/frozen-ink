@@ -9,15 +9,13 @@ import {
   getCollection,
   getCollectionDbPath,
   entities,
-  entityTags,
-  tags,
-  links,
   ThemeEngine,
   LocalStorageBackend,
   SearchIndexer,
   extractWikilinks,
   CollectionEntry,
 } from "@frozenink/core";
+import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import { gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme } from "@frozenink/crawlers";
 
@@ -80,31 +78,26 @@ export async function generateCollection(
   // Build a lookup function for cross-entity wikilinks (used by some themes)
   const entityPathLookup = (externalId: string): string | undefined => {
     const rows = colDb
-      .select({ markdownPath: entities.markdownPath })
+      .select({ data: entities.data })
       .from(entities)
       .where(eq(entities.externalId, externalId))
       .all();
-    const markdownPath = rows[0]?.markdownPath;
+    const markdownPath = (rows[0]?.data as EntityData)?.markdown_path;
     if (!markdownPath) return undefined;
-    const base = `${markdownBasePath}/`;
-    const relative = markdownPath.startsWith(base)
-      ? markdownPath.slice(base.length)
-      : markdownPath;
-    return relative.endsWith(".md") ? relative.slice(0, -3) : relative;
+    return markdownPath.endsWith(".md") ? markdownPath.slice(0, -3) : markdownPath;
   };
 
   // Build stem-matching wikilink resolver (for Obsidian [[bare name]] links)
   const allEntityRows = colDb
-    .select({ externalId: entities.externalId, markdownPath: entities.markdownPath })
+    .select({ externalId: entities.externalId, data: entities.data })
     .from(entities)
     .all();
   const byExtId = new Map<string, string>();
   const byStem = new Map<string, string>();
-  const base = `${markdownBasePath}/`;
   for (const r of allEntityRows) {
-    if (!r.markdownPath) continue;
-    const rel = r.markdownPath.startsWith(base) ? r.markdownPath.slice(base.length) : r.markdownPath;
-    const noExt = rel.endsWith(".md") ? rel.slice(0, -3) : rel;
+    const markdownPath = (r.data as EntityData)?.markdown_path;
+    if (!markdownPath) continue;
+    const noExt = markdownPath.endsWith(".md") ? markdownPath.slice(0, -3) : markdownPath;
     byExtId.set(r.externalId, noExt);
     const stem = r.externalId.replace(/\.md$/, "");
     const stemName = stem.includes("/") ? stem.split("/").pop()! : stem;
@@ -122,33 +115,22 @@ export async function generateCollection(
 
   const indexer = new SearchIndexer(dbPath);
   indexer.clearIndex();
-  colDb.delete(links).run();
 
   const allEntities = colDb.select().from(entities).all();
   let generated = 0;
   let renamed = 0;
 
   for (const entity of allEntities) {
-    const entityTagNames = colDb
-      .select()
-      .from(entityTags)
-      .where(eq(entityTags.entityId, entity.id))
-      .all()
-      .map((t: any) => {
-        const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
-        return tagRow?.name ?? "";
-      })
-      .filter(Boolean);
-
     // Re-derive title from stored data (no API call needed).
+    const entityData = (entity.data as EntityData) ?? { source: {} };
     const baseCtx = {
       entity: {
         externalId: entity.externalId,
         entityType: entity.entityType,
         title: entity.title,
-        data: entity.data as Record<string, unknown>,
-        url: entity.url ?? undefined,
-        tags: entityTagNames,
+        data: entityData.source as Record<string, unknown>,
+        url: entityData.url ?? undefined,
+        tags: entityData.tags ?? [],
       },
       collectionName: col.name,
       crawlerType: col.crawler,
@@ -160,13 +142,14 @@ export async function generateCollection(
 
     const renderCtx = derivedTitle ? { ...baseCtx, entity: { ...baseCtx.entity, title } } : baseCtx;
 
-    const newPath = `${markdownBasePath}/${themeEngine.getFilePath(renderCtx)}`;
+    const newPath = themeEngine.getFilePath(renderCtx);
+    const newStoragePath = `${markdownBasePath}/${newPath}`;
     const markdown = themeEngine.render(renderCtx);
 
     // Handle rename: delete old file if path changed
-    if (entity.markdownPath && entity.markdownPath !== newPath) {
+    if (entityData.markdown_path && entityData.markdown_path !== newPath) {
       try {
-        await storage.delete(entity.markdownPath);
+        await storage.delete(`${markdownBasePath}/${entityData.markdown_path}`);
       } catch {
         // File may already be gone
       }
@@ -174,17 +157,21 @@ export async function generateCollection(
     }
 
     // Write new markdown file
-    await storage.write(newPath, markdown);
-    const fileStat = await storage.stat(newPath);
+    await storage.write(newStoragePath, markdown);
+    const fileStat = await storage.stat(newStoragePath);
 
     // Update entity record with new path, mtime, and re-derived title
+    const updatedEntityData: EntityData = {
+      ...entityData,
+      markdown_mtime: fileStat?.mtimeMs ?? null,
+      markdown_size: fileStat?.size ?? null,
+      markdown_path: newPath,
+    };
     colDb
       .update(entities)
       .set({
         title,
-        markdownPath: newPath,
-        markdownMtime: fileStat?.mtimeMs ?? null,
-        markdownSize: fileStat?.size ?? null,
+        data: updatedEntityData,
       })
       .where(eq(entities.id, entity.id))
       .run();
@@ -196,36 +183,59 @@ export async function generateCollection(
       entityType: entity.entityType,
       title,
       content: markdown,
-      tags: entityTagNames,
+      tags: entityData.tags ?? [],
     });
 
-    // Rebuild entity links
-    const sourceFile = newPath.startsWith(markdownBasePath + "/")
-      ? newPath.slice(markdownBasePath.length + 1)
-      : undefined;
-    const targets = extractWikilinks(markdown, sourceFile);
+    // Rebuild entity out_links in data
+    const targets = extractWikilinks(markdown, newPath);
+    const outLinkExternalIds: string[] = [];
+    // Pre-load all entities for markdown_path lookup
+    const allByMdPath = new Map<string, string>();
+    for (const e of allEntities) {
+      const mp = (e.data as EntityData)?.markdown_path;
+      if (mp) allByMdPath.set(mp, e.externalId);
+    }
     for (const target of targets) {
-      const targetPath = `${markdownBasePath}/${target}.md`;
-      const [targetEntity] = colDb
-        .select({ id: entities.id })
-        .from(entities)
-        .where(eq(entities.markdownPath, targetPath))
-        .all();
-      if (targetEntity) {
-        colDb
-          .insert(links)
-          .values({
-            sourceEntityId: entity.id,
-            targetEntityId: targetEntity.id,
-          })
-          .run();
+      const targetExtId = allByMdPath.get(`${target}.md`);
+      if (targetExtId) {
+        outLinkExternalIds.push(targetExtId);
       }
     }
+    // Read current data and update out_links
+    const [currentRow] = colDb.select({ data: entities.data }).from(entities).where(eq(entities.id, entity.id)).all();
+    const currentData: EntityData = (currentRow?.data as EntityData) ?? { source: {} };
+    colDb
+      .update(entities)
+      .set({ data: { ...currentData, out_links: outLinkExternalIds } })
+      .where(eq(entities.id, entity.id))
+      .run();
 
     generated++;
   }
 
   indexer.close();
+
+  // Rebuild in_links from out_links
+  const allEntitiesForInLinks = colDb.select().from(entities).all();
+  const inLinksMap = new Map<string, string[]>();
+  for (const e of allEntitiesForInLinks) {
+    const eData = (e.data as EntityData) ?? { source: {} };
+    const outLinks: string[] = eData.out_links ?? [];
+    for (const targetExtId of outLinks) {
+      const existing = inLinksMap.get(targetExtId) ?? [];
+      existing.push(e.externalId);
+      inLinksMap.set(targetExtId, existing);
+    }
+  }
+  for (const e of allEntitiesForInLinks) {
+    const newInLinks = inLinksMap.get(e.externalId) ?? [];
+    const eData = (e.data as EntityData) ?? { source: {} };
+    colDb
+      .update(entities)
+      .set({ data: { ...eData, in_links: newInLinks } })
+      .where(eq(entities.id, e.id))
+      .run();
+  }
 
   // Write folder config yml files (visible/sort settings)
   await writeFolderConfigFiles(themeEngine, col.crawler, storage, markdownBasePath);

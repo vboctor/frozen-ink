@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { compress } from "hono/compress";
 import type { Env } from "./types";
 import { authMiddleware, handleLogin, handleLogout } from "./auth";
 import { renderLoginPage } from "./login";
@@ -9,6 +10,8 @@ import { handleMcpRequest } from "./handlers/mcp";
 const CACHE_TTL = 60 * 60 * 24;
 
 const app = new Hono<{ Bindings: Env }>();
+
+app.use("*", compress());
 
 // Public routes (no auth)
 app.get("/login", renderLoginPage);

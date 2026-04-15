@@ -9,16 +9,13 @@ import {
   getCollection,
   getCollectionDbPath,
   entities,
-  entityTags,
-  tags,
-  links,
-  assets,
   SearchIndexer,
   ThemeEngine,
   loadConfig,
   getModuleDir,
   isBun,
   resolveUiDist,
+  type EntityData,
 } from "@frozenink/core";
 import {
   gitHubTheme,
@@ -270,16 +267,13 @@ export function createApiServer(
         if (existsSync(dbPath)) {
           const colDb = getCollectionDb(dbPath);
           const rows = colDb
-            .select({ markdownPath: entities.markdownPath, title: entities.title })
+            .select({ data: entities.data, title: entities.title })
             .from(entities)
             .all();
-          const prefix = "content/";
           for (const row of rows) {
-            if (!row.markdownPath || !row.title) continue;
-            const rel = row.markdownPath.startsWith(prefix)
-              ? row.markdownPath.slice(prefix.length)
-              : row.markdownPath;
-            titleByPath.set(rel, row.title);
+            const mdPath = (row.data as EntityData)?.markdown_path;
+            if (!mdPath || !row.title) continue;
+            titleByPath.set(mdPath, row.title);
           }
         }
 
@@ -302,13 +296,13 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
         const [latest] = colDb
-          .select({ markdownPath: entities.markdownPath })
+          .select({ data: entities.data })
           .from(entities)
           .orderBy(desc(entities.updatedAt))
           .limit(1)
           .all();
 
-        const filePath = latest?.markdownPath?.replace(/^content\//, "") ?? null;
+        const filePath = (latest?.data as EntityData)?.markdown_path ?? null;
         return jsonResponse({ file: filePath });
       }
 
@@ -359,48 +353,27 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
 
-        // Look up entity by markdown_path (try with and without content/ prefix)
-        const pathVariants = [`content/${filePath}`, filePath];
-        let entity = null;
-        for (const variant of pathVariants) {
-          const [row] = colDb
-            .select()
-            .from(entities)
-            .where(eq(entities.markdownPath, variant))
-            .all();
-          if (row) { entity = row; break; }
-        }
+        // Look up entity by markdown_path (scan all since there's no column index)
+        const allEntitiesForHtml = colDb.select().from(entities).all() as Array<{ id: number; externalId: string; entityType: string; title: string; data: unknown; contentHash: string | null }>;
+        const entity = allEntitiesForHtml.find(
+          (e) => (e.data as EntityData)?.markdown_path === filePath,
+        );
 
         if (!entity) return errorResponse("Entity not found", 404);
 
-        // Get tags (join entityTags -> tags)
-        const entityTagNames = colDb
-          .select()
-          .from(entityTags)
-          .where(eq(entityTags.entityId, entity.id))
-          .all()
-          .map((t: any) => {
-            const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
-            return tagRow?.name ?? "";
-          })
-          .filter(Boolean);
-
-        const data = typeof entity.data === "string"
-          ? JSON.parse(entity.data)
-          : entity.data;
+        const entityDataObj = entity.data as EntityData;
+        const sourceData = entityDataObj?.source ?? {};
 
         // Build entity path lookup for resolving cross-references (e.g. user pages)
         const lookupEntityPath = (externalId: string): string | undefined => {
           const [row] = colDb
-            .select({ markdownPath: entities.markdownPath })
+            .select({ data: entities.data })
             .from(entities)
             .where(eq(entities.externalId, externalId))
             .all();
-          const mdPath = row?.markdownPath;
+          const mdPath = (row?.data as EntityData)?.markdown_path;
           if (!mdPath) return undefined;
-          const prefix = "content/";
-          const relative = mdPath.startsWith(prefix) ? mdPath.slice(prefix.length) : mdPath;
-          return relative.endsWith(".md") ? relative.slice(0, -3) : relative;
+          return mdPath.endsWith(".md") ? mdPath.slice(0, -3) : mdPath;
         };
 
         const html = themeEngine.renderHtml({
@@ -408,9 +381,9 @@ export function createApiServer(
             externalId: entity.externalId,
             entityType: entity.entityType,
             title: entity.title,
-            data,
-            url: entity.url ?? undefined,
-            tags: entityTagNames,
+            data: sourceData,
+            url: entityDataObj.url ?? undefined,
+            tags: entityDataObj.tags ?? [],
           },
           collectionName: name,
           crawlerType: col.crawler,
@@ -465,25 +438,15 @@ export function createApiServer(
           .offset(offset)
           .all();
 
-        // Get tags for each entity (join entityTags -> tags)
         const result = rows.map((row: any) => {
-          const rowTags = colDb
-            .select()
-            .from(entityTags)
-            .where(eq(entityTags.entityId, row.id))
-            .all()
-            .map((t: any) => {
-              const [tagRow] = colDb.select().from(tags).where(eq(tags.id, t.tagId)).all();
-              return tagRow?.name ?? "";
-            })
-            .filter(Boolean);
+          const entityData = (row.data ?? {}) as EntityData;
           return {
             id: row.id,
             externalId: row.externalId,
             entityType: row.entityType,
             title: row.title,
-            url: row.url,
-            tags: rowTags,
+            url: entityData.url ?? undefined,
+            tags: entityData.tags ?? [],
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
           };
@@ -537,12 +500,11 @@ export function createApiServer(
             });
             for (const r of results) {
               const [entity] = colDb
-                .select({ markdownPath: entities.markdownPath, title: entities.title })
+                .select({ data: entities.data, title: entities.title })
                 .from(entities)
                 .where(eq(entities.id, r.entityId))
                 .all();
-              const rawPath = entity?.markdownPath ?? null;
-              const markdownPath = rawPath ? rawPath.replace(/^content\//, "") : null;
+              const markdownPath = (entity?.data as EntityData)?.markdown_path ?? null;
               allResults.push({
                 ...r,
                 title: entity?.title ?? r.title,
@@ -578,30 +540,30 @@ export function createApiServer(
         const colDb = getCollectionDb(dbPath);
 
         // Find the target entity by markdown path variants
-        const targetVariants = [targetFile, `content/${targetFile}`];
+        const targetVariants = [targetFile];
         if (!targetFile.endsWith(".md")) {
-          targetVariants.push(`${targetFile}.md`, `content/${targetFile}.md`);
+          targetVariants.push(`${targetFile}.md`);
         }
         const filename = targetFile.includes("/") ? targetFile.split("/").pop()! : null;
         if (filename) {
-          targetVariants.push(filename, `content/${filename}`);
+          targetVariants.push(filename);
           if (!filename.endsWith(".md")) {
-            targetVariants.push(`${filename}.md`, `content/${filename}.md`);
+            targetVariants.push(`${filename}.md`);
           }
         }
 
-        // Resolve target entity IDs from markdown path variants
-        const targetEntityIds = new Set<number>();
-        for (const variant of targetVariants) {
-          const rows = colDb
-            .select({ id: entities.id })
-            .from(entities)
-            .where(eq(entities.markdownPath, variant))
-            .all();
-          for (const row of rows) targetEntityIds.add(row.id);
+        // Find target entity externalIds by scanning all entities
+        const targetExternalIds = new Set<string>();
+        type BacklinkEntity = { id: number; externalId: string; entityType: string; title: string; data: unknown };
+        const allEntitiesForBacklinks = colDb.select().from(entities).all() as BacklinkEntity[];
+        for (const e of allEntitiesForBacklinks) {
+          const mdPath = (e.data as EntityData)?.markdown_path;
+          if (mdPath && targetVariants.includes(mdPath)) {
+            targetExternalIds.add(e.externalId);
+          }
         }
 
-        const seen = new Set<number>();
+        // Find all entities that have any target externalId in their outLinks
         const results: Array<{
           entityId: number;
           externalId: string;
@@ -609,35 +571,24 @@ export function createApiServer(
           title: string;
           markdownPath: string | null;
         }> = [];
+        const seen = new Set<number>();
 
-        for (const targetEntityId of targetEntityIds) {
-          const linkRows = colDb
-            .select()
-            .from(links)
-            .where(eq(links.targetEntityId, targetEntityId))
-            .all();
-
-          for (const link of linkRows) {
-            if (seen.has(link.sourceEntityId)) continue;
-            seen.add(link.sourceEntityId);
-
-            const [entity] = colDb
-              .select()
-              .from(entities)
-              .where(eq(entities.id, link.sourceEntityId))
-              .all();
-
-            if (entity) {
-              const relPath = entity.markdownPath?.replace(/^content\//, "");
-              const displayTitle = relPath
-                ? relPath.replace(/\.md$/, "").split("/").pop()!
+        if (targetExternalIds.size > 0) {
+          for (const entity of allEntitiesForBacklinks) {
+            if (seen.has(entity.id)) continue;
+            const entityData = entity.data as EntityData;
+            const outLinks: string[] = entityData.out_links ?? [];
+            if (outLinks.some((l) => targetExternalIds.has(l))) {
+              seen.add(entity.id);
+              const displayTitle = entityData.markdown_path
+                ? entityData.markdown_path.replace(/\.md$/, "").split("/").pop()!
                 : entity.title;
               results.push({
                 entityId: entity.id,
                 externalId: entity.externalId,
                 entityType: entity.entityType,
                 title: displayTitle,
-                markdownPath: entity.markdownPath,
+                markdownPath: entityData.markdown_path ?? null,
               });
             }
           }
@@ -663,51 +614,37 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
 
-        // Find source entity by markdown path variants
-        const sourceVariants = [sourceFile, `content/${sourceFile}`];
+        // Find source entity by markdown path
+        const sourceVariants = [sourceFile];
 
-        // Resolve source entity IDs
-        const sourceEntityIds = new Set<number>();
-        for (const variant of sourceVariants) {
-          const rows = colDb
-            .select({ id: entities.id })
-            .from(entities)
-            .where(eq(entities.markdownPath, variant))
-            .all();
-          for (const row of rows) sourceEntityIds.add(row.id);
-        }
-
-        const seen = new Set<number>();
         const results: Array<{
           title: string;
           markdownPath: string | null;
         }> = [];
+        const seen = new Set<string>();
 
-        for (const sourceEntityId of sourceEntityIds) {
-          const linkRows = colDb
-            .select()
-            .from(links)
-            .where(eq(links.sourceEntityId, sourceEntityId))
-            .all();
+        type ServeEntity = { id: number; externalId: string; entityType: string; title: string; data: unknown };
+        const allEntitiesForOutgoing = colDb.select().from(entities).all() as ServeEntity[];
+        for (const variant of sourceVariants) {
+          const sourceEntity = allEntitiesForOutgoing.find(
+            (e) => (e.data as EntityData)?.markdown_path === variant,
+          );
+          if (!sourceEntity) continue;
 
-          for (const link of linkRows) {
-            if (seen.has(link.targetEntityId)) continue;
-            seen.add(link.targetEntityId);
+          const sourceEntityData = sourceEntity.data as EntityData;
+          const outLinks: string[] = sourceEntityData.out_links ?? [];
+          for (const targetExternalId of outLinks) {
+            if (seen.has(targetExternalId)) continue;
+            seen.add(targetExternalId);
 
-            const [entity] = colDb
-              .select()
-              .from(entities)
-              .where(eq(entities.id, link.targetEntityId))
-              .all();
+            const entity = (allEntitiesForOutgoing as ServeEntity[]).find((e) => e.externalId === targetExternalId);
 
             if (entity) {
-              const relPath = entity.markdownPath
-                ? entity.markdownPath.replace(/^content\//, "")
-                : null;
-              const displayTitle = relPath
-                ? relPath.replace(/\.md$/, "").split("/").pop()!
+              const ed = entity.data as EntityData;
+              const displayTitle = ed.markdown_path
+                ? ed.markdown_path.replace(/\.md$/, "").split("/").pop()!
                 : entity.title;
-              results.push({ title: displayTitle, markdownPath: relPath });
+              results.push({ title: displayTitle, markdownPath: (entity.data as EntityData)?.markdown_path ?? null });
             }
           }
         }

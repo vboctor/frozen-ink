@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import yaml from "js-yaml";
@@ -64,19 +64,6 @@ function applyEnvOverrides(config: Record<string, unknown>): Record<string, unkn
 export function loadConfig(): FrozenInkConfig {
   const home = getFrozenInkHome();
   const ymlPath = join(home, "frozenink.yml");
-  const legacyJsonPath = join(home, "config.json");
-
-  // Migrate legacy config.json → frozenink.yml
-  if (!existsSync(ymlPath) && existsSync(legacyJsonPath)) {
-    try {
-      const raw = readFileSync(legacyJsonPath, "utf-8");
-      const data = JSON.parse(raw);
-      const ymlContent = yaml.dump(data, { lineWidth: -1, noRefs: true, sortKeys: false });
-      const { writeFileSync } = require("fs");
-      writeFileSync(ymlPath, ymlContent, "utf-8");
-      try { renameSync(legacyJsonPath, `${legacyJsonPath}.bak`); } catch { /* ignore */ }
-    } catch { /* ignore migration errors */ }
-  }
 
   let fileConfig: Record<string, unknown> = {};
   if (existsSync(ymlPath)) {

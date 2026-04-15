@@ -3,8 +3,7 @@ import { join, relative, dirname, extname } from "path";
 import { getFrozenInkHome } from "../config/loader";
 import { getCollection, getCollectionDbPath } from "../config/context";
 import { getCollectionDb } from "../db/client";
-import { entities, entityTags, tags } from "../db/collection-schema";
-import { eq } from "drizzle-orm";
+import { entities } from "../db/collection-schema";
 import { ThemeEngine } from "../theme/engine";
 
 export interface ExportOptions {
@@ -132,13 +131,7 @@ async function exportHtml(
     mkdirSync(outColDir, { recursive: true });
 
     for (const entity of allEntities) {
-      const entityTagNames = colDb
-        .select({ name: tags.name })
-        .from(entityTags)
-        .innerJoin(tags, eq(entityTags.tagId, tags.id))
-        .where(eq(entityTags.entityId, entity.id))
-        .all()
-        .map((t: any) => t.name);
+      const entityTagNames: string[] = (entity as any).tags ?? [];
 
       const data = typeof entity.data === "string" ? JSON.parse(entity.data) : entity.data;
       let html = "";
@@ -162,7 +155,7 @@ async function exportHtml(
 
       // Fallback: read markdown and wrap in basic HTML
       if (!html && entity.markdownPath) {
-        const mdFullPath = join(home, "collections", colName, entity.markdownPath);
+        const mdFullPath = join(home, "collections", colName, "content", entity.markdownPath);
         if (existsSync(mdFullPath)) {
           const mdContent = readFileSync(mdFullPath, "utf-8");
           html = `<!DOCTYPE html>

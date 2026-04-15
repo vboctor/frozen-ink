@@ -1,11 +1,10 @@
 import type { Env } from "../types";
 import {
-  getCollections,
-  getCollection,
   getEntityByExternalId,
-  getEntityTags,
+  parseEntityData,
   getEntityCount,
 } from "../db/client";
+import { getCollections } from "../config";
 import { searchEntities } from "../db/search";
 import { getR2Object } from "../storage/r2";
 import { ThemeEngine } from "@frozenink/core/theme";
@@ -149,12 +148,12 @@ async function callTool(
   env: Env,
 ): Promise<Array<{ type: string; text: string }>> {
   if (name === "collection_list") {
-    const collections = await getCollections(env.DB);
+    const collections = await getCollections(env.BUCKET);
     const data = await Promise.all(
       collections.map(async (col) => ({
         name: col.name,
         title: col.title || col.name,
-        entityCount: await getEntityCount(env.DB, col.name),
+        entityCount: await getEntityCount(env.DB),
       })),
     );
     return [{ type: "text", text: JSON.stringify(data) }];
@@ -162,7 +161,6 @@ async function callTool(
 
   if (name === "entity_search") {
     const results = await searchEntities(env.DB, args.query as string, {
-      collectionName: args.collection as string | undefined,
       entityType: args.entityType as string | undefined,
       limit: (args.limit as number | undefined) ?? 20,
     });
@@ -171,41 +169,43 @@ async function callTool(
 
   if (name === "entity_get_data") {
     const collectionName = args.collection as string;
-    const entity = await getEntityByExternalId(env.DB, collectionName, args.externalId as string);
+    const entity = await getEntityByExternalId(env.DB, args.externalId as string);
     if (!entity) return [{ type: "text", text: JSON.stringify({ error: "Entity not found" }) }];
 
-    const col = await getCollection(env.DB, collectionName);
-    const tags = await getEntityTags(env.DB, collectionName, entity.id);
+    const col = await (await import("../config")).getCollectionConfig(env.BUCKET, collectionName);
+    const entityData = parseEntityData(entity);
     let markdown: string | null = null;
-    if (entity.markdown_path && col?.crawler_type) {
-      const ctx = await buildRenderContext(env.DB, collectionName, col.crawler_type, entity);
+    if (entityData.markdown_path && col?.crawler) {
+      const ctx = buildRenderContext(collectionName, col.crawler, entity);
       markdown = themeEngine.render(ctx);
     }
     return [{
       type: "text",
       text: JSON.stringify({
         id: entity.id, externalId: entity.external_id, entityType: entity.entity_type,
-        title: entity.title, data: JSON.parse(entity.data || "{}"), url: entity.url,
-        tags, markdown, createdAt: entity.created_at, updatedAt: entity.updated_at,
+        title: entity.title, data: entityData, url: entityData.url ?? null,
+        tags: entityData.tags ?? [], markdown, createdAt: entity.created_at, updatedAt: entity.updated_at,
       }),
     }];
   }
 
   if (name === "entity_get_markdown") {
     const collectionName = args.collection as string;
-    const entity = await getEntityByExternalId(env.DB, collectionName, args.externalId as string);
-    if (!entity?.markdown_path) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
+    const entity = await getEntityByExternalId(env.DB, args.externalId as string);
+    if (!entity) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
+    const mdEntityData = parseEntityData(entity);
+    if (!mdEntityData.markdown_path) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
 
-    const col = await getCollection(env.DB, collectionName);
-    if (!col?.crawler_type) return [{ type: "text", text: JSON.stringify({ error: "Collection not found" }) }];
+    const col = await (await import("../config")).getCollectionConfig(env.BUCKET, collectionName);
+    if (!col?.crawler) return [{ type: "text", text: JSON.stringify({ error: "Collection not found" }) }];
 
-    const ctx = await buildRenderContext(env.DB, collectionName, col.crawler_type, entity);
+    const ctx = buildRenderContext(collectionName, col.crawler, entity);
     const md = themeEngine.render(ctx);
     return [{
       type: "text",
       text: JSON.stringify({
         collection: collectionName, externalId: entity.external_id,
-        title: entity.title, markdownPath: entity.markdown_path, markdown: md,
+        title: entity.title, markdownPath: mdEntityData.markdown_path, markdown: md,
         updatedAt: entity.updated_at,
       }),
     }];

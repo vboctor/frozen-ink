@@ -139,20 +139,4 @@ describe("Config Loader", () => {
     expect(config.ui.port).toBe(9999);
   });
 
-  it("migrates legacy config.json to frozenink.yml", () => {
-    const configDir = join(TEST_DIR, "migrate-config");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config.json"),
-      JSON.stringify({ sync: { interval: 500 }, ui: { port: 5000 } }),
-    );
-
-    process.env.FROZENINK_HOME = configDir;
-    const config = loadConfig();
-
-    expect(config.sync.interval).toBe(500);
-    expect(config.ui.port).toBe(5000);
-    // frozenink.yml should now exist
-    expect(existsSync(join(configDir, "frozenink.yml"))).toBe(true);
-  });
 });

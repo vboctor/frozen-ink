@@ -16,7 +16,6 @@ import {
   renameCollection,
   isValidCollectionKey,
   entities,
-  syncRuns,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
@@ -28,7 +27,7 @@ import {
   gitTheme,
   mantisHubTheme,
 } from "@frozenink/crawlers";
-import { desc, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { TextInput } from "./TextInput.js";
 import { AddCollection } from "./AddCollection.js";
 import { ExportView } from "./ExportView.js";
@@ -94,24 +93,27 @@ interface RowStats {
 }
 
 function getRowStats(name: string): RowStats {
+  const col = getCollection(name);
   const dbPath = getCollectionDbPath(name);
-  if (!existsSync(dbPath)) return { entityCount: "—", lastSync: "—" };
-  try {
-    const colDb = getCollectionDb(dbPath);
-    const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
-    const runs = colDb.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(1).all();
-    let lastSync = "never";
-    if (runs.length > 0 && runs[0].startedAt) {
-      const d = new Date(runs[0].startedAt + "Z");
-      if (!isNaN(d.getTime())) {
-        lastSync = formatRelative(d);
-        if (runs[0].status === "failed") lastSync += " (failed)";
-      }
+  let entityCount = "—";
+  if (existsSync(dbPath)) {
+    try {
+      const colDb = getCollectionDb(dbPath);
+      const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
+      entityCount = String(total);
+    } catch {
+      entityCount = "err";
     }
-    return { entityCount: String(total), lastSync };
-  } catch {
-    return { entityCount: "err", lastSync: "—" };
   }
+  let lastSync = "never";
+  if (col?.lastSyncAt) {
+    const d = new Date(col.lastSyncAt + "Z");
+    if (!isNaN(d.getTime())) {
+      lastSync = formatRelative(d);
+      if (col.lastSyncStatus === "failed") lastSync += " (failed)";
+    }
+  }
+  return { entityCount, lastSync };
 }
 
 function getSourceDetails(crawler: string, config: Record<string, unknown>): Array<{ label: string; value: string }> {
@@ -561,12 +563,12 @@ export function CollectionList({
   let entityCount = 0;
   let entityTypeCounts: Array<{ type: string; count: number }> = [];
   let collectionSize = "";
-  let lastRun: {
-    status: string;
-    startedAt: string | null;
-    entitiesCreated: number;
-    entitiesUpdated: number;
-    entitiesDeleted: number;
+  let lastState: {
+    lastSyncStatus: string | null;
+    lastSyncAt: string | null;
+    lastSyncCreated: number | null;
+    lastSyncUpdated: number | null;
+    lastSyncDeleted: number | null;
   } | null = null;
   let lastSyncTime = "";
   if (current && mode === "list") {
@@ -600,13 +602,16 @@ export function CollectionList({
           } catch { /* ignore */ }
         }
 
-        const runs = colDb.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(1).all();
-        if (runs.length > 0) {
-          lastRun = runs[0];
-          if (runs[0].startedAt) {
-            const d = new Date(runs[0].startedAt + "Z");
-            if (!isNaN(d.getTime())) lastSyncTime = formatRelative(d);
-          }
+        if (current.lastSyncAt) {
+          lastState = {
+            lastSyncStatus: current.lastSyncStatus ?? null,
+            lastSyncAt: current.lastSyncAt,
+            lastSyncCreated: current.lastSyncCreated ?? null,
+            lastSyncUpdated: current.lastSyncUpdated ?? null,
+            lastSyncDeleted: current.lastSyncDeleted ?? null,
+          };
+          const d = new Date(current.lastSyncAt + "Z");
+          if (!isNaN(d.getTime())) lastSyncTime = formatRelative(d);
         }
       } catch { /* ignore */ }
     }
@@ -1033,10 +1038,10 @@ export function CollectionList({
             )}
             {collectionSize ? <Text> - {collectionSize}</Text> : null}
           </Text>
-          {lastRun ? (
+          {lastState ? (
             <Box gap={2}>
-              <Text>Last sync: <Text dimColor>{lastSyncTime}</Text> <Text color={lastRun.status === "completed" ? "green" : "red"}>({lastRun.status})</Text></Text>
-              <Text><Text color="green">+{lastRun.entitiesCreated}</Text> <Text color="yellow">~{lastRun.entitiesUpdated}</Text> <Text color="red">-{lastRun.entitiesDeleted}</Text></Text>
+              <Text>Last sync: <Text dimColor>{lastSyncTime}</Text> <Text color={lastState.lastSyncStatus === "completed" ? "green" : "red"}>({lastState.lastSyncStatus})</Text></Text>
+              <Text><Text color="green">+{lastState.lastSyncCreated ?? 0}</Text> <Text color="yellow">~{lastState.lastSyncUpdated ?? 0}</Text> <Text color="red">-{lastState.lastSyncDeleted ?? 0}</Text></Text>
             </Box>
           ) : (
             <Text dimColor>No sync runs yet</Text>

@@ -11,6 +11,7 @@ import {
   SearchIndexer,
   entities,
   type SearchResult,
+  type EntityData,
 } from "@frozenink/core";
 import type { McpServerOptions } from "../server";
 import {
@@ -69,11 +70,11 @@ async function runSearch(
       const results = indexer.search(query, { entityType });
       for (const r of results) {
         const [entity] = colDb
-          .select({ markdownPath: entities.markdownPath })
+          .select({ data: entities.data })
           .from(entities)
           .where(eq(entities.id, r.entityId))
           .all();
-        const rawPath = entity?.markdownPath ?? null;
+        const rawPath = (entity?.data as EntityData)?.markdown_path ?? null;
         const filename = rawPath ? rawPath.replace(/^content\//, "") : null;
         allResults.push({ ...r, collection: col.name, filename });
       }

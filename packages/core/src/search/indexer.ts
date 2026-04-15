@@ -24,8 +24,20 @@ export class SearchIndexer {
   }
 
   private createFtsTable(): void {
+    // Migrate old FTS schema (without collection_name) by detecting column count
+    try {
+      const row = this.sqlite.prepare("PRAGMA table_info(entities_fts)").all();
+      const hasCollectionName = (row as any[]).some((r: any) => r.name === "collection_name");
+      if (!hasCollectionName && (row as any[]).length > 0) {
+        this.sqlite.exec("DROP TABLE IF EXISTS entities_fts");
+      }
+    } catch {
+      // Table may not exist yet
+    }
+
     this.sqlite.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
+        collection_name UNINDEXED,
         entity_id UNINDEXED,
         external_id UNINDEXED,
         entity_type UNINDEXED,
@@ -43,6 +55,7 @@ export class SearchIndexer {
     title: string;
     content: string;
     tags: string[];
+    collectionName?: string;
   }): void {
     // Remove existing entry for this entity
     this.sqlite.exec(
@@ -50,9 +63,10 @@ export class SearchIndexer {
     );
 
     const stmt = this.sqlite.prepare(
-      `INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     stmt.run(
+      entity.collectionName ?? "",
       String(entity.id),
       entity.externalId,
       entity.entityType,
@@ -91,7 +105,7 @@ export class SearchIndexer {
 
     let sql = `
       SELECT entity_id, external_id, entity_type, title, rank,
-        snippet(entities_fts, 4, '<mark>', '</mark>', '…', 48) AS snippet
+        snippet(entities_fts, 5, '<mark>', '</mark>', '…', 48) AS snippet
       FROM entities_fts
       WHERE entities_fts MATCH ?
     `;

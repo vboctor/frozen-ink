@@ -58,6 +58,11 @@ export const syncCommand = new Command("sync")
     const prepareThemeEngine = createGenerateThemeEngine();
 
     for (const col of collectionRows) {
+      if (col.crawler === "remote") {
+        console.error(`Cannot sync "${col.name}": crawler is "remote". Use 'fink pull' instead.`);
+        continue;
+      }
+
       if (!opts.full) {
         console.log(`Preparing "${col.name}" (${col.crawler})...`);
         await prepareCollection(col, home, prepareThemeEngine, (msg) => console.log(msg));

@@ -1,80 +1,29 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+
+export interface EntityData {
+  source: Record<string, unknown>;
+  out_links?: string[];
+  in_links?: string[];
+  assets?: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }>;
+  markdown_mtime?: number | null;
+  markdown_size?: number | null;
+  markdown_path?: string | null;
+  url?: string | null;
+  tags?: string[] | null;
+}
 
 export const entities = sqliteTable("entities", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   externalId: text("external_id").notNull(),
   entityType: text("entity_type").notNull(),
   title: text("title").notNull(),
-  data: text("data", { mode: "json" }).notNull().$type<Record<string, unknown>>(),
+  data: text("data", { mode: "json" }).notNull().$type<EntityData>(),
   contentHash: text("content_hash"),
-  markdownPath: text("markdown_path"),
-  markdownMtime: real("markdown_mtime"),
-  markdownSize: integer("markdown_size"),
-  url: text("url"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`(datetime('now'))`),
-});
-
-export const tags = sqliteTable("tags", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name").notNull().unique(),
-});
-
-export const entityTags = sqliteTable("entity_tags", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  entityId: integer("entity_id")
-    .notNull()
-    .references(() => entities.id),
-  tagId: integer("tag_id")
-    .notNull()
-    .references(() => tags.id),
-});
-
-export const assets = sqliteTable("assets", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  entityId: integer("entity_id")
-    .notNull()
-    .references(() => entities.id),
-  filename: text("filename").notNull(),
-  mimeType: text("mime_type").notNull(),
-  storagePath: text("storage_path").notNull(),
-});
-
-export const syncState = sqliteTable("sync_state", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  crawlerType: text("crawler_type").notNull(),
-  cursor: text("cursor", { mode: "json" }).$type<Record<string, unknown>>(),
-  crawlerVersion: text("crawler_version"),
-  updatedAt: text("updated_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
-});
-
-export const syncRuns = sqliteTable("sync_runs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  status: text("status").notNull(),
-  syncType: text("sync_type").notNull().default("incremental"),
-  entitiesCreated: integer("entities_created").notNull().default(0),
-  entitiesUpdated: integer("entities_updated").notNull().default(0),
-  entitiesDeleted: integer("entities_deleted").notNull().default(0),
-  errors: text("errors", { mode: "json" }).$type<unknown[]>(),
-  startedAt: text("started_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
-  completedAt: text("completed_at"),
-});
-
-export const links = sqliteTable("links", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  sourceEntityId: integer("source_entity_id")
-    .notNull()
-    .references(() => entities.id),
-  targetEntityId: integer("target_entity_id")
-    .notNull()
-    .references(() => entities.id),
 });

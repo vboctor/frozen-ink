@@ -21,7 +21,6 @@ import {
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
-  syncRuns,
   entities,
 } from "@frozenink/core";
 import {
@@ -32,7 +31,6 @@ import {
   gitTheme,
   mantisHubTheme,
 } from "@frozenink/crawlers";
-import { desc, eq } from "drizzle-orm";
 import { prepareCollection } from "./prepare";
 import { createGenerateThemeEngine } from "./generate";
 
@@ -269,22 +267,22 @@ export function handleManagementRequest(req: Request): Response | null {
     if (!col) return errorResponse("Collection not found", 404);
 
     const dbPath = getCollectionDbPath(name);
-    if (!existsSync(dbPath)) {
-      return jsonResponse({ entityCount: 0, lastSyncRun: null });
+    let entityCount = 0;
+    if (existsSync(dbPath)) {
+      const colDb = getCollectionDb(dbPath);
+      entityCount = colDb.select().from(entities).all().length;
     }
 
-    const colDb = getCollectionDb(dbPath);
-    const allEntities = colDb.select().from(entities).all();
-    const [lastRun] = colDb
-      .select()
-      .from(syncRuns)
-      .orderBy(desc(syncRuns.startedAt))
-      .limit(1)
-      .all();
-
     return jsonResponse({
-      entityCount: allEntities.length,
-      lastSyncRun: lastRun ?? null,
+      entityCount,
+      lastSyncRun: col.lastSyncAt ? {
+        status: col.lastSyncStatus,
+        startedAt: col.lastSyncAt,
+        entitiesCreated: col.lastSyncCreated ?? 0,
+        entitiesUpdated: col.lastSyncUpdated ?? 0,
+        entitiesDeleted: col.lastSyncDeleted ?? 0,
+        errors: col.lastSyncErrors ?? null,
+      } : null,
     });
   }
 
@@ -319,20 +317,20 @@ export function handleManagementRequest(req: Request): Response | null {
     return jsonResponse(syncProgress);
   }
 
-  // GET /api/collections/:name/sync-runs
+  // GET /api/collections/:name/sync-runs (returns last sync state wrapped in an array for backward compat)
   const syncRunsMatch = path.match(/^\/api\/collections\/([^/]+)\/sync-runs$/);
   if (syncRunsMatch && method === "GET") {
     const name = decodeURIComponent(syncRunsMatch[1]);
-    const dbPath = getCollectionDbPath(name);
-    if (!existsSync(dbPath)) return jsonResponse([]);
-    const colDb = getCollectionDb(dbPath);
-    const runs = colDb
-      .select()
-      .from(syncRuns)
-      .orderBy(desc(syncRuns.startedAt))
-      .limit(20)
-      .all();
-    return jsonResponse(runs);
+    const col = getCollection(name);
+    if (!col?.lastSyncAt) return jsonResponse([]);
+    return jsonResponse([{
+      status: col.lastSyncStatus,
+      startedAt: col.lastSyncAt,
+      entitiesCreated: col.lastSyncCreated ?? 0,
+      entitiesUpdated: col.lastSyncUpdated ?? 0,
+      entitiesDeleted: col.lastSyncDeleted ?? 0,
+      errors: col.lastSyncErrors ?? null,
+    }]);
   }
 
   // --- Collection Publish ---
@@ -544,13 +542,9 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
         mkdirSync(join(collectionDir, "content"), { recursive: true });
         const storage = new LocalStorageBackend(collectionDir);
 
-        // If full sync requested, reset cursor by deleting sync_state
+        // If full sync requested, clear the incremental cursor from YAML
         if (full) {
-          const dbPath = getCollectionDbPath(name);
-          if (existsSync(dbPath)) {
-            const colDb = getCollectionDb(dbPath);
-            colDb.delete(require("@frozenink/core").syncState).run();
-          }
+          updateCollection(name, { syncCursor: undefined });
         }
 
         const engine = new SyncEngine({
