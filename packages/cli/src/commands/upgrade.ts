@@ -32,7 +32,7 @@ async function upgradeCollection(name: string, home: string): Promise<string> {
   const sqlite = openDatabase(dbPath);
   sqlite.exec("PRAGMA journal_mode = WAL;");
 
-  if (!tableExists(sqlite, "tags") && !tableExists(sqlite, "entity_tags")) {
+  if (!tableExists(sqlite, "tags") || !tableExists(sqlite, "entity_tags")) {
     sqlite.close();
     return `Skipped "${name}" — already upgraded`;
   }

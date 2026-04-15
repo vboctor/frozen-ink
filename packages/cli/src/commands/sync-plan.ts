@@ -1,5 +1,19 @@
 import { computeEntityHash, type HashableEntity } from "@frozenink/core";
 
+/**
+ * Reject paths that could escape the collection directory.
+ * Call this for every markdownPath / storagePath received from a remote server.
+ */
+export function assertSafePath(p: string): void {
+  if (!p || p.startsWith("/") || p.startsWith("\\")) {
+    throw new Error(`Unsafe remote path (absolute): ${p}`);
+  }
+  const segments = p.split(/[\\/]/);
+  if (segments.includes("..") || segments.includes(".")) {
+    throw new Error(`Unsafe remote path (traversal): ${p}`);
+  }
+}
+
 export interface ManifestEntity {
   externalId: string;
   hash: string;
@@ -218,6 +232,9 @@ export function isSyncPlanEmpty(plan: SyncPlan): boolean {
   return (
     plan.entities.add.length === 0 &&
     plan.entities.update.length === 0 &&
-    plan.entities.delete.length === 0
+    plan.entities.delete.length === 0 &&
+    plan.files.download.length === 0 &&
+    plan.files.delete.length === 0 &&
+    plan.files.move.length === 0
   );
 }

@@ -76,6 +76,9 @@ export class RemoteClient {
         const retried = await this.fetchJson<ManifestResponse>(
           `/api/collections/${encodeURIComponent(this.collectionName)}/manifest`,
         );
+        if (retried.version > 1) {
+          throw new Error(`Unsupported manifest version: ${retried.version}. Please update fink.`);
+        }
         return { manifest: retried, entries: parseManifestEntities(retried.entities) };
       }
     }

@@ -201,10 +201,14 @@ export async function putR2Object(
 export async function deleteR2Object(bucket: string, key: string): Promise<void> {
   const { apiToken, accountId } = await getCredentials();
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  await fetch(url, {
+  const res = await fetch(url, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${apiToken}` },
   });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`R2 delete failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
+  }
 }
 
 export async function deleteR2Bucket(name: string): Promise<void> {
@@ -282,27 +286,25 @@ export function generateWranglerToml(config: {
   passwordHash: string;
   toolDescription?: string;
 }): string {
-  const escapedToolDescription = (config.toolDescription ?? "")
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"');
+  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-  return `name = "${config.workerName}"
-main = "${config.mainScript}"
+  return `name = "${esc(config.workerName)}"
+main = "${esc(config.mainScript)}"
 compatibility_date = "2024-01-01"
 
 [vars]
-PASSWORD_HASH = "${config.passwordHash}"
-WORKER_NAME = "${config.workerName}"
-TOOL_DESCRIPTION = "${escapedToolDescription}"
+PASSWORD_HASH = "${esc(config.passwordHash)}"
+WORKER_NAME = "${esc(config.workerName)}"
+TOOL_DESCRIPTION = "${esc(config.toolDescription ?? "")}"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "${config.d1DatabaseName}"
-database_id = "${config.d1DatabaseId}"
+database_name = "${esc(config.d1DatabaseName)}"
+database_id = "${esc(config.d1DatabaseId)}"
 
 [[r2_buckets]]
 binding = "BUCKET"
-bucket_name = "${config.r2BucketName}"
+bucket_name = "${esc(config.r2BucketName)}"
 `;
 }
 

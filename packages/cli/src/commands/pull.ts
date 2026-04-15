@@ -18,6 +18,7 @@ import {
   computeSyncPlan,
   printSyncPlan,
   isSyncPlanEmpty,
+  assertSafePath,
   type LocalEntity,
   type RemoteEntityData,
 } from "./sync-plan";
@@ -126,6 +127,8 @@ export const pullCommand = new Command("pull")
 
     // Execute file moves first (no network)
     for (const move of plan.files.move) {
+      assertSafePath(move.from);
+      assertSafePath(move.to);
       try {
         const content = await storage.read(`content/${move.from}`);
         await storage.write(`content/${move.to}`, content);
@@ -140,6 +143,7 @@ export const pullCommand = new Command("pull")
     if (mdDownloads.length > 0) {
       console.log(`Downloading ${mdDownloads.length} files...`);
       await runConcurrent(mdDownloads, 10, async (re) => {
+        assertSafePath(re.markdownPath!);
         const content = await client.getMarkdown(re.markdownPath!);
         if (content) {
           await storage.write(`content/${re.markdownPath}`, content);
@@ -157,6 +161,7 @@ export const pullCommand = new Command("pull")
     if (assetDownloads.length > 0) {
       console.log(`Downloading ${assetDownloads.length} assets...`);
       await runConcurrent(assetDownloads, 10, async ({ path }) => {
+        assertSafePath(path);
         const content = await client.getFile(path);
         if (content) {
           await storage.write(`attachments/${path}`, Buffer.from(content));
@@ -219,8 +224,15 @@ export const pullCommand = new Command("pull")
         .run();
     }
 
-    // Apply DB changes: delete removed entities
+    // Collect numeric IDs for deleted entities before removing them from DB
+    const deletedEntityIds: number[] = [];
     for (const extId of plan.entities.delete) {
+      const [row] = colDb
+        .select({ id: entities.id })
+        .from(entities)
+        .where(eq(entities.externalId, extId))
+        .all();
+      if (row) deletedEntityIds.push(row.id);
       colDb.delete(entities).where(eq(entities.externalId, extId)).run();
     }
 
@@ -249,8 +261,8 @@ export const pullCommand = new Command("pull")
         tags: re.tags ?? [],
       });
     }
-    for (const extId of plan.entities.delete) {
-      indexer.removeIndex(0); // FTS keyed by entity_id, but entity is already deleted
+    for (const entityId of deletedEntityIds) {
+      indexer.removeIndex(entityId);
     }
     indexer.close();
 

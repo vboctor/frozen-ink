@@ -16,6 +16,7 @@ import {
   computeSyncPlan,
   printSyncPlan,
   isSyncPlanEmpty,
+  assertSafePath,
   type RemoteEntityData,
 } from "./sync-plan";
 
@@ -109,6 +110,7 @@ export const cloneCommand = new Command("clone")
     console.log(`Downloading ${mdDownloads.length} markdown files...`);
     let downloaded = 0;
     await runConcurrent(mdDownloads, 10, async (re) => {
+      assertSafePath(re.markdownPath!);
       const content = await client.getMarkdown(re.markdownPath!);
       if (content) {
         await storage.write(`content/${re.markdownPath}`, content);
@@ -129,6 +131,7 @@ export const cloneCommand = new Command("clone")
     if (assetDownloads.length > 0) {
       console.log(`Downloading ${assetDownloads.length} assets...`);
       await runConcurrent(assetDownloads, 10, async ({ path }) => {
+        assertSafePath(path);
         const content = await client.getFile(path);
         if (content) {
           await storage.write(`attachments/${path}`, Buffer.from(content));
