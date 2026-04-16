@@ -46,10 +46,10 @@ export async function unpublishCollection(
   // 1. Empty and delete R2 bucket
   onProgress("r2", "Listing R2 objects...");
   try {
-    const keys = await listR2Objects(r2BucketName);
-    if (keys.length > 0) {
-      onProgress("r2", `Deleting ${keys.length} objects from R2...`);
-      await deleteR2Objects(r2BucketName, keys);
+    const objects = await listR2Objects(r2BucketName);
+    if (objects.length > 0) {
+      onProgress("r2", `Deleting ${objects.length} objects from R2...`);
+      await deleteR2Objects(r2BucketName, objects.map(o => o.key));
     }
     onProgress("r2", "Deleting R2 bucket...");
     await deleteR2Bucket(r2BucketName);

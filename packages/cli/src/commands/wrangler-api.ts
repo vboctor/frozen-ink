@@ -128,6 +128,37 @@ export async function checkWranglerAuth(): Promise<void> {
   }
 }
 
+// --- Retry helper for transient Cloudflare/network errors ---
+
+function isTransientError(err: unknown): boolean {
+  if (!(err instanceof WranglerError)) return false;
+  const msg = (err.stderr + err.stdout).toLowerCase();
+  return (
+    msg.includes("503") ||
+    msg.includes("502") ||
+    msg.includes("500") ||
+    msg.includes("429") ||
+    msg.includes("service unavailable") ||
+    msg.includes("malformed response") ||
+    msg.includes("timeout") ||
+    msg.includes("econnreset") ||
+    msg.includes("econnrefused")
+  );
+}
+
+async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxRetries || !isTransientError(err)) throw err;
+      const delay = Math.min(2000 * 2 ** attempt, 30000);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 // --- D1 operations (via wrangler CLI) ---
 
 export async function createD1(name: string): Promise<{ uuid: string; name: string }> {
@@ -150,7 +181,9 @@ export async function createD1(name: string): Promise<{ uuid: string; name: stri
 }
 
 export async function executeD1File(dbName: string, sqlFilePath: string): Promise<void> {
-  await runWrangler(["d1", "execute", dbName, "--remote", "--file", sqlFilePath, "--yes"]);
+  await retryWithBackoff(() =>
+    runWrangler(["d1", "execute", dbName, "--remote", "--file", sqlFilePath, "--yes"]),
+  );
 }
 
 export async function executeD1Command(dbName: string, sql: string): Promise<string> {
@@ -271,33 +304,24 @@ export async function deleteR2Object(bucket: string, key: string): Promise<void>
 
 export async function deleteR2Objects(bucket: string, keys: string[]): Promise<void> {
   if (keys.length === 0) return;
-  const { apiToken, accountId } = await getCredentials();
-  const BATCH_SIZE = 1000;
-  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
-    const batch = keys.slice(i, i + BATCH_SIZE);
-    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects`;
-    const res = await fetchWithRetry(url, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ keys: batch }),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`R2 batch delete failed: ${res.status} ${text.slice(0, 200)}`);
+  const CONCURRENCY = 3;
+  let index = 0;
+  async function worker() {
+    while (index < keys.length) {
+      const key = keys[index++];
+      await deleteR2Object(bucket, key);
     }
   }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, keys.length) }, () => worker()));
 }
 
 export async function deleteR2Bucket(name: string): Promise<void> {
   await runWrangler(["r2", "bucket", "delete", name], { allowFailure: true });
 }
 
-export async function listR2Objects(bucket: string, prefix?: string): Promise<string[]> {
+export async function listR2Objects(bucket: string, prefix?: string): Promise<Array<{ key: string; size: number }>> {
   const { apiToken, accountId } = await getCredentials();
-  const keys: string[] = [];
+  const objects: Array<{ key: string; size: number }> = [];
   let cursor: string | undefined;
   for (;;) {
     const params = new URLSearchParams({ per_page: "1000" });
@@ -309,12 +333,12 @@ export async function listR2Objects(bucket: string, prefix?: string): Promise<st
       headers: { Authorization: `Bearer ${apiToken}` },
     });
     if (!res.ok) break;
-    const data = await res.json() as { result: Array<{ key: string }>; result_info?: { cursor?: string } };
-    for (const obj of data.result ?? []) keys.push(obj.key);
+    const data = await res.json() as { result: Array<{ key: string; size: number }>; result_info?: { cursor?: string } };
+    for (const obj of data.result ?? []) objects.push({ key: obj.key, size: obj.size ?? 0 });
     cursor = data.result_info?.cursor;
     if (!cursor || (data.result ?? []).length === 0) break;
   }
-  return keys;
+  return objects;
 }
 
 export async function putR2ObjectFromString(
