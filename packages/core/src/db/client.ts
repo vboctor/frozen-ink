@@ -46,6 +46,12 @@ export function getCollectionDb(dbPath: string) {
     try { sqlite.exec(`ALTER TABLE entities ADD COLUMN ${col}`); } catch {}
   }
 
+  // Ensure indexes exist (safe on new and existing DBs)
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_entities_external ON entities(external_id);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_entities_folder   ON entities(folder, slug);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_entities_type     ON entities(entity_type);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS idx_entities_updated  ON entities(updated_at);")
+
   // One-time backfill: populate folder/slug from data.markdown_path for existing rows
   const needsBackfill = sqlite.prepare(
     "SELECT id, json_extract(data, '$.markdown_path') as mp FROM entities WHERE folder IS NULL AND json_extract(data, '$.markdown_path') IS NOT NULL LIMIT 500",

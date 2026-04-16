@@ -442,7 +442,7 @@ export async function publishCollections(
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`);
       schemaSql.push("CREATE INDEX idx_entities_external ON entities(external_id);");
-      schemaSql.push("CREATE INDEX idx_entities_folder   ON entities(folder);");
+      schemaSql.push("CREATE INDEX idx_entities_folder   ON entities(folder, slug);");
       schemaSql.push("CREATE INDEX idx_entities_type     ON entities(entity_type);");
       schemaSql.push("CREATE INDEX idx_entities_updated  ON entities(updated_at);");
       schemaSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
