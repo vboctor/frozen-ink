@@ -319,6 +319,29 @@ describe("SearchIndexer", () => {
     indexer.close();
   });
 
+  it("honors a limit on search results", () => {
+    const dbPath = join(TEST_DIR, "fts-limit.db");
+    const indexer = new SearchIndexer(dbPath);
+
+    for (let i = 1; i <= 20; i++) {
+      indexer.updateIndex({
+        id: i,
+        externalId: `ext-${i}`,
+        entityType: "issue",
+        title: `Bug ${i}: something broke`,
+        content: "generic body text about widgets",
+        tags: [],
+      });
+    }
+
+    expect(indexer.search("widgets")).toHaveLength(20);
+    expect(indexer.search("widgets", { limit: 5 })).toHaveLength(5);
+    // limit: 0 is treated as unset — return everything.
+    expect(indexer.search("widgets", { limit: 0 })).toHaveLength(20);
+
+    indexer.close();
+  });
+
   describe("buildFtsQuery", () => {
     it("leaves plain words as prefix matches", () => {
       expect(buildFtsQuery("fix lo")).toBe("fix* lo*");

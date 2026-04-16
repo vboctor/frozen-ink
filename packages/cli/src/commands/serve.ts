@@ -115,6 +115,30 @@ function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | 
 }
 
 /**
+ * Pool of open SearchIndexer handles keyed by DB path. Opening a SQLite
+ * connection + running PRAGMA + CREATE TABLE IF NOT EXISTS on every
+ * keystroke during search-as-you-type adds measurable latency; caching the
+ * handle across requests avoids it.
+ *
+ * When a collection is full-synced its DB file is deleted and recreated. The
+ * cached handle would then point at the unlinked inode and miss subsequent
+ * writes, so we check the file's inode on each lookup and reopen if it
+ * changed. One stat per search request is cheap.
+ */
+const searchIndexerCache = new Map<string, { indexer: SearchIndexer; ino: number }>();
+
+function getCachedSearchIndexer(dbPath: string): SearchIndexer {
+  const ino = statSync(dbPath).ino;
+  const cached = searchIndexerCache.get(dbPath);
+  if (cached && cached.ino === ino) return cached.indexer;
+  // Inode changed (file replaced) or no cached handle — open a fresh one.
+  try { cached?.indexer.close(); } catch { /* already closed */ }
+  const indexer = new SearchIndexer(dbPath);
+  searchIndexerCache.set(dbPath, { indexer, ino });
+  return indexer;
+}
+
+/**
  * Pick the first file in the visible tree order: subdirectories are visited
  * before files at every level, subdirectories are sorted ASC by name, and the
  * leaf folder's `sort` config (ASC/DESC) decides file order within it. This
@@ -599,33 +623,30 @@ export function createApiServer(
           if (!existsSync(dbPath)) continue;
 
           const colDb = getCollectionDb(dbPath);
-          const indexer = new SearchIndexer(dbPath);
-          try {
-            const results = indexer.search(query, {
-              entityType: typeFilter || undefined,
-            });
-            if (results.length > 0) {
-              const entityIds = results.map((r) => r.entityId);
-              type SearchEntityRow = { id: number; folder: string | null; slug: string | null; title: string };
-              const entityRows: SearchEntityRow[] = colDb
-                .select({ id: entities.id, folder: entities.folder, slug: entities.slug, title: entities.title })
-                .from(entities)
-                .where(inArray(entities.id, entityIds))
-                .all();
-              const entityById = new Map<number, SearchEntityRow>(entityRows.map((e) => [e.id, e]));
-              for (const r of results) {
-                const entity = entityById.get(r.entityId);
-                allResults.push({
-                  ...r,
-                  title: entity?.title ?? r.title,
-                  collection: col.name,
-                  markdownPath: entityMarkdownPath(entity?.folder, entity?.slug),
-                  snippet: r.snippet,
-                });
-              }
+          const indexer = getCachedSearchIndexer(dbPath);
+          const results = indexer.search(query, {
+            entityType: typeFilter || undefined,
+            limit,
+          });
+          if (results.length > 0) {
+            const entityIds = results.map((r) => r.entityId);
+            type SearchEntityRow = { id: number; folder: string | null; slug: string | null; title: string };
+            const entityRows: SearchEntityRow[] = colDb
+              .select({ id: entities.id, folder: entities.folder, slug: entities.slug, title: entities.title })
+              .from(entities)
+              .where(inArray(entities.id, entityIds))
+              .all();
+            const entityById = new Map<number, SearchEntityRow>(entityRows.map((e) => [e.id, e]));
+            for (const r of results) {
+              const entity = entityById.get(r.entityId);
+              allResults.push({
+                ...r,
+                title: entity?.title ?? r.title,
+                collection: col.name,
+                markdownPath: entityMarkdownPath(entity?.folder, entity?.slug),
+                snippet: r.snippet,
+              });
             }
-          } finally {
-            indexer.close();
           }
         }
 
