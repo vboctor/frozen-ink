@@ -6,6 +6,7 @@ import { SyncEngine, extractWikilinks } from "../sync-engine";
 import { getCollectionDb } from "../../db/client";
 import { entities } from "../../db/collection-schema";
 import type { EntityData } from "../../db/collection-schema";
+import { MetadataStore, getCollectionSyncState } from "../../db/metadata";
 import { getCollection, addCollection } from "../../config/context";
 import { ThemeEngine } from "../../theme/engine";
 import { LocalStorageBackend } from "../../storage/local";
@@ -205,10 +206,10 @@ describe("SyncEngine", () => {
     const [second] = db.select().from(entities).all();
     expect(second.updatedAt).toBe(firstUpdatedAt);
 
-    const col = getCollection("test");
-    expect(col!.lastSyncStatus).toBe("completed");
-    expect(col!.lastSyncUpdated).toBe(0);
-    expect(col!.lastSyncCreated).toBe(0);
+    const sync = getCollectionSyncState(dbPath);
+    expect(sync.lastStatus).toBe("completed");
+    expect(sync.lastUpdated).toBe(0);
+    expect(sync.lastCreated).toBe(0);
   });
 
   it("re-renders when content hash changes", async () => {
@@ -336,8 +337,8 @@ describe("SyncEngine", () => {
     const exists = await storage.exists("md/issue/del-1.md");
     expect(exists).toBe(false);
 
-    const col = getCollection("test");
-    expect(col!.lastSyncDeleted).toBe(1);
+    const sync = getCollectionSyncState(dbPath);
+    expect(sync.lastDeleted).toBe(1);
   });
 
   it("downloads attachments and stores them as entity JSON assets", async () => {
@@ -390,7 +391,7 @@ describe("SyncEngine", () => {
     expect(assets[0].hash).toBeTruthy();
   });
 
-  it("updates YAML with cursor after sync", async () => {
+  it("persists sync cursor to the metadata DB", async () => {
     const crawler = createMockCrawler([
       {
         entities: [
@@ -419,11 +420,11 @@ describe("SyncEngine", () => {
 
     await engine.run();
 
-    const col = getCollection("test");
-    expect(col!.syncCursor).toEqual({ page: 2, since: "2024-01-01" });
+    const sync = getCollectionSyncState(dbPath);
+    expect(sync.cursor).toEqual({ page: 2, since: "2024-01-01" });
   });
 
-  it("updates YAML with sync status, counts, and timing", async () => {
+  it("persists sync status, counts, and timing to metadata DB", async () => {
     const crawler = createMockCrawler([
       {
         entities: [
@@ -452,13 +453,85 @@ describe("SyncEngine", () => {
 
     await engine.run();
 
-    const col = getCollection("test");
-    expect(col).toBeTruthy();
-    expect(col!.lastSyncStatus).toBe("completed");
-    expect(col!.lastSyncCreated).toBe(1);
-    expect(col!.lastSyncUpdated).toBe(0);
-    expect(col!.lastSyncDeleted).toBe(0);
-    expect(col!.lastSyncAt).toBeTruthy();
+    const sync = getCollectionSyncState(dbPath);
+    expect(sync.lastStatus).toBe("completed");
+    expect(sync.lastCreated).toBe(1);
+    expect(sync.lastUpdated).toBe(0);
+    expect(sync.lastDeleted).toBe(0);
+    expect(sync.lastAt).toBeTruthy();
+  });
+
+  it("mirrors collection title, description, and version from YAML into the DB metadata", async () => {
+    addCollection("mirror-test", {
+      crawler: "mock",
+      config: {},
+      credentials: {},
+      title: "My Repo",
+      description: "Engineering notes",
+      version: "2.1",
+    });
+
+    const crawler = createMockCrawler([
+      { entities: [], nextCursor: null, hasMore: false, deletedExternalIds: [] },
+    ]);
+
+    const dbPath = join(TEST_DIR, "mirror.db");
+    const engine = new SyncEngine({
+      crawler,
+      dbPath,
+      collectionName: "mirror-test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+
+    await engine.run();
+
+    const store = new MetadataStore(dbPath);
+    try {
+      expect(store.getCollectionTitle()).toBe("My Repo");
+      expect(store.getCollectionDescription()).toBe("Engineering notes");
+      // The mock crawler's metadata.version is undefined, so engine falls back to "1.0"
+      // and stamps that as the current version after sync — both in YAML and DB.
+      expect(store.getCollectionVersion()).toBe("1.0");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("clears mirrored title/description when YAML values are empty", async () => {
+    addCollection("clear-test", { crawler: "mock", config: {}, credentials: {} });
+
+    const crawler = createMockCrawler([
+      { entities: [], nextCursor: null, hasMore: false, deletedExternalIds: [] },
+    ]);
+
+    const dbPath = join(TEST_DIR, "clear.db");
+
+    // Seed the DB with stale title/description
+    const seed = new MetadataStore(dbPath);
+    seed.set("title", "Stale Title");
+    seed.set("description", "Stale Description");
+    seed.close();
+
+    const engine = new SyncEngine({
+      crawler,
+      dbPath,
+      collectionName: "clear-test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+
+    await engine.run();
+
+    const store = new MetadataStore(dbPath);
+    try {
+      expect(store.getCollectionTitle()).toBeNull();
+      expect(store.getCollectionDescription()).toBeNull();
+    } finally {
+      store.close();
+    }
   });
 
   it("writes markdown files for new entities", async () => {

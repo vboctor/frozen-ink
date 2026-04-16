@@ -25,6 +25,8 @@ import {
   resolveCredentials,
   listNamedCredentials,
   getNamedCredentials,
+  getCollectionSyncState,
+  updateCollectionSyncState,
 } from "@frozenink/core";
 import {
   createDefaultRegistry,
@@ -288,15 +290,16 @@ export function handleManagementRequest(req: Request): Response | null {
       entityCount = colDb.select().from(entities).all().length;
     }
 
+    const sync = getCollectionSyncState(dbPath);
     return jsonResponse({
       entityCount,
-      lastSyncRun: col.lastSyncAt ? {
-        status: col.lastSyncStatus,
-        startedAt: col.lastSyncAt,
-        entitiesCreated: col.lastSyncCreated ?? 0,
-        entitiesUpdated: col.lastSyncUpdated ?? 0,
-        entitiesDeleted: col.lastSyncDeleted ?? 0,
-        errors: col.lastSyncErrors ?? null,
+      lastSyncRun: sync.lastAt ? {
+        status: sync.lastStatus,
+        startedAt: sync.lastAt,
+        entitiesCreated: sync.lastCreated ?? 0,
+        entitiesUpdated: sync.lastUpdated ?? 0,
+        entitiesDeleted: sync.lastDeleted ?? 0,
+        errors: sync.lastErrors ?? null,
       } : null,
     });
   }
@@ -337,14 +340,16 @@ export function handleManagementRequest(req: Request): Response | null {
   if (syncRunsMatch && method === "GET") {
     const name = decodeURIComponent(syncRunsMatch[1]);
     const col = getCollection(name);
-    if (!col?.lastSyncAt) return jsonResponse([]);
+    if (!col) return jsonResponse([]);
+    const sync = getCollectionSyncState(getCollectionDbPath(name));
+    if (!sync.lastAt) return jsonResponse([]);
     return jsonResponse([{
-      status: col.lastSyncStatus,
-      startedAt: col.lastSyncAt,
-      entitiesCreated: col.lastSyncCreated ?? 0,
-      entitiesUpdated: col.lastSyncUpdated ?? 0,
-      entitiesDeleted: col.lastSyncDeleted ?? 0,
-      errors: col.lastSyncErrors ?? null,
+      status: sync.lastStatus,
+      startedAt: sync.lastAt,
+      entitiesCreated: sync.lastCreated ?? 0,
+      entitiesUpdated: sync.lastUpdated ?? 0,
+      entitiesDeleted: sync.lastDeleted ?? 0,
+      errors: sync.lastErrors ?? null,
     }]);
   }
 
@@ -557,9 +562,9 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
         mkdirSync(join(collectionDir, "content"), { recursive: true });
         const storage = new LocalStorageBackend(collectionDir);
 
-        // If full sync requested, clear the incremental cursor from YAML
+        // If full sync requested, clear the incremental cursor from the DB
         if (full) {
-          updateCollection(name, { syncCursor: undefined });
+          updateCollectionSyncState(getCollectionDbPath(name), { cursor: null });
         }
 
         const engine = new SyncEngine({

@@ -4,6 +4,7 @@ import { z } from "zod";
 import yaml from "js-yaml";
 import { getFrozenInkHome } from "./loader";
 import { atomicWriteYaml, readYaml } from "./yaml-utils";
+import { MetadataStore } from "../db/metadata";
 
 // --- Zod Schemas ---
 
@@ -42,17 +43,7 @@ const collectionEntrySchema = z.object({
    */
   hide: z.array(z.string()).optional(),
   publish: publishStateSchema.optional(),
-  // --- Sync state (written after each sync; replaces collection_state DB table) ---
-  lastSyncAt: z.string().optional(),
-  lastSyncStatus: z.string().optional(),
-  lastSyncCreated: z.number().optional(),
-  lastSyncUpdated: z.number().optional(),
-  lastSyncDeleted: z.number().optional(),
-  lastSyncErrors: z.unknown().array().optional(),
-  // --- Publish state ---
   lastPublishedAt: z.string().optional(),
-  // --- Incremental sync cursor (replaces sync_state DB table) ---
-  syncCursor: z.unknown().optional(),
 });
 
 const legacyDeploymentEntrySchema = z.object({
@@ -222,6 +213,104 @@ export function migrateFromLegacyContext(): void {
 
   migrateLegacyPublishYml();
   migrateLegacySites();
+  migrateSyncStateToMetadataDb();
+}
+
+/**
+ * Move sync state fields (syncCursor, lastSync*) from each collection's YAML
+ * into its SQLite metadata table. Idempotent: runs on every startup but only
+ * touches YAMLs that still have the legacy fields.
+ */
+export function migrateSyncStateToMetadataDb(): void {
+  const collectionsDir = getCollectionsDir();
+  if (!existsSync(collectionsDir)) return;
+
+  let names: string[];
+  try {
+    names = readdirSync(collectionsDir);
+  } catch {
+    return;
+  }
+
+  const LEGACY_KEYS = [
+    "syncCursor",
+    "lastSyncAt",
+    "lastSyncStatus",
+    "lastSyncCreated",
+    "lastSyncUpdated",
+    "lastSyncDeleted",
+    "lastSyncErrors",
+  ] as const;
+
+  for (const name of names) {
+    const colDir = join(collectionsDir, name);
+    try {
+      if (!statSync(colDir).isDirectory()) continue;
+    } catch { continue; }
+
+    const configPath = join(colDir, `${name}.yml`);
+    if (!existsSync(configPath)) continue;
+
+    let raw: Record<string, unknown>;
+    try {
+      const text = readFileSync(configPath, "utf-8");
+      const parsed = yaml.load(text) as Record<string, unknown> | null;
+      if (!parsed || typeof parsed !== "object") continue;
+      raw = parsed;
+    } catch { continue; }
+
+    const hasLegacy = LEGACY_KEYS.some((k) => k in raw);
+    const dbPath = join(colDir, "db", "data.db");
+    const dbExists = existsSync(dbPath);
+
+    // Nothing to do when there are no legacy fields and no DB to seed mirrors into.
+    if (!hasLegacy && !dbExists) continue;
+
+    try {
+      mkdirSync(dirname(dbPath), { recursive: true });
+      const store = new MetadataStore(dbPath);
+      try {
+        if (raw.syncCursor != null) {
+          store.set("sync.cursor", JSON.stringify(raw.syncCursor));
+        }
+        if (typeof raw.lastSyncAt === "string") store.set("sync.last_at", raw.lastSyncAt);
+        if (typeof raw.lastSyncStatus === "string") store.set("sync.last_status", raw.lastSyncStatus);
+        if (typeof raw.lastSyncCreated === "number") store.set("sync.last_created", String(raw.lastSyncCreated));
+        if (typeof raw.lastSyncUpdated === "number") store.set("sync.last_updated", String(raw.lastSyncUpdated));
+        if (typeof raw.lastSyncDeleted === "number") store.set("sync.last_deleted", String(raw.lastSyncDeleted));
+        if (Array.isArray(raw.lastSyncErrors) && raw.lastSyncErrors.length > 0) {
+          store.set("sync.last_errors", JSON.stringify(raw.lastSyncErrors));
+        }
+        // Seed the YAML-mirror entries so UIs that read only the DB still see
+        // title/description/version before the first post-migration sync runs.
+        if (typeof raw.title === "string" && raw.title !== "") {
+          store.set("title", raw.title);
+        }
+        if (typeof raw.description === "string" && raw.description !== "") {
+          store.set("description", raw.description);
+        }
+        if (typeof raw.version === "string" && raw.version !== "") {
+          store.set("version", raw.version);
+        }
+      } finally {
+        store.close();
+      }
+    } catch {
+      // If the DB can't be opened (e.g. locked), skip this collection.
+      // The next sync will re-attempt the migration via the sync engine.
+      continue;
+    }
+
+    if (!hasLegacy) continue;
+
+    // Strip the legacy keys and rewrite the YAML
+    for (const k of LEGACY_KEYS) delete raw[k];
+    try {
+      atomicWriteYaml(configPath, raw);
+    } catch {
+      // Leave YAML alone if we can't rewrite — data is already in DB.
+    }
+  }
 }
 
 export function migrateLegacyPublishYml(): void {

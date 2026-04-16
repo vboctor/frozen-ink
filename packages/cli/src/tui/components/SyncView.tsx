@@ -5,9 +5,9 @@ import { join } from "path";
 import {
   ensureInitialized,
   listCollections,
-  getCollection,
   getCollectionDb,
   getCollectionDbPath,
+  getCollectionSyncState,
   getFrozenInkHome,
   entities,
   SyncEngine,
@@ -58,7 +58,7 @@ function formatRelative(date: Date): string {
 }
 
 function getLastSync(name: string): string {
-  const lastSyncAt = getCollection(name)?.lastSyncAt;
+  const lastSyncAt = getCollectionSyncState(getCollectionDbPath(name)).lastAt;
   if (lastSyncAt) {
     const d = new Date(lastSyncAt + "Z");
     if (!isNaN(d.getTime())) return formatRelative(d);

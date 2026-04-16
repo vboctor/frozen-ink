@@ -3,6 +3,7 @@ import { createCryptoHasher } from "../compat/crypto";
 import { getCollectionDb } from "../db/client";
 import { entities } from "../db/collection-schema";
 import type { EntityData } from "../db/collection-schema";
+import { MetadataStore } from "../db/metadata";
 import { getCollection, updateCollection } from "../config/context";
 import { SearchIndexer } from "../search/indexer";
 import { computeEntityHash } from "../sync/entity-hash";
@@ -112,6 +113,7 @@ export interface SyncEngineOptions {
 export class SyncEngine {
   private crawler: Crawler;
   private db: ReturnType<typeof getCollectionDb>;
+  private dbPath: string;
   private collectionName: string;
   private themeEngine: ThemeEngine;
   private storage: StorageBackend;
@@ -138,6 +140,7 @@ export class SyncEngine {
   constructor(options: SyncEngineOptions) {
     this.crawler = options.crawler;
     this.db = getCollectionDb(options.dbPath);
+    this.dbPath = options.dbPath;
     this.collectionName = options.collectionName;
     this.themeEngine = options.themeEngine;
     this.storage = options.storage;
@@ -164,8 +167,17 @@ export class SyncEngine {
       allowedExtensions: this.allowedExtensions,
     });
 
-    // Mark sync as running in collection YAML
-    updateCollection(this.collectionName, { lastSyncStatus: "running", lastSyncAt: startedAt });
+    const metadata = new MetadataStore(this.dbPath);
+
+    // Mirror user-facing config fields from YAML into the DB so consumers
+    // that only have the DB (published worker, remote UIs) can read them.
+    const colYaml = getCollection(this.collectionName);
+    metadata.setCollectionTitle(colYaml?.title ?? null);
+    metadata.setCollectionDescription(colYaml?.description ?? null);
+    metadata.setCollectionVersion(colYaml?.version ?? null);
+
+    // Mark sync as running
+    metadata.setSyncState({ lastStatus: "running", lastAt: startedAt });
 
     let created = 0;
     let updated = 0;
@@ -173,9 +185,8 @@ export class SyncEngine {
     const errors: unknown[] = [];
 
     try {
-      // Load cursor and version from collection YAML
-      const colYaml = getCollection(this.collectionName);
-      let cursor: SyncCursor | null = (colYaml?.syncCursor as SyncCursor) ?? null;
+      // Load cursor from DB metadata; version remains in YAML as a user-authored field
+      let cursor: SyncCursor | null = (metadata.getSyncState().cursor as SyncCursor) ?? null;
 
       // Version check: compare stored version with crawler's current version
       const currentVersion = this.crawler.metadata.version ?? "1.0";
@@ -235,11 +246,10 @@ export class SyncEngine {
         hasMore = result.hasMore;
       }
 
-      // Persist cursor and version to collection YAML
-      updateCollection(this.collectionName, {
-        syncCursor: cursor ?? undefined,
-        version: currentVersion,
-      });
+      // Persist cursor to DB; version goes to YAML (user-facing) and is mirrored in DB.
+      metadata.setSyncState({ cursor: cursor ?? null });
+      metadata.setCollectionVersion(currentVersion);
+      updateCollection(this.collectionName, { version: currentVersion });
 
       // Reconcile filesystem with DB
       await this.reconcile(crawlerType);
@@ -250,28 +260,30 @@ export class SyncEngine {
       // Notify caller to update collection version in .config
       this.onVersionUpdate?.(currentVersion);
 
-      // Update sync state in collection YAML
-      updateCollection(this.collectionName, {
-        lastSyncStatus: "completed",
-        lastSyncAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
-        lastSyncCreated: created,
-        lastSyncUpdated: updated,
-        lastSyncDeleted: deleted,
-        lastSyncErrors: errors.length > 0 ? errors : undefined,
+      // Update sync state in DB metadata
+      metadata.setSyncState({
+        lastStatus: "completed",
+        lastAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
+        lastCreated: created,
+        lastUpdated: updated,
+        lastDeleted: deleted,
+        lastErrors: errors.length > 0 ? errors : null,
       });
 
       return { created, updated, deleted };
     } catch (err) {
       errors.push(String(err));
-      updateCollection(this.collectionName, {
-        lastSyncStatus: "failed",
-        lastSyncAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
-        lastSyncCreated: created,
-        lastSyncUpdated: updated,
-        lastSyncDeleted: deleted,
-        lastSyncErrors: errors,
+      metadata.setSyncState({
+        lastStatus: "failed",
+        lastAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
+        lastCreated: created,
+        lastUpdated: updated,
+        lastDeleted: deleted,
+        lastErrors: errors,
       });
       throw err;
+    } finally {
+      metadata.close();
     }
   }
 

@@ -7,6 +7,7 @@ import {
   getCollection,
   getCollectionDb,
   getCollectionDbPath,
+  getCollectionSyncState,
   entities,
 } from "@frozenink/core";
 import type { McpServerOptions } from "../server";
@@ -128,13 +129,12 @@ export function registerCollectionResources(
       }
 
       let entityCount = 0;
-      const lastSyncTime: string | null = col.lastSyncAt ?? null;
-
       const dbPath = getCollectionDbPath(name);
       if (existsSync(dbPath)) {
         const colDb = getCollectionDb(dbPath);
         entityCount = colDb.select().from(entities).all().length;
       }
+      const lastSyncTime = getCollectionSyncState(dbPath).lastAt ?? null;
 
       const result = {
         name: col.name,
