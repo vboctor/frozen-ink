@@ -287,7 +287,7 @@ Tables are created via raw SQL `CREATE TABLE IF NOT EXISTS` in `client.ts`. Sche
 |---------|---------|-----------|
 | Crawler config, credentials | Per-collection `<name>.yml` | Human-readable YAML, single source of truth |
 | Publish state | Per-collection `<name>.yml` (`publish` field) | URLs, password hash, publish timestamp |
-| Sync cursors / pagination state | Per-collection `<name>.yml` (`syncCursor` field) | Survives restarts, enables incremental sync |
+| Sync cursors / last-sync status + counts | Collection DB `metadata` table (keys under `sync.*`) | Machine-written state kept out of the user-facing YAML; `title`/`description` are mirrored as top-level keys |
 | Entity metadata + structured data | Collection DB (`entities.data` JSON) | Queryable, FTS-indexed |
 | Content change hashes | Collection DB (`entities.content_hash`) | Skip re-render on unchanged data |
 | Tags, links, assets | Collection DB (`entities.data` JSON fields) | Stored in EntityData, not separate tables |

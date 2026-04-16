@@ -5,6 +5,7 @@ import {
   listCollections,
   getCollectionDb,
   getCollectionDbPath,
+  getCollectionSyncState,
   entities,
 } from "@frozenink/core";
 
@@ -36,14 +37,15 @@ export const statusCommand = new Command("status")
       const entityRows = colDb.select().from(entities).all();
       console.log(`  Entities: ${entityRows.length}`);
 
-      // Last sync state (from collection YAML)
-      if (col.lastSyncAt) {
-        console.log(`  Last sync: ${col.lastSyncAt} (${col.lastSyncStatus})`);
+      // Last sync state from the DB metadata table
+      const sync = getCollectionSyncState(dbPath);
+      if (sync.lastAt) {
+        console.log(`  Last sync: ${sync.lastAt} (${sync.lastStatus})`);
         console.log(
-          `  Created: ${col.lastSyncCreated ?? 0}, Updated: ${col.lastSyncUpdated ?? 0}, Deleted: ${col.lastSyncDeleted ?? 0}`,
+          `  Created: ${sync.lastCreated ?? 0}, Updated: ${sync.lastUpdated ?? 0}, Deleted: ${sync.lastDeleted ?? 0}`,
         );
-        if (col.lastSyncErrors && (col.lastSyncErrors as unknown[]).length > 0) {
-          console.log(`  Errors: ${JSON.stringify(col.lastSyncErrors)}`);
+        if (sync.lastErrors && sync.lastErrors.length > 0) {
+          console.log(`  Errors: ${JSON.stringify(sync.lastErrors)}`);
         }
       } else {
         console.log("  No sync runs yet");

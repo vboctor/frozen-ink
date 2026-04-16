@@ -6,7 +6,7 @@ import {
   entities,
   SearchIndexer,
   addCollection as coreAddCollection,
-  updateCollection,
+  updateCollectionSyncState,
   ensureInitialized,
 } from "@frozenink/core";
 import { createMcpServer, type McpServerOptions } from "../server";
@@ -170,7 +170,7 @@ describe("collection_list tool", () => {
     addEntity(dbPath, { externalId: "issue-1", entityType: "issue", title: "Bug report", data: { number: 1 } });
     addEntity(dbPath, { externalId: "issue-2", entityType: "issue", title: "Feature request", data: { number: 2 } });
 
-    updateCollection("my-repo", { lastSyncStatus: "completed", lastSyncCreated: 2, lastSyncAt: "2025-01-15 10:00:00" });
+    updateCollectionSyncState(dbPath, { lastStatus: "completed", lastCreated: 2, lastAt: "2025-01-15 10:00:00" });
 
     await setupClient();
     const result = await client.callTool({ name: "collection_list" });

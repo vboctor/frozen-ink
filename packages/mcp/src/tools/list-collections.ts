@@ -5,6 +5,7 @@ import {
   listCollections,
   getCollectionDb,
   getCollectionDbPath,
+  getCollectionSyncState,
   entities,
 } from "@frozenink/core";
 import type { McpServerOptions } from "../server";
@@ -38,22 +39,20 @@ export function registerListCollections(
 
       const result = rows.map((col) => {
         let entityCount = 0;
-        const lastSyncTime: string | null = col.lastSyncAt ?? null;
-        const lastSyncStatus: string | null = col.lastSyncStatus ?? null;
-
         const dbPath = getCollectionDbPath(col.name);
         if (existsSync(dbPath)) {
           const colDb = getCollectionDb(dbPath);
           entityCount = colDb.select().from(entities).all().length;
         }
+        const sync = getCollectionSyncState(dbPath);
 
         return {
           name: col.name,
           crawlerType: col.crawler,
           enabled: col.enabled,
           entityCount,
-          lastSyncTime,
-          lastSyncStatus,
+          lastSyncTime: sync.lastAt ?? null,
+          lastSyncStatus: sync.lastStatus ?? null,
         };
       });
 

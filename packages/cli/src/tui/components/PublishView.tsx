@@ -8,9 +8,9 @@ import {
   listCollections,
   listSites,
   getSite,
-  getCollection,
   getCollectionDb,
   getCollectionDbPath,
+  getCollectionSyncState,
   getFrozenInkHome,
   entities,
 } from "@frozenink/core";
@@ -46,7 +46,6 @@ function getCollectionStats(name: string): { entityCount: number; diskSize: numb
   const dbPath = getCollectionDbPath(name);
   let entityCount = 0;
   let diskSize = 0;
-  let lastSyncAt: string | null = null;
   if (existsSync(dbPath)) {
     try {
       const colDb = getCollectionDb(dbPath);
@@ -55,7 +54,7 @@ function getCollectionStats(name: string): { entityCount: number; diskSize: numb
     } catch {}
     try { diskSize += statSync(dbPath).size; } catch {}
   }
-  lastSyncAt = getCollection(name)?.lastSyncAt ?? null;
+  const lastSyncAt = getCollectionSyncState(dbPath).lastAt ?? null;
   const home = getFrozenInkHome();
   const colDir = join(home, "collections", name);
   diskSize += getDirectorySize(join(colDir, "markdown"));

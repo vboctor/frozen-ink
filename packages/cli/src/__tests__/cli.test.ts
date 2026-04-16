@@ -6,7 +6,7 @@ import {
   entities,
   SearchIndexer,
   addCollection,
-  updateCollection,
+  updateCollectionSyncState,
   getCollection,
   listCollections,
 } from "@frozenink/core";
@@ -182,7 +182,7 @@ describe("CLI: status", () => {
 
     colDb.insert(entities).values({ externalId: "issue-1", entityType: "issue", title: "Test Issue", data: { number: 1 } }).run();
     colDb.insert(entities).values({ externalId: "pr-1", entityType: "pull_request", title: "Test PR", data: { number: 2 } }).run();
-    updateCollection("status-test", { lastSyncStatus: "completed", lastSyncCreated: 2, lastSyncAt: "2025-01-01 00:00:00" });
+    updateCollectionSyncState(dbPath, { lastStatus: "completed", lastCreated: 2, lastAt: "2025-01-01 00:00:00" });
 
     const logs: string[] = [];
     console.log = (...args: unknown[]) => logs.push(args.join(" "));

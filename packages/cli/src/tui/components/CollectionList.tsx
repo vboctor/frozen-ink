@@ -19,6 +19,7 @@ import {
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
+  getCollectionSyncState,
 } from "@frozenink/core";
 import {
   createDefaultRegistry,
@@ -93,7 +94,6 @@ interface RowStats {
 }
 
 function getRowStats(name: string): RowStats {
-  const col = getCollection(name);
   const dbPath = getCollectionDbPath(name);
   let entityCount = "—";
   if (existsSync(dbPath)) {
@@ -106,11 +106,12 @@ function getRowStats(name: string): RowStats {
     }
   }
   let lastSync = "never";
-  if (col?.lastSyncAt) {
-    const d = new Date(col.lastSyncAt + "Z");
+  const sync = getCollectionSyncState(dbPath);
+  if (sync.lastAt) {
+    const d = new Date(sync.lastAt + "Z");
     if (!isNaN(d.getTime())) {
       lastSync = formatRelative(d);
-      if (col.lastSyncStatus === "failed") lastSync += " (failed)";
+      if (sync.lastStatus === "failed") lastSync += " (failed)";
     }
   }
   return { entityCount, lastSync };
@@ -602,15 +603,16 @@ export function CollectionList({
           } catch { /* ignore */ }
         }
 
-        if (current.lastSyncAt) {
+        const sync = getCollectionSyncState(dbPath);
+        if (sync.lastAt) {
           lastState = {
-            lastSyncStatus: current.lastSyncStatus ?? null,
-            lastSyncAt: current.lastSyncAt,
-            lastSyncCreated: current.lastSyncCreated ?? null,
-            lastSyncUpdated: current.lastSyncUpdated ?? null,
-            lastSyncDeleted: current.lastSyncDeleted ?? null,
+            lastSyncStatus: sync.lastStatus ?? null,
+            lastSyncAt: sync.lastAt,
+            lastSyncCreated: sync.lastCreated ?? null,
+            lastSyncUpdated: sync.lastUpdated ?? null,
+            lastSyncDeleted: sync.lastDeleted ?? null,
           };
-          const d = new Date(current.lastSyncAt + "Z");
+          const d = new Date(sync.lastAt + "Z");
           if (!isNaN(d.getTime())) lastSyncTime = formatRelative(d);
         }
       } catch { /* ignore */ }
