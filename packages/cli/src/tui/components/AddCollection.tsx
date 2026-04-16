@@ -10,6 +10,7 @@ import {
   getCollection,
   addCollection,
   isValidCollectionKey,
+  resolveCredentials,
 } from "@frozenink/core";
 import { createDefaultRegistry, MantisHubCrawler } from "@frozenink/crawlers";
 import { SelectInput, type SelectItem } from "./SelectInput.js";

@@ -2,6 +2,11 @@ export { configSchema, type FrozenInkConfig, type SyncConfig, type UiConfig } fr
 export { defaultConfig } from "./defaults";
 export { loadConfig, getFrozenInkHome } from "./loader";
 export {
+  listNamedCredentials,
+  getNamedCredentials,
+  resolveCredentials,
+} from "./credentials";
+export {
   contextExists,
   ensureInitialized,
   getCollection,

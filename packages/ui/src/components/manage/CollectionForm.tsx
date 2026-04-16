@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 
+interface NamedCredential {
+  name: string;
+  keys: string[];
+}
+
 interface CollectionFormProps {
   /** If provided, editing existing collection; else creating new */
   editName?: string;
@@ -8,7 +13,7 @@ interface CollectionFormProps {
     description?: string;
     crawler: string;
     config: Record<string, unknown>;
-    credentials: Record<string, unknown>;
+    credentials: string | Record<string, unknown>;
   };
   onSave: () => void;
   onCancel: () => void;
@@ -30,20 +35,37 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
   const [config, setConfig] = useState<Record<string, string>>(
     configToStrings(editConfig?.config ?? {}),
   );
-  const [credentials, setCredentials] = useState<Record<string, string>>(
-    configToStrings(editConfig?.credentials ?? {}),
+  const editCredsIsNamed = typeof editConfig?.credentials === "string";
+  const [credMode, setCredMode] = useState<"inline" | "named">(editCredsIsNamed ? "named" : "inline");
+  const [selectedCredName, setSelectedCredName] = useState<string>(
+    editCredsIsNamed ? (editConfig?.credentials as string) : "",
   );
+  const [credentials, setCredentials] = useState<Record<string, string>>(
+    editCredsIsNamed ? {} : configToStrings((editConfig?.credentials as Record<string, unknown>) ?? {}),
+  );
+  const [namedCredentials, setNamedCredentials] = useState<NamedCredential[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [discardPrompt, setDiscardPrompt] = useState(false);
 
+  // Fetch available named credentials
+  useEffect(() => {
+    fetch("/api/credentials")
+      .then((res) => res.json())
+      .then((data: NamedCredential[]) => setNamedCredentials(data))
+      .catch(() => {});
+  }, []);
+
   function hasUnsavedChanges(): boolean {
     if (!editName) return false; // creating new — no prior state to compare
+    const credsChanged = editCredsIsNamed
+      ? (credMode !== "named" || selectedCredName !== (editConfig?.credentials as string))
+      : (credMode !== "inline" || JSON.stringify(credentials) !== JSON.stringify(configToStrings((editConfig?.credentials as Record<string, unknown>) ?? {})));
     return (
       title !== (editConfig?.title ?? "") ||
       description !== (editConfig?.description ?? "") ||
       JSON.stringify(config) !== JSON.stringify(configToStrings(editConfig?.config ?? {})) ||
-      JSON.stringify(credentials) !== JSON.stringify(configToStrings(editConfig?.credentials ?? {}))
+      credsChanged
     );
   }
 
@@ -84,9 +106,15 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
     for (const [k, v] of Object.entries(config)) {
       try { parsedConfig[k] = JSON.parse(v); } catch { parsedConfig[k] = v; }
     }
-    const parsedCreds: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(credentials)) {
-      try { parsedCreds[k] = JSON.parse(v); } catch { parsedCreds[k] = v; }
+    let credsPayload: string | Record<string, unknown>;
+    if (credMode === "named" && selectedCredName) {
+      credsPayload = selectedCredName;
+    } else {
+      const parsedCreds: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(credentials)) {
+        try { parsedCreds[k] = JSON.parse(v); } catch { parsedCreds[k] = v; }
+      }
+      credsPayload = parsedCreds;
     }
 
     try {
@@ -94,7 +122,7 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
         await fetch(`/api/collections/${encodeURIComponent(editName)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, description: description || undefined, config: parsedConfig, credentials: parsedCreds }),
+          body: JSON.stringify({ title, description: description || undefined, config: parsedConfig, credentials: credsPayload }),
         });
       } else {
         const res = await fetch("/api/collections", {
@@ -106,7 +134,7 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
             description: description || undefined,
             crawler,
             config: parsedConfig,
-            credentials: parsedCreds,
+            credentials: credsPayload,
           }),
         });
         if (!res.ok) {
@@ -213,7 +241,49 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
 
       <div className="form-group">
         <h3>Credentials</h3>
-        {renderCredentialFields(crawler, credentials, setCredentials)}
+        {namedCredentials.length > 0 && (
+          <div className="cred-mode-toggle">
+            <label>
+              <input
+                type="radio"
+                name="credMode"
+                value="inline"
+                checked={credMode === "inline"}
+                onChange={() => setCredMode("inline")}
+              />
+              {" "}Enter directly
+            </label>
+            <label style={{ marginLeft: "1rem" }}>
+              <input
+                type="radio"
+                name="credMode"
+                value="named"
+                checked={credMode === "named"}
+                onChange={() => setCredMode("named")}
+              />
+              {" "}Use saved credentials
+            </label>
+          </div>
+        )}
+        {credMode === "named" ? (
+          <div>
+            <label>Credential Set</label>
+            <select
+              className="form-input"
+              value={selectedCredName}
+              onChange={(e) => setSelectedCredName(e.target.value)}
+            >
+              <option value="">Select...</option>
+              {namedCredentials.map((nc) => (
+                <option key={nc.name} value={nc.name}>
+                  {nc.name} ({nc.keys.join(", ")})
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          renderCredentialFields(crawler, credentials, setCredentials)
+        )}
       </div>
 
       {error && <div className="form-error">{error}</div>}
@@ -223,7 +293,7 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
         <button
           className="btn btn-primary"
           onClick={handleSubmit}
-          disabled={saving || (!editName && !name)}
+          disabled={saving || (!editName && !name) || (credMode === "named" && !selectedCredName)}
         >
           {saving ? "Saving..." : editName ? "Update" : "Create"}
         </button>

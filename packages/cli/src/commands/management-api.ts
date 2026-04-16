@@ -22,6 +22,9 @@ import {
   ThemeEngine,
   LocalStorageBackend,
   entities,
+  resolveCredentials,
+  listNamedCredentials,
+  getNamedCredentials,
 } from "@frozenink/core";
 import {
   createDefaultRegistry,
@@ -160,6 +163,18 @@ export function handleManagementRequest(req: Request): Response | null {
     });
   }
 
+  // --- Credentials CRUD ---
+
+  // GET /api/credentials — list named credential sets (names + keys only)
+  if (path === "/api/credentials" && method === "GET") {
+    const names = listNamedCredentials();
+    const items = names.map((name) => {
+      const creds = getNamedCredentials(name)!;
+      return { name, keys: Object.keys(creds) };
+    });
+    return jsonResponse(items);
+  }
+
   // --- Collection CRUD ---
 
   // POST /api/collections (add collection)
@@ -170,7 +185,7 @@ export function handleManagementRequest(req: Request): Response | null {
       const crawler = body.crawler as string;
       if (!name || !crawler) return errorResponse("Missing name or crawler", 400);
       const config = (body.config ?? {}) as Record<string, unknown>;
-      const credentials = (body.credentials ?? {}) as Record<string, unknown>;
+      const credentials = (body.credentials ?? {}) as string | Record<string, unknown>;
       const title = (body.title as string) ?? name;
       const description = (body.description as string) || undefined;
       const enabled = body.enabled !== false;
@@ -180,7 +195,7 @@ export function handleManagementRequest(req: Request): Response | null {
         try {
           const registry = createDefaultRegistry();
           const crawlerInstance = registry.get("mantishub")!() as MantisHubCrawler;
-          await crawlerInstance.initialize(config, credentials);
+          await crawlerInstance.initialize(config, resolveCredentials(credentials));
           const resolved = await crawlerInstance.resolveProjectName(config.projectName as string);
           config.projectId = resolved.id;
           config.projectName = resolved.name;
@@ -535,7 +550,7 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
       try {
         await crawler.initialize(
           col.config as Record<string, unknown>,
-          col.credentials as Record<string, unknown>,
+          resolveCredentials(col.credentials),
         );
 
         const collectionDir = join(home, "collections", name);
