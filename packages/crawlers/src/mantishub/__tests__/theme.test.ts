@@ -112,6 +112,76 @@ describe("MantisHubTheme HTML issue-ref linkification", () => {
   });
 });
 
+describe("MantisHubTheme getFilePath", () => {
+  it("places issues under <project-slug>/issues/", () => {
+    const ctx = makeIssueContext();
+    expect(theme.getFilePath(ctx)).toBe("testproject/issues/00042-sample-issue-summary.md");
+  });
+
+  it("places pages under <project-slug>/pages/", () => {
+    const ctx: ThemeRenderContext = {
+      entity: {
+        externalId: "page:1:getting-started",
+        entityType: "page",
+        title: "Getting Started",
+        data: {
+          id: 99,
+          name: "getting-started",
+          title: "Getting Started",
+          project: { id: 1, name: "TestProject" },
+        },
+      },
+      collectionName: "test",
+      crawlerType: "mantishub",
+    };
+    expect(theme.getFilePath(ctx)).toBe("testproject/pages/getting-started.md");
+  });
+
+  it("places the project entity inside its own folder as <slug>/<slug>.md", () => {
+    const ctx: ThemeRenderContext = {
+      entity: {
+        externalId: "project:1",
+        entityType: "project",
+        title: "TestProject",
+        data: { id: 1, name: "TestProject" },
+      },
+      collectionName: "test",
+      crawlerType: "mantishub",
+    };
+    expect(theme.getFilePath(ctx)).toBe("testproject/testproject.md");
+  });
+
+  it("places users at the top level under users/", () => {
+    const ctx: ThemeRenderContext = {
+      entity: {
+        externalId: "user:alice",
+        entityType: "user",
+        title: "Alice",
+        data: { name: "alice" },
+      },
+      collectionName: "test",
+      crawlerType: "mantishub",
+    };
+    expect(theme.getFilePath(ctx)).toBe("users/alice.md");
+  });
+});
+
+describe("MantisHubTheme folderConfigs", () => {
+  it("marks issues/pages/users with showCount: true", () => {
+    const configs = theme.folderConfigs!();
+    expect(configs.issues.showCount).toBe(true);
+    expect(configs.issues.sort).toBe("DESC");
+    expect(configs.pages.showCount).toBe(true);
+    expect(configs.users.showCount).toBe(true);
+  });
+
+  it("keeps assets folder hidden and without a count", () => {
+    const configs = theme.folderConfigs!();
+    expect(configs.assets.visible).toBe(false);
+    expect(configs.assets.showCount).toBeUndefined();
+  });
+});
+
 describe("MantisHubTheme markdown issue-ref linkification", () => {
   it("linkifies #N in additional information (markdown)", () => {
     const ctx = makeIssueContext({ additionalInformation: "Regression from #100" });

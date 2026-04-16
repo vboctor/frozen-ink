@@ -121,7 +121,7 @@ api.get("/api/collections/:name/tree", async (c) => {
     .filter((p) => p.endsWith(".md"));
 
   // Derive folder configs from the theme instead of R2-stored yml files
-  const folderConfigs = new Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] }>();
+  const folderConfigs = new Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean }>();
   const rootConfig: { hide?: string[] } = {};
   if (col?.crawler) {
     const themeFolderConfigs = themeEngine.getFolderConfigs(col.crawler);
@@ -403,7 +403,7 @@ function matchesHidePattern(compiled: RegExp[], filename: string): boolean {
 function buildTreeFromPaths(
   paths: string[],
   titleByPath: Map<string, string> = new Map(),
-  folderConfigs: Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] }> = new Map(),
+  folderConfigs: Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean }> = new Map(),
 ): object[] {
   interface TreeNode {
     name: string;
@@ -479,11 +479,13 @@ function buildTreeFromPaths(
     }
 
     for (const dir of dirs) {
+      const childPath = parentPath ? `${parentPath}/${dir.name}` : dir.name;
       if (dir.children) {
-        const childPath = parentPath ? `${parentPath}/${dir.name}` : dir.name;
         dir.children = sortTree(dir.children, childPath);
       }
-      dir.count = countFilesInTree(dir.children ?? []);
+      if (folderConfigs.get(childPath)?.showCount === true) {
+        dir.count = countFilesInTree(dir.children ?? []);
+      }
     }
     return [...dirs, ...files];
   }

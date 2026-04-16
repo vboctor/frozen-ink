@@ -81,20 +81,21 @@ function matchesHidePattern(patterns: string[], filename: string): boolean {
   });
 }
 
-/** Parse a folder yml file (visible/sort/hide fields). */
-function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] } {
+/** Parse a folder yml file (visible/sort/hide/showCount fields). */
+function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean } {
   const folderName = basename(dirPath);
   const ymlPath = join(dirPath, `${folderName}.yml`);
   if (!existsSync(ymlPath)) return {};
   try {
     const content = readFileSync(ymlPath, "utf-8");
-    const config: { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[] } = {};
+    const config: { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean } = {};
     for (const line of content.split("\n")) {
       const m = line.match(/^(\w+):\s*(.+)$/);
       if (!m) continue;
       const [, key, val] = m;
       if (key === "visible") config.visible = val.trim() !== "false";
       if (key === "sort") config.sort = val.trim() === "DESC" ? "DESC" : "ASC";
+      if (key === "showCount") config.showCount = val.trim() === "true";
       if (key === "hide") {
         // Parse inline YAML array: [item1, item2] or ["item1", "item2"]
         const arrayMatch = val.trim().match(/^\[(.+)\]$/);
@@ -147,13 +148,19 @@ function buildFileTree(
       const childConfig = readFolderConfig(childDirPath);
       if (childConfig.visible === false) continue;
       const children = buildFileTree(childDirPath, titleByPath, relativePath);
-      dirs.push({
+      // Hide directories with no (visible) files in their subtree so stale
+      // empty folders on disk don't leak into the tree.
+      if (countFiles(children) === 0) continue;
+      const dirNode: Record<string, unknown> = {
         name: entry.name,
         path: relativePath,
         type: "directory",
-        count: countFiles(children),
         children,
-      });
+      };
+      if (childConfig.showCount === true) {
+        dirNode.count = countFiles(children);
+      }
+      dirs.push(dirNode);
     } else if (entry.name.endsWith(".md")) {
       // Apply folder-level hide patterns
       if (folderHide.length > 0 && matchesHidePattern(folderHide, entry.name)) continue;

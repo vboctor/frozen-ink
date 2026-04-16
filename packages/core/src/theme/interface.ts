@@ -9,6 +9,13 @@ export interface FolderConfig {
    * Example: ["AGENTS.md", "CLAUDE.md", "*.draft"]
    */
   hide?: string[];
+  /**
+   * Show a file count next to this folder in the file tree (default: false).
+   * Use for folders that hold an unbounded set of entities (issues, pages, users).
+   * Leave off for bounded container folders (e.g. a per-project folder whose
+   * children are a fixed set of entity-type subfolders plus the project entity).
+   */
+  showCount?: boolean;
 }
 
 export interface ThemeRenderContext {
