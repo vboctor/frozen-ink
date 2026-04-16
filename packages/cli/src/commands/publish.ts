@@ -404,6 +404,12 @@ export async function publishCollections(
   let dbDigest = "";
   if (!workerOnly) {
     const dbPath = getCollectionDbPath(collectionName);
+
+    // Run migration before hashing so the digest reflects the post-migration schema.
+    // If folder/slug columns were just added (backfilled from data.markdown_path),
+    // the DB content changes and won't match the pre-migration remote digest,
+    // forcing a full D1 rebuild with the correct schema.
+    const colDbForDigest = getCollectionDb(dbPath);
     dbDigest = await hashDbFiles(dbPath);
 
     let remoteDigest: string | null = null;
@@ -449,8 +455,7 @@ export async function publishCollections(
 
       for (const colName of collectionNames) {
         const col = getCollection(colName)!;
-        const dbPath = getCollectionDbPath(colName);
-        const colDb = getCollectionDb(dbPath);
+        const colDb = colName === collectionName ? colDbForDigest : getCollectionDb(getCollectionDbPath(colName));
 
         const allEntities = colDb.select().from(entities).all();
 

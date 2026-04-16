@@ -70,12 +70,13 @@ async function runSearch(
       const results = indexer.search(query, { entityType });
       if (results.length > 0) {
         const entityIds = results.map((r) => r.entityId);
+        type EntityRow = { id: number; folder: string | null; slug: string | null };
         const entityRows = colDb
           .select({ id: entities.id, folder: entities.folder, slug: entities.slug })
           .from(entities)
           .where(inArray(entities.id, entityIds))
-          .all();
-        const entityById = new Map(entityRows.map((e) => [e.id, e]));
+          .all() as EntityRow[];
+        const entityById = new Map<number, EntityRow>(entityRows.map((e) => [e.id, e]));
         for (const r of results) {
           const entity = entityById.get(r.entityId);
           allResults.push({ ...r, collection: col.name, filename: entityMarkdownPath(entity?.folder, entity?.slug) });
