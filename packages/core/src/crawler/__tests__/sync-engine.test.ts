@@ -212,6 +212,67 @@ describe("SyncEngine", () => {
     expect(sync.lastCreated).toBe(0);
   });
 
+  it("refreshes FTS when source is unchanged but title/tags drift", async () => {
+    const { SearchIndexer } = await import("../../search/indexer");
+    const dbPath = join(TEST_DIR, "fts-drift.db");
+
+    const sameSource = { body: "stable content" };
+
+    const crawler1 = createMockCrawler([
+      {
+        entities: [{
+          externalId: "drift-1",
+          entityType: "doc",
+          title: "Original Title",
+          data: sameSource,
+          tags: ["legacy"],
+        }],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+    await new SyncEngine({
+      crawler: crawler1,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    }).run();
+
+    // Second sync returns the same source but with a new title and new tags.
+    const crawler2 = createMockCrawler([
+      {
+        entities: [{
+          externalId: "drift-1",
+          entityType: "doc",
+          title: "Renamed Title",
+          data: sameSource,
+          tags: ["modern"],
+        }],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+    await new SyncEngine({
+      crawler: crawler2,
+      dbPath,
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    }).run();
+
+    const indexer = new SearchIndexer(dbPath);
+    expect(indexer.search("Renamed")).toHaveLength(1);
+    expect(indexer.search("modern")).toHaveLength(1);
+    expect(indexer.search("Original")).toHaveLength(0);
+    expect(indexer.search("legacy")).toHaveLength(0);
+    indexer.close();
+  });
+
   it("re-renders when content hash changes", async () => {
     const dbPath = join(TEST_DIR, "rerender.db");
 

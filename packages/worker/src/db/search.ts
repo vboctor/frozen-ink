@@ -14,11 +14,15 @@ export async function searchEntities(
 ): Promise<SearchResult[]> {
   const limit = opts?.limit ?? 20;
 
-  // FTS5 query
+  // FTS5 query — weight title column higher than content/tags so title
+  // matches rank ahead of body mentions. bm25() weights are positional for
+  // every declared column including UNINDEXED ones. Published worker schema:
+  //   entity_id, external_id, entity_type, title, content, tags.
+  // Lower bm25 = better match.
   let sql = `
     SELECT
       entity_id, external_id, entity_type, title,
-      rank,
+      bm25(entities_fts, 1.0, 1.0, 1.0, 10.0, 1.0, 2.0) AS rank,
       snippet(entities_fts, 3, '<mark>', '</mark>', '…', 48) AS snippet
     FROM entities_fts
     WHERE entities_fts MATCH ?
