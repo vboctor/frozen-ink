@@ -44,6 +44,13 @@ export interface SearchResult {
 export interface SearchFilters {
   entityType?: string;
   collectionName?: string;
+  /**
+   * Cap the number of rows returned. Pushed into the SQL as `LIMIT ?` so
+   * FTS5 can use its internal top-K heap instead of materializing and
+   * sorting every match — a big win on queries that hit thousands of rows
+   * (e.g. a one- or two-character prefix against a large collection).
+   */
+  limit?: number;
 }
 
 export class SearchIndexer {
@@ -158,6 +165,10 @@ export class SearchIndexer {
     }
 
     sql += ` ORDER BY rank`;
+    if (filters?.limit != null && filters.limit > 0) {
+      sql += ` LIMIT ?`;
+      params.push(filters.limit);
+    }
 
     const stmt = this.sqlite.prepare(sql);
     const rows = stmt.all(...params) as Array<{

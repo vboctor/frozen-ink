@@ -26,6 +26,9 @@ function SnippetDisplay({ html }: { html: string }) {
   );
 }
 
+const MIN_QUERY_LENGTH = 2;
+const DEBOUNCE_MS = 300;
+
 export default function FullTextSearch({ collection, onClose, onNavigate }: FullTextSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FTSResult[]>([]);
@@ -34,6 +37,10 @@ export default function FullTextSearch({ collection, onClose, onNavigate }: Full
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // AbortController for the in-flight fetch. A fresh query aborts the prior
+  // one so slow responses can't clobber fresh results (the classic
+  // search-as-you-type race that made the list flicker).
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -41,26 +48,37 @@ export default function FullTextSearch({ collection, onClose, onNavigate }: Full
 
   const doSearch = useCallback(
     async (q: string) => {
-      if (!q.trim()) {
+      // Cancel whatever's already in flight before starting a new request.
+      abortRef.current?.abort();
+
+      const trimmed = q.trim();
+      if (trimmed.length < MIN_QUERY_LENGTH) {
         setResults([]);
         setLoading(false);
         return;
       }
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setLoading(true);
       try {
-        const params = new URLSearchParams({ q: q.trim(), limit: "30" });
+        const params = new URLSearchParams({ q: trimmed, limit: "30" });
         if (collection) params.set("collection", collection);
-        const res = await fetch(`/api/search?${params}`);
-        if (res.ok) {
+        const res = await fetch(`/api/search?${params}`, { signal: controller.signal });
+        if (res.ok && !controller.signal.aborted) {
           const data: FTSResult[] = await res.json();
           setResults(data);
           setSelectedIndex(0);
         }
-      } catch {
-        // ignore network errors
+      } catch (err) {
+        // AbortError is expected when a newer query supersedes this one.
+        if ((err as Error)?.name !== "AbortError") {
+          // Other failures are silent — surfacing a toast for transient
+          // network blips during typing would be more noise than signal.
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     },
     [collection],
@@ -69,12 +87,13 @@ export default function FullTextSearch({ collection, onClose, onNavigate }: Full
   const handleChange = (value: string) => {
     setQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => doSearch(value), 200);
+    debounceRef.current = setTimeout(() => doSearch(value), DEBOUNCE_MS);
   };
 
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      abortRef.current?.abort();
     };
   }, []);
 
@@ -153,8 +172,13 @@ export default function FullTextSearch({ collection, onClose, onNavigate }: Full
             ))}
           </ul>
         )}
-        {query && !loading && results.length === 0 && (
+        {query.trim().length >= MIN_QUERY_LENGTH && !loading && results.length === 0 && (
           <div className="search-empty">No results found</div>
+        )}
+        {query.trim().length > 0 && query.trim().length < MIN_QUERY_LENGTH && (
+          <div className="search-empty fts-hint">
+            Keep typing — minimum {MIN_QUERY_LENGTH} characters
+          </div>
         )}
         {!query && (
           <div className="search-empty fts-hint">
