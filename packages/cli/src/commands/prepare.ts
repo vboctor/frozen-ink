@@ -13,6 +13,7 @@ import {
   type EntityData,
   entities,
   entityMarkdownPath,
+  computeEntityHash,
 } from "@frozenink/core";
 import { eq, sql } from "drizzle-orm";
 import { createDefaultRegistry } from "@frozenink/crawlers";
@@ -189,11 +190,12 @@ async function writeAgentFiles(
 }
 
 /**
- * Sample up to `sampleSize` entities per entity type and check two things:
+ * Sample up to `sampleSize` entities per entity type and check three things:
  *   - Title freshness: does getTitle() match the stored DB title?
  *   - Markdown freshness: does render() match what's on disk?
+ *   - Hash freshness: does computeEntityHash() match the stored content_hash?
  *
- * Returns counts of sampled entities and how many had title or markdown mismatches.
+ * Returns counts of sampled entities and how many had each kind of mismatch.
  */
 async function checkSamples(
   colDb: ColDb,
@@ -203,7 +205,12 @@ async function checkSamples(
   collectionName: string,
   basePath: string,
   sampleSize: number,
-): Promise<{ sampled: number; titleMismatches: number; markdownMismatches: number }> {
+): Promise<{
+  sampled: number;
+  titleMismatches: number;
+  markdownMismatches: number;
+  hashMismatches: number;
+}> {
   // Get distinct entity types via GROUP BY
   const typeRows = colDb
     .select({ entityType: entities.entityType, count: sql<number>`count(*)` })
@@ -217,6 +224,7 @@ async function checkSamples(
   let sampled = 0;
   let titleMismatches = 0;
   let markdownMismatches = 0;
+  let hashMismatches = 0;
 
   for (const { entityType } of typeRows) {
     const sample = colDb
@@ -263,10 +271,22 @@ async function checkSamples(
       const renderCtx = derivedTitle ? { ...ctx, entity: { ...ctx.entity, title: derivedTitle } } : ctx;
       const rendered = themeEngine.render(renderCtx);
       if (onDisk !== rendered) markdownMismatches++;
+
+      // Check content hash: compare stored hash against one computed from the current row.
+      // A mismatch means an earlier generate/edit updated the row without refreshing the
+      // hash, which breaks publish/pull diff tooling.
+      const expectedHash = computeEntityHash({
+        entityType: entity.entityType,
+        title: entity.title,
+        folder: entity.folder ?? null,
+        slug: entity.slug ?? null,
+        data: entityData,
+      });
+      if (entity.contentHash !== expectedHash) hashMismatches++;
     }
   }
 
-  return { sampled, titleMismatches, markdownMismatches };
+  return { sampled, titleMismatches, markdownMismatches, hashMismatches };
 }
 
 /**
@@ -303,13 +323,13 @@ export async function prepareCollection(
   // Step 2: Sample check — skip if theme is not registered
   if (!themeEngine.has(col.crawler)) return;
 
-  const { sampled, titleMismatches, markdownMismatches } = await checkSamples(
+  const { sampled, titleMismatches, markdownMismatches, hashMismatches } = await checkSamples(
     colDb, storage, themeEngine, col.crawler, col.name, basePath, 10,
   );
 
   if (sampled === 0) return;
 
-  const totalMismatches = titleMismatches + markdownMismatches;
+  const totalMismatches = titleMismatches + markdownMismatches + hashMismatches;
   if (totalMismatches === 0) {
     return;
   }
@@ -318,6 +338,7 @@ export async function prepareCollection(
   const reasons = [
     titleMismatches > 0 ? `${titleMismatches} title${titleMismatches === 1 ? "" : "s"}` : "",
     markdownMismatches > 0 ? `${markdownMismatches} markdown` : "",
+    hashMismatches > 0 ? `${hashMismatches} hash${hashMismatches === 1 ? "" : "es"}` : "",
   ].filter(Boolean).join(", ");
   log(`  ${reasons} outdated (${totalMismatches}/${sampled} samples) — regenerating all...`);
   const summary = await generateCollection(col, home, themeEngine);
