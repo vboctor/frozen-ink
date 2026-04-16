@@ -12,6 +12,7 @@ import {
   SearchIndexer,
   entityMarkdownPath,
   splitMarkdownPath,
+  resolveCredentials,
 } from "@frozenink/core";
 import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
@@ -65,7 +66,8 @@ export const pullCommand = new Command("pull")
       process.exit(1);
     }
 
-    const password = (col.credentials as any)?.password;
+    const resolved = resolveCredentials(col.credentials);
+    const password = (resolved as any)?.password;
     const client = new RemoteClient(sourceUrl, password);
 
     const dbPath = getCollectionDbPath(collection);

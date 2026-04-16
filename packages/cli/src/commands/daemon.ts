@@ -12,6 +12,7 @@ import {
   ThemeEngine,
   LocalStorageBackend,
   spawnDetached,
+  resolveCredentials,
 } from "@frozenink/core";
 import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@frozenink/crawlers";
 
@@ -52,7 +53,7 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
       try {
         await crawler.initialize(
           col.config as Record<string, unknown>,
-          col.credentials as Record<string, unknown>,
+          resolveCredentials(col.credentials),
         );
 
         const collectionDir = join(home, "collections", col.name);

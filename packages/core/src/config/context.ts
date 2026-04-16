@@ -1,9 +1,9 @@
-import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, statSync, unlinkSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync, renameSync } from "fs";
 import { join, dirname } from "path";
-import { randomBytes } from "crypto";
 import { z } from "zod";
 import yaml from "js-yaml";
 import { getFrozenInkHome } from "./loader";
+import { atomicWriteYaml, readYaml } from "./yaml-utils";
 
 // --- Zod Schemas ---
 
@@ -33,7 +33,7 @@ const collectionEntrySchema = z.object({
   version: z.string().optional().default("1.0"),
   syncInterval: z.number().optional(),
   config: z.record(z.unknown()).default({}),
-  credentials: z.record(z.unknown()).default({}),
+  credentials: z.union([z.string(), z.record(z.unknown())]).default({}),
   assets: assetsConfigSchema,
   /**
    * Glob patterns matching filenames to hide from the collection root.
@@ -157,23 +157,6 @@ function getLegacyPublishPath(): string {
 
 function getLegacyContextPath(): string {
   return join(getFrozenInkHome(), "context.yml");
-}
-
-// --- Atomic YAML write ---
-
-function atomicWriteYaml(filePath: string, data: unknown): void {
-  const dir = dirname(filePath);
-  mkdirSync(dir, { recursive: true });
-  const content = yaml.dump(data, { lineWidth: -1, noRefs: true, sortKeys: false });
-  const tmpPath = `${filePath}.${randomBytes(4).toString("hex")}.tmp`;
-  writeFileSync(tmpPath, content, "utf-8");
-  renameSync(tmpPath, filePath);
-}
-
-function readYaml<T>(filePath: string): T | null {
-  if (!existsSync(filePath)) return null;
-  const raw = readFileSync(filePath, "utf-8");
-  return (yaml.load(raw) as T) ?? null;
 }
 
 // --- Migration ---
@@ -319,7 +302,36 @@ export function ensureInitialized(): void {
   if (!existsSync(configPath) && !existsSync(legacyConfigPath)) {
     atomicWriteYaml(configPath, { sync: { interval: 900 }, ui: { port: 3000 } });
   }
+
+  // Create sample credentials.yml if it doesn't exist
+  const credentialsPath = join(home, "credentials.yml");
+  if (!existsSync(credentialsPath)) {
+    writeFileSync(credentialsPath, SAMPLE_CREDENTIALS_YML, "utf-8");
+  }
 }
+
+const SAMPLE_CREDENTIALS_YML = `\
+# Frozen Ink — Named Credentials
+#
+# Define reusable credential sets here. Collections can reference them by name
+# instead of storing secrets inline, keeping your collection folders safe to
+# share with AI tools.
+#
+# Usage in a collection YAML:
+#   credentials: my-github        # references the "my-github" entry below
+#
+# Format:
+#   <name>:
+#     <key>: <value>
+#
+# Examples (uncomment and fill in your values):
+#
+# my-github:
+#   token: ghp_your_token_here
+#
+# work-mantishub:
+#   token: your_api_token_here
+`;
 
 export function contextExists(): boolean {
   const home = getFrozenInkHome();

@@ -12,6 +12,7 @@ import {
   ThemeEngine,
   LocalStorageBackend,
   entities,
+  resolveCredentials,
 } from "@frozenink/core";
 import { sql } from "drizzle-orm";
 import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme } from "@frozenink/crawlers";
@@ -92,7 +93,7 @@ export const syncCommand = new Command("sync")
       }
       await crawler.initialize(
         config,
-        col.credentials as Record<string, unknown>,
+        resolveCredentials(col.credentials),
       );
 
       const dbPath = getCollectionDbPath(col.name);

@@ -9,6 +9,8 @@ import {
   getCollection,
   addCollection,
   getCollectionDbPath,
+  getNamedCredentials,
+  resolveCredentials,
 } from "@frozenink/core";
 import { createDefaultRegistry, MantisHubCrawler } from "@frozenink/crawlers";
 
@@ -29,6 +31,7 @@ export const addCommand = new Command("add")
   .option("--max-prs <count>", "Maximum pull requests to sync (for github)", parseInt)
   .option("--open-only", "Only sync open issues/PRs, delete closed ones (for github)")
   .option("--sync-entities <types>", "Comma-separated entity types to sync: issues,pages,users (for mantishub)")
+  .option("--credentials <name>", "Use a named credential set from ~/.frozenink/credentials.yml")
   .action(async (crawlerType: string, opts: Record<string, string>) => {
     ensureInitialized();
 
@@ -53,14 +56,36 @@ export const addCommand = new Command("add")
     }
 
     // Build credentials and config based on crawler type
-    const credentials: Record<string, unknown> = {};
+    let credentials: string | Record<string, unknown> = {};
     const config: Record<string, unknown> = {};
 
-    if (crawlerType === "github") {
-      if (!opts.token || !opts.repo) {
+    // If --credentials is specified, use a named credential set from credentials.yml
+    if (opts.credentials) {
+      const credentialsPath = join(getFrozenInkHome(), "credentials.yml");
+      const named = getNamedCredentials(opts.credentials);
+      if (!named) {
         console.error(
-          "GitHub crawler requires --token and --repo (in owner/repo format)",
+          `Credential set "${opts.credentials}" not found.\nDefine it in ${credentialsPath} — see the file for format and examples.`,
         );
+        process.exit(1);
+      }
+      credentials = opts.credentials; // store the reference name
+    }
+
+    // Build inline credentials only when not using a named reference
+    const useNamedCreds = typeof credentials === "string";
+
+    if (crawlerType === "github") {
+      if (!useNamedCreds) {
+        if (!opts.token || !opts.repo) {
+          console.error(
+            "GitHub crawler requires --token and --repo (in owner/repo format), or --credentials <name>",
+          );
+          process.exit(1);
+        }
+        (credentials as Record<string, unknown>).token = opts.token;
+      } else if (!opts.repo) {
+        console.error("GitHub crawler requires --repo (in owner/repo format)");
         process.exit(1);
       }
       const repoParts = (opts.repo as string).split("/");
@@ -71,14 +96,12 @@ export const addCommand = new Command("add")
         process.exit(1);
       }
       const [ghOwner, ghRepo] = repoParts;
-      credentials.token = opts.token;
       config.owner = ghOwner;
       config.repo = ghRepo;
       if (opts.openOnly) {
         config.openOnly = true;
       }
       if (opts.max) {
-        // --max sets both per-type limits (e.g. --max 20 = at most 20 issues + 20 PRs)
         config.maxIssues = opts.max;
         config.maxPullRequests = opts.max;
       }
@@ -95,7 +118,9 @@ export const addCommand = new Command("add")
       }
       const { resolve } = await import("path");
       const vaultPath = resolve(opts.path);
-      credentials.vaultPath = vaultPath;
+      if (!useNamedCreds) {
+        (credentials as Record<string, unknown>).vaultPath = vaultPath;
+      }
       config.vaultPath = vaultPath;
     } else if (crawlerType === "mantishub") {
       if (!opts.url) {
@@ -103,8 +128,10 @@ export const addCommand = new Command("add")
         process.exit(1);
       }
       config.url = opts.url;
-      credentials.token = opts.token ?? "";
-      credentials.url = opts.url;
+      if (!useNamedCreds) {
+        (credentials as Record<string, unknown>).token = opts.token ?? "";
+        (credentials as Record<string, unknown>).url = opts.url;
+      }
       if (opts.projectName) {
         config.project = { name: opts.projectName };
       }
@@ -129,18 +156,23 @@ export const addCommand = new Command("add")
       }
       const { resolve } = await import("path");
       const repoPath = resolve(opts.path);
-      credentials.repoPath = repoPath;
+      if (!useNamedCreds) {
+        (credentials as Record<string, unknown>).repoPath = repoPath;
+      }
       config.repoPath = repoPath;
       if (opts.includeDiffs) {
         config.includeDiffs = true;
       }
     }
 
+    // Resolve credentials for validation (named ref → concrete object)
+    const resolvedCreds = resolveCredentials(credentials);
+
     // Validate credentials
     const factory = registry.get(crawlerType)!;
     const crawler = factory();
     console.log("Validating credentials...");
-    const valid = await crawler.validateCredentials(credentials);
+    const valid = await crawler.validateCredentials(resolvedCreds);
 
     if (!valid) {
       console.error("Credential validation failed. Check your token and access.");
@@ -151,7 +183,7 @@ export const addCommand = new Command("add")
     const project = config.project as { id?: number; name?: string } | undefined;
     if (crawlerType === "mantishub" && project?.name) {
       try {
-        await crawler.initialize(config, credentials);
+        await crawler.initialize(config, resolvedCreds);
         const resolved = await (crawler as MantisHubCrawler).resolveProjectName(project.name);
         config.project = { id: resolved.id, name: resolved.name };
         console.log(`  Resolved project "${resolved.name}" → ID ${resolved.id}`);
@@ -171,10 +203,10 @@ export const addCommand = new Command("add")
     // Create markdown output directory
     mkdirSync(join(collectionDir, "content"), { recursive: true });
 
-    // For MantisHub, don't store url in credentials (it's already in config)
-    if (crawlerType === "mantishub") {
-      delete credentials.url;
-      delete credentials.baseUrl;
+    // For MantisHub with inline credentials, don't store url (it's already in config)
+    if (crawlerType === "mantishub" && !useNamedCreds) {
+      delete (credentials as Record<string, unknown>).url;
+      delete (credentials as Record<string, unknown>).baseUrl;
     }
 
     // Save collection config
