@@ -430,10 +430,15 @@ export async function publishCollections(
   external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
   title TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
   content_hash TEXT,
+  folder TEXT,
+  slug TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`);
       schemaSql.push("CREATE INDEX idx_entities_external ON entities(external_id);");
+      schemaSql.push("CREATE INDEX idx_entities_folder   ON entities(folder);");
+      schemaSql.push("CREATE INDEX idx_entities_type     ON entities(entity_type);");
+      schemaSql.push("CREATE INDEX idx_entities_updated  ON entities(updated_at);");
       schemaSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
       schemaSql.push("");
 
@@ -452,14 +457,17 @@ export async function publishCollections(
         for (const entity of allEntities) {
           entityIdOffset++;
           const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
+          const folderVal = entity.folder != null ? `'${escapeSQL(entity.folder)}'` : "NULL";
+          const slugVal = entity.slug != null ? `'${escapeSQL(entity.slug)}'` : "NULL";
 
-          schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
+          schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, folder, slug, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${folderVal}, ${slugVal}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
 
           // FTS inline via theme engine
           const entityDataParsed: EntityData = typeof entity.data === "object" ? entity.data as EntityData : JSON.parse(entity.data as string);
           const entityTagNames = (entityDataParsed.tags ?? []).join(" ");
           let ftsContent = "";
-          if (entityDataParsed.markdown_path && themeEngine.has(col.crawler)) {
+          const hasMarkdown = entity.folder != null && entity.slug != null;
+          if (hasMarkdown && themeEngine.has(col.crawler)) {
             try {
               ftsContent = themeEngine.render({
                 entity: {

@@ -11,6 +11,7 @@ import {
   entities,
   SearchIndexer,
   extractWikilinks,
+  entityMarkdownPath,
 } from "@frozenink/core";
 import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
@@ -62,18 +63,18 @@ export const indexCommand = new Command("index")
       let indexed = 0;
       let linked = 0;
 
-      // Pre-build markdown_path → externalId map for link resolution
       const byMdPath = new Map<string, string>();
       for (const e of allEntities) {
-        const mp = (e.data as EntityData)?.markdown_path;
+        const mp = entityMarkdownPath(e.folder, e.slug);
         if (mp) byMdPath.set(mp, e.externalId);
       }
 
       for (const entity of allEntities) {
         const entityData = entity.data as EntityData;
-        if (!entityData.markdown_path) continue;
+        const mdPath = entityMarkdownPath(entity.folder, entity.slug);
+        if (!mdPath) continue;
 
-        const filePath = join(collectionDir, "content", entityData.markdown_path);
+        const filePath = join(collectionDir, "content", mdPath);
         if (!existsSync(filePath)) continue;
 
         const markdown = readFileSync(filePath, "utf-8");
@@ -89,7 +90,7 @@ export const indexCommand = new Command("index")
         indexed++;
 
         // Rebuild out_links in data
-        const targets = extractWikilinks(markdown, entityData.markdown_path);
+        const targets = extractWikilinks(markdown, mdPath);
         const outLinkExternalIds: string[] = [];
         for (const target of targets) {
           const targetExtId = byMdPath.get(`${target}.md`);

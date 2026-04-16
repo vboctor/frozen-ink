@@ -14,6 +14,8 @@ import {
   SearchIndexer,
   extractWikilinks,
   CollectionEntry,
+  entityMarkdownPath,
+  splitMarkdownPath,
 } from "@frozenink/core";
 import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
@@ -78,26 +80,25 @@ export async function generateCollection(
   // Build a lookup function for cross-entity wikilinks (used by some themes)
   const entityPathLookup = (externalId: string): string | undefined => {
     const rows = colDb
-      .select({ data: entities.data })
+      .select({ folder: entities.folder, slug: entities.slug })
       .from(entities)
       .where(eq(entities.externalId, externalId))
       .all();
-    const markdownPath = (rows[0]?.data as EntityData)?.markdown_path;
-    if (!markdownPath) return undefined;
-    return markdownPath.endsWith(".md") ? markdownPath.slice(0, -3) : markdownPath;
+    const r = rows[0];
+    if (!r || r.folder == null || r.slug == null) return undefined;
+    return r.folder ? `${r.folder}/${r.slug}` : r.slug;
   };
 
   // Build stem-matching wikilink resolver (for Obsidian [[bare name]] links)
   const allEntityRows = colDb
-    .select({ externalId: entities.externalId, data: entities.data })
+    .select({ externalId: entities.externalId, folder: entities.folder, slug: entities.slug })
     .from(entities)
     .all();
   const byExtId = new Map<string, string>();
   const byStem = new Map<string, string>();
   for (const r of allEntityRows) {
-    const markdownPath = (r.data as EntityData)?.markdown_path;
-    if (!markdownPath) continue;
-    const noExt = markdownPath.endsWith(".md") ? markdownPath.slice(0, -3) : markdownPath;
+    if (r.folder == null || r.slug == null) continue;
+    const noExt = r.folder ? `${r.folder}/${r.slug}` : r.slug;
     byExtId.set(r.externalId, noExt);
     const stem = r.externalId.replace(/\.md$/, "");
     const stemName = stem.includes("/") ? stem.split("/").pop()! : stem;
@@ -119,6 +120,13 @@ export async function generateCollection(
   const allEntities = colDb.select().from(entities).all();
   let generated = 0;
   let renamed = 0;
+
+  // Pre-build once for O(1) wikilink target lookup across all entities
+  const allByMdPath = new Map<string, string>();
+  for (const e of allEntities) {
+    const mp = entityMarkdownPath(e.folder, e.slug);
+    if (mp) allByMdPath.set(mp, e.externalId);
+  }
 
   for (const entity of allEntities) {
     // Re-derive title from stored data (no API call needed).
@@ -147,9 +155,10 @@ export async function generateCollection(
     const markdown = themeEngine.render(renderCtx);
 
     // Handle rename: delete old file if path changed
-    if (entityData.markdown_path && entityData.markdown_path !== newPath) {
+    const existingPath = entityMarkdownPath(entity.folder, entity.slug);
+    if (existingPath && existingPath !== newPath) {
       try {
-        await storage.delete(`${markdownBasePath}/${entityData.markdown_path}`);
+        await storage.delete(`${markdownBasePath}/${existingPath}`);
       } catch {
         // File may already be gone
       }
@@ -158,20 +167,16 @@ export async function generateCollection(
 
     // Write new markdown file
     await storage.write(newStoragePath, markdown);
-    const fileStat = await storage.stat(newStoragePath);
 
-    // Update entity record with new path, mtime, and re-derived title
-    const updatedEntityData: EntityData = {
-      ...entityData,
-      markdown_mtime: fileStat?.mtimeMs ?? null,
-      markdown_size: fileStat?.size ?? null,
-      markdown_path: newPath,
-    };
+    const { folder: genFolder, slug: genSlug } = splitMarkdownPath(newPath);
+
     colDb
       .update(entities)
       .set({
         title,
-        data: updatedEntityData,
+        data: entityData,
+        folder: genFolder,
+        slug: genSlug,
       })
       .where(eq(entities.id, entity.id))
       .run();
@@ -189,12 +194,6 @@ export async function generateCollection(
     // Rebuild entity out_links in data
     const targets = extractWikilinks(markdown, newPath);
     const outLinkExternalIds: string[] = [];
-    // Pre-load all entities for markdown_path lookup
-    const allByMdPath = new Map<string, string>();
-    for (const e of allEntities) {
-      const mp = (e.data as EntityData)?.markdown_path;
-      if (mp) allByMdPath.set(mp, e.externalId);
-    }
     for (const target of targets) {
       const targetExtId = allByMdPath.get(`${target}.md`);
       if (targetExtId) {

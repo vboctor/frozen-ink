@@ -7,6 +7,8 @@ export interface Entity {
   title: string;
   data: string;
   content_hash: string | null;
+  folder: string | null;
+  slug: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -16,11 +18,14 @@ export interface EntityData {
   out_links?: string[];
   in_links?: string[];
   assets?: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }>;
-  markdown_mtime?: number | null;
-  markdown_size?: number | null;
-  markdown_path?: string | null;
   url?: string | null;
   tags?: string[] | null;
+}
+
+/** Derive the markdown path from entity columns. */
+export function entityMarkdownPath(entity: Pick<Entity, "folder" | "slug">): string | null {
+  if (entity.folder == null || entity.slug == null) return null;
+  return entity.folder ? `${entity.folder}/${entity.slug}.md` : `${entity.slug}.md`;
 }
 
 export function parseEntityData(entity: Entity): EntityData {
@@ -28,28 +33,16 @@ export function parseEntityData(entity: Entity): EntityData {
   try { return JSON.parse(entity.data); } catch { return { source: {} }; }
 }
 
-export async function getEntityByMarkdownPath(
+export async function getEntityByFolderSlug(
   db: D1Database,
-  markdownPath: string,
+  folder: string,
+  slug: string,
 ): Promise<Entity | null> {
   const result = await db
-    .prepare("SELECT * FROM entities WHERE json_extract(data, '$.markdown_path') = ?")
-    .bind(markdownPath)
+    .prepare("SELECT * FROM entities WHERE folder = ? AND slug = ?")
+    .bind(folder, slug)
     .first<Entity>();
   return result ?? null;
-}
-
-export async function getEntityMarkdownPathByExternalId(
-  db: D1Database,
-  externalId: string,
-): Promise<string | null> {
-  const result = await db
-    .prepare("SELECT json_extract(data, '$.markdown_path') as markdown_path FROM entities WHERE external_id = ?")
-    .bind(externalId)
-    .first<{ markdown_path: string | null }>();
-  if (!result?.markdown_path) return null;
-  const rel = result.markdown_path;
-  return rel.endsWith(".md") ? rel.slice(0, -3) : rel;
 }
 
 export async function getEntities(

@@ -9,6 +9,7 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
+  entityMarkdownPath,
   type EntityData,
 } from "@frozenink/core";
 import { eq } from "drizzle-orm";
@@ -64,7 +65,7 @@ async function handleGetEntity(
     if (!entity) continue;
 
     const entityData = entity.data as EntityData;
-    const markdownPath = entityData.markdown_path ?? null;
+    const markdownPath = entityMarkdownPath(entity.folder, entity.slug);
 
     let markdown: string | null = null;
     if (markdownPath) {

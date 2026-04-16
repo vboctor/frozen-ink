@@ -6,11 +6,30 @@ export interface EntityData {
   out_links?: string[];
   in_links?: string[];
   assets?: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }>;
-  markdown_mtime?: number | null;
-  markdown_size?: number | null;
-  markdown_path?: string | null;
   url?: string | null;
   tags?: string[] | null;
+}
+
+/** Reconstruct the relative markdown path from folder/slug columns. */
+export function entityMarkdownPath(
+  folder: string | null | undefined,
+  slug: string | null | undefined,
+): string | null {
+  if (folder == null || slug == null) return null;
+  return folder ? `${folder}/${slug}.md` : `${slug}.md`;
+}
+
+/** Split a relative markdown path into folder and slug. */
+export function splitMarkdownPath(mdPath: string | null | undefined): {
+  folder: string | null;
+  slug: string | null;
+} {
+  if (!mdPath) return { folder: null, slug: null };
+  const lastSlash = mdPath.lastIndexOf("/");
+  return {
+    folder: lastSlash >= 0 ? mdPath.slice(0, lastSlash) : "",
+    slug: mdPath.slice(lastSlash + 1).replace(/\.md$/, ""),
+  };
 }
 
 export const entities = sqliteTable("entities", {
@@ -20,6 +39,8 @@ export const entities = sqliteTable("entities", {
   title: text("title").notNull(),
   data: text("data", { mode: "json" }).notNull().$type<EntityData>(),
   contentHash: text("content_hash"),
+  folder: text("folder"),
+  slug: text("slug"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),

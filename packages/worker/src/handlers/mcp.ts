@@ -3,6 +3,7 @@ import {
   getEntityByExternalId,
   parseEntityData,
   getEntityCount,
+  entityMarkdownPath,
 } from "../db/client";
 import { getCollections } from "../config";
 import { searchEntities } from "../db/search";
@@ -174,8 +175,9 @@ async function callTool(
 
     const col = await (await import("../config")).getCollectionConfig(env.BUCKET, collectionName);
     const entityData = parseEntityData(entity);
+    const mdPath = entityMarkdownPath(entity);
     let markdown: string | null = null;
-    if (entityData.markdown_path && col?.crawler) {
+    if (mdPath && col?.crawler) {
       const ctx = buildRenderContext(collectionName, col.crawler, entity);
       markdown = themeEngine.render(ctx);
     }
@@ -193,8 +195,8 @@ async function callTool(
     const collectionName = args.collection as string;
     const entity = await getEntityByExternalId(env.DB, args.externalId as string);
     if (!entity) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
-    const mdEntityData = parseEntityData(entity);
-    if (!mdEntityData.markdown_path) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
+    const markdownPath = entityMarkdownPath(entity);
+    if (!markdownPath) return [{ type: "text", text: JSON.stringify({ error: "Not found" }) }];
 
     const col = await (await import("../config")).getCollectionConfig(env.BUCKET, collectionName);
     if (!col?.crawler) return [{ type: "text", text: JSON.stringify({ error: "Collection not found" }) }];
@@ -205,7 +207,7 @@ async function callTool(
       type: "text",
       text: JSON.stringify({
         collection: collectionName, externalId: entity.external_id,
-        title: entity.title, markdownPath: mdEntityData.markdown_path, markdown: md,
+        title: entity.title, markdownPath, markdown: md,
         updatedAt: entity.updated_at,
       }),
     }];

@@ -10,6 +10,8 @@ import {
   entities,
   LocalStorageBackend,
   SearchIndexer,
+  entityMarkdownPath,
+  splitMarkdownPath,
 } from "@frozenink/core";
 import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
@@ -88,6 +90,7 @@ export const pullCommand = new Command("pull")
       title: e.title,
       data: e.data as unknown as EntityData,
       contentHash: e.contentHash,
+      markdownPath: entityMarkdownPath(e.folder, e.slug),
     }));
 
     // Compute sync plan
@@ -134,20 +137,15 @@ export const pullCommand = new Command("pull")
     }
 
     // Download new/updated markdown files
-    const mdDownloads = remoteEntities.filter((e) => (e.data as unknown as EntityData).markdown_path);
+    const mdDownloads = remoteEntities.filter((e) => e.markdownPath);
     if (mdDownloads.length > 0) {
       console.log(`Downloading ${mdDownloads.length} files...`);
       await runConcurrent(mdDownloads, 10, async (re) => {
-        const reData = re.data as unknown as EntityData;
-        const mdPath = reData.markdown_path!;
+        const mdPath = re.markdownPath!;
         assertSafePath(mdPath);
         const content = await client.getMarkdown(mdPath);
         if (content) {
           await storage.write(`content/${mdPath}`, content);
-          // Set file mtime from stored metadata
-          if (reData.markdown_mtime) {
-            await storage.utimes?.(`content/${mdPath}`, reData.markdown_mtime);
-          }
         }
       });
     }
@@ -184,6 +182,7 @@ export const pullCommand = new Command("pull")
     for (const entry of plan.entities.add) {
       const re = remoteByExtId.get(entry.externalId);
       if (!re) continue;
+      const { folder, slug } = splitMarkdownPath(re.markdownPath);
       colDb
         .insert(entities)
         .values({
@@ -192,6 +191,8 @@ export const pullCommand = new Command("pull")
           title: re.title,
           data: re.data as unknown as EntityData,
           contentHash: re.hash,
+          folder,
+          slug,
         })
         .run();
     }
@@ -200,6 +201,7 @@ export const pullCommand = new Command("pull")
     for (const entry of plan.entities.update) {
       const re = remoteByExtId.get(entry.externalId);
       if (!re) continue;
+      const { folder, slug } = splitMarkdownPath(re.markdownPath);
       colDb
         .update(entities)
         .set({
@@ -207,6 +209,8 @@ export const pullCommand = new Command("pull")
           title: re.title,
           data: re.data as unknown as EntityData,
           contentHash: re.hash,
+          folder,
+          slug,
           updatedAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
         })
         .where(eq(entities.externalId, entry.externalId))
@@ -236,10 +240,9 @@ export const pullCommand = new Command("pull")
       if (!dbEntity) continue;
 
       let content = "";
-      const reData = re.data as unknown as EntityData;
-      if (reData.markdown_path) {
+      if (re.markdownPath) {
         try {
-          content = await storage.read(`content/${reData.markdown_path}`);
+          content = await storage.read(`content/${re.markdownPath}`);
         } catch { /* ok */ }
       }
       indexer.updateIndex({
@@ -248,7 +251,7 @@ export const pullCommand = new Command("pull")
         entityType: re.entityType,
         title: re.title,
         content,
-        tags: reData.tags ?? [],
+        tags: (re.data as EntityData).tags ?? [],
       });
     }
     for (const entityId of deletedEntityIds) {
