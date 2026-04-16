@@ -167,7 +167,7 @@ export const cloneCommand = new Command("clone")
           entityType: re.entityType,
           title: re.title,
           content,
-          tags: (re.data as EntityData).tags ?? [],
+          tags: ((re.data as Record<string, unknown>)?.tags as string[] | undefined) ?? [],
         });
       }
     }

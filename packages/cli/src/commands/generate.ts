@@ -165,8 +165,17 @@ export async function generateCollection(
       renamed++;
     }
 
-    // Write new markdown file
-    await storage.write(newStoragePath, markdown);
+    // Read-before-write: preserve mtime when content is unchanged
+    let needsWrite = true;
+    try {
+      const existing = await storage.read(newStoragePath);
+      if (existing === markdown) needsWrite = false;
+    } catch {
+      // File doesn't exist yet
+    }
+    if (needsWrite) {
+      await storage.write(newStoragePath, markdown);
+    }
 
     const { folder: genFolder, slug: genSlug } = splitMarkdownPath(newPath);
 

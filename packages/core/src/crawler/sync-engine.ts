@@ -765,19 +765,15 @@ export class SyncEngine {
   private async reconcile(crawlerType: string): Promise<void> {
     const allEntities = this.db.select().from(entities).all();
 
-    // 1. Ensure every entity in DB has its markdown file on disk.
-    // Skip entities that already have their file present; re-render only if missing.
+    // 1. Re-render every entity's markdown from stored source data and write to disk.
     for (const entity of allEntities) {
       if (entity.folder == null || entity.slug == null) continue;
       const markdownPath = entity.folder ? `${entity.folder}/${entity.slug}.md` : `${entity.slug}.md`;
       const storagePath = this.toStoragePath(markdownPath);
-      const currentStat = await this.storage.stat(storagePath);
-      if (currentStat !== null) continue;
 
-      // File is missing — re-render and restore
       const entityData = (entity.data as EntityData) ?? { source: {} };
       const entityTagNames = this.getEntityTagNames(entity.id);
-      const expected = this.themeEngine.render({
+      const rendered = this.themeEngine.render({
         entity: {
           externalId: entity.externalId,
           entityType: entity.entityType,
@@ -791,8 +787,19 @@ export class SyncEngine {
         lookupEntityPath: this.makeLookupEntityPath(),
         resolveWikilink: this.makeResolveWikilink(),
       });
-      await this.storage.write(storagePath, expected);
-      this.recomputeHash(entity.id);
+
+      // Read-before-write: preserve mtime when content is unchanged
+      let needsWrite = true;
+      try {
+        const existing = await this.storage.read(storagePath);
+        if (existing === rendered) needsWrite = false;
+      } catch {
+        // File doesn't exist yet
+      }
+      if (needsWrite) {
+        await this.storage.write(storagePath, rendered);
+        this.recomputeHash(entity.id);
+      }
     }
 
     // 2. Delete orphaned markdown files (on disk but no matching entity in DB)

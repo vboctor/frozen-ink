@@ -247,7 +247,7 @@ Collection DB path is inferred: `~/.frozenink/collections/{name}/data.db` (no ex
 
 Each collection has its own SQLite database.
 
-#### Collection DBs (`~/.frozenink/collections/<name>/data.db`)
+#### Collection DBs (`~/.frozenink/collections/<name>/db/data.db`)
 
 ```sql
 entities
@@ -255,54 +255,23 @@ entities
   external_id     TEXT NOT NULL              -- source identifier (e.g. "commit:abc123", "notes/daily.md")
   entity_type     TEXT NOT NULL              -- "issue", "pull_request", "note", "commit", "branch", "tag"
   title           TEXT NOT NULL
-  data            TEXT NOT NULL DEFAULT '{}' -- JSON: full structured data from crawler
+  data            TEXT NOT NULL DEFAULT '{}' -- JSON (EntityData): source, out_links, in_links, assets, url, tags
   content_hash    TEXT                       -- SHA-256 for change detection (skip re-render if unchanged)
-  markdown_path   TEXT                       -- relative path to rendered .md file on disk
-  url             TEXT                       -- link to original source
+  folder          TEXT                       -- directory part of markdown path (e.g. "issues", "" for root)
+  slug            TEXT                       -- filename without .md (e.g. "42-login-error")
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 
-entity_tags
-  id              INTEGER PRIMARY KEY AUTOINCREMENT
-  entity_id       INTEGER NOT NULL REFERENCES entities(id)
-  tag             TEXT NOT NULL
-
-attachments
-  id              INTEGER PRIMARY KEY AUTOINCREMENT
-  entity_id       INTEGER NOT NULL REFERENCES entities(id)
-  filename        TEXT NOT NULL
-  mime_type       TEXT NOT NULL
-  storage_path    TEXT NOT NULL              -- relative path to file on disk
-  backend         TEXT NOT NULL              -- "local"
-
-sync_state                                   -- sync cursors (persisted in DB, NOT filesystem)
-  id              INTEGER PRIMARY KEY AUTOINCREMENT
-  crawler_type    TEXT NOT NULL
-  cursor          TEXT                       -- JSON: crawler-specific cursor (page, timestamp, known hashes)
-  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-
-sync_runs                                    -- audit log of sync operations
-  id              INTEGER PRIMARY KEY AUTOINCREMENT
-  status          TEXT NOT NULL              -- "running", "completed", "failed"
-  entities_created INTEGER NOT NULL DEFAULT 0
-  entities_updated INTEGER NOT NULL DEFAULT 0
-  entities_deleted INTEGER NOT NULL DEFAULT 0
-  errors          TEXT                       -- JSON array
-  started_at      TEXT NOT NULL DEFAULT (datetime('now'))
-  completed_at    TEXT
-
-entity_relations
-  id              INTEGER PRIMARY KEY AUTOINCREMENT
-  source_entity_id INTEGER NOT NULL REFERENCES entities(id)
-  target_entity_id INTEGER NOT NULL REFERENCES entities(id)
-  relation_type    TEXT NOT NULL             -- "references", "closes", etc.
-
-entity_links
-  id              INTEGER PRIMARY KEY AUTOINCREMENT
-  source_entity_id INTEGER NOT NULL REFERENCES entities(id)
-  source_markdown_path TEXT NOT NULL
-  target_path      TEXT NOT NULL
+-- Indexes (created in client.ts on every getCollectionDb() call)
+  idx_entities_external  ON entities(external_id)
+  idx_entities_folder    ON entities(folder, slug)   -- compound index for point lookups
+  idx_entities_type      ON entities(entity_type)
+  idx_entities_updated   ON entities(updated_at)
 ```
+
+Markdown path is reconstructed from `folder`/`slug`: `entityMarkdownPath(folder, slug)` returns `"folder/slug.md"` or `"slug.md"` for root-level entities. The inverse is `splitMarkdownPath(path)`.
+
+Tags, links (in/out), assets, and URL are stored in the `data` JSON column as an `EntityData` object — not in separate tables.
 
 #### FTS5 Virtual Table (created by `SearchIndexer`)
 
@@ -310,7 +279,7 @@ entity_links
 entities_fts (title, content, tags, entity_id UNINDEXED, entity_type UNINDEXED, external_id UNINDEXED)
 ```
 
-Tables are created via raw SQL `CREATE IF NOT EXISTS` in `client.ts` (no migrations).
+Tables are created via raw SQL `CREATE TABLE IF NOT EXISTS` in `client.ts`. Schema upgrades (e.g., adding `folder`/`slug` columns) use `ALTER TABLE ADD COLUMN` with try/catch, plus a one-time backfill loop. No migration framework — all migrations run inline in `getCollectionDb()`.
 
 ### What's in the DB vs Filesystem
 
@@ -318,14 +287,12 @@ Tables are created via raw SQL `CREATE IF NOT EXISTS` in `client.ts` (no migrati
 |---------|---------|-----------|
 | Crawler config, credentials | Per-collection `<name>.yml` | Human-readable YAML, single source of truth |
 | Publish state | Per-collection `<name>.yml` (`publish` field) | URLs, password hash, publish timestamp |
+| Sync cursors / pagination state | Per-collection `<name>.yml` (`syncCursor` field) | Survives restarts, enables incremental sync |
 | Entity metadata + structured data | Collection DB (`entities.data` JSON) | Queryable, FTS-indexed |
-| Sync cursors / pagination state | Collection DB (`sync_state.cursor` JSON) | Survives restarts, enables incremental sync |
-| Sync run audit log | Collection DB (`sync_runs`) | Queryable history |
 | Content change hashes | Collection DB (`entities.content_hash`) | Skip re-render on unchanged data |
-| Tags and relations | Collection DB (`entity_tags`, `entity_relations`) | Queryable associations |
-| Attachment metadata | Collection DB (`attachments`) | Path + MIME lookup |
-| Rendered markdown files | Filesystem (`collections/<name>/markdown/`) | Large, rebuildable from DB data |
-| Attachment binary files | Filesystem (`collections/<name>/attachments/`) | Large binaries, served by HTTP |
+| Tags, links, assets | Collection DB (`entities.data` JSON fields) | Stored in EntityData, not separate tables |
+| Rendered markdown files | Filesystem (`collections/<name>/content/`) | Rebuildable from DB data via `fink generate` |
+| Attachment binary files | Filesystem (paths in `entities.data.assets[].storagePath`) | Large binaries, served by HTTP |
 | FTS search index | Collection DB (`entities_fts` virtual table) | SQLite FTS5 for fast text search |
 | Desktop workspace list | `~/.frozenink/workspaces.json` | App-level metadata, not per-workspace |
 
@@ -414,6 +381,28 @@ cd packages/ui && npx vitest run   # UI uses vitest + happy-dom, not bun:test
 cd packages/ui && npx vite build   # Production build
 cd packages/worker && bun run build  # esbuild worker bundle
 ```
+
+### Pre-push CI Validation
+
+**Always run `bun run ci` before pushing commits or creating PRs.** This single command mirrors the full GitHub Actions CI pipeline:
+
+```bash
+bun run ci
+# Runs in order: lint:md → typecheck → core tests → crawlers tests → mcp tests → ui vitest → ui build → worker build
+```
+
+Running individual checks (e.g., `bun run typecheck` or `bun test packages/core/`) is not sufficient — the CI pipeline includes steps that individual checks miss:
+
+| Step | What it catches | Often missed by |
+|------|----------------|-----------------|
+| `bun run lint:md` | Markdown formatting issues | Running only typecheck/tests |
+| `bun run typecheck` | Type errors across all packages | Running only tests |
+| `bun test packages/crawlers/src/` | Crawler-specific regressions | Running only core/mcp tests |
+| `cd packages/ui && npx vitest run` | UI component regressions | Running only bun:test suites |
+| `bun run build:ui` | Vite build failures (tree-shaking, missing exports) | Running only tests |
+| `cd packages/worker && bun run build` | Worker build failures (esbuild, missing/banned imports like `fs`, `path`) | All local testing |
+
+**After creating or pushing to a PR, always share the full clickable PR URL** (e.g., `https://github.com/vboctor/frozen-ink/pull/36`) so the user can review immediately.
 
 ### Desktop App Build
 
@@ -536,7 +525,7 @@ Served by `fink serve` locally, or by the Cloudflare Worker when published:
 | `GET /api/collections` | List all collections |
 | `GET /api/collections/:name/tree` | File tree of markdown files |
 | `GET /api/collections/:name/default-file` | Most recently updated file |
-| `GET /api/collections/:name/markdown/*path` | Raw markdown file content |
+| `GET /api/collections/:name/markdown/*path` | Rendered markdown (on-the-fly from entity data) |
 | `GET /api/collections/:name/entities` | Paginated entity list (query: limit, offset, type) |
 | `GET /api/search?q=&collection=&type=&limit=` | FTS5 search |
 | `GET /api/collections/:name/backlinks/*path` | Backlinks for a file |

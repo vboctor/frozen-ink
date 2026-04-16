@@ -306,28 +306,62 @@ export function createApiServer(
         return jsonResponse({ file: filePath });
       }
 
-      // GET /api/collections/:name/markdown/*path
+      // GET /api/collections/:name/markdown/*path — render entity as markdown on-the-fly
       const markdownMatch = path.match(
         /^\/api\/collections\/([^/]+)\/markdown\/(.+)$/,
       );
       if (markdownMatch && req.method === "GET") {
         const name = decodeURIComponent(markdownMatch[1]);
         const filePath = decodeURIComponent(markdownMatch[2]);
+        const col = getCollection(name);
+        if (!col) return errorResponse("Collection not found", 404);
 
-        const fullPath = join(home, "collections", name, "content", filePath);
+        const dbPath = getCollectionDbPath(name);
+        if (!existsSync(dbPath))
+          return errorResponse("Collection database not found", 404);
 
-        // Prevent path traversal
-        const collectionsBase = join(home, "collections", name);
-        if (!fullPath.startsWith(collectionsBase)) {
-          return errorResponse("Forbidden", 403);
+        const colDb = getCollectionDb(dbPath);
+
+        const { folder: mdFolder, slug: mdSlug } = splitMarkdownPath(filePath);
+        const [entity] = colDb.select().from(entities)
+          .where(and(eq(entities.folder, mdFolder ?? ""), eq(entities.slug, mdSlug ?? "")))
+          .limit(1)
+          .all();
+
+        if (!entity) return errorResponse("File not found", 404);
+
+        if (!themeEngine.has(col.crawler)) {
+          return errorResponse("No theme registered for this crawler", 404);
         }
 
-        if (!existsSync(fullPath)) {
-          return errorResponse("File not found", 404);
-        }
+        const entityDataObj = entity.data as EntityData;
+        const sourceData = entityDataObj?.source ?? {};
 
-        const content = readFileSync(fullPath, "utf-8");
-        return new Response(content, {
+        const lookupEntityPath = (externalId: string): string | undefined => {
+          const [row] = colDb
+            .select({ folder: entities.folder, slug: entities.slug })
+            .from(entities)
+            .where(eq(entities.externalId, externalId))
+            .all();
+          if (!row || row.folder == null || row.slug == null) return undefined;
+          return row.folder ? `${row.folder}/${row.slug}` : row.slug;
+        };
+
+        const markdown = themeEngine.render({
+          entity: {
+            externalId: entity.externalId,
+            entityType: entity.entityType,
+            title: entity.title,
+            data: sourceData,
+            url: entityDataObj.url ?? undefined,
+            tags: entityDataObj.tags ?? [],
+          },
+          collectionName: name,
+          crawlerType: col.crawler,
+          lookupEntityPath,
+        });
+
+        return new Response(markdown, {
           status: 200,
           headers: { "Content-Type": "text/markdown; charset=utf-8" },
         });
@@ -355,7 +389,7 @@ export function createApiServer(
 
         const { folder: htmlFolder, slug: htmlSlug } = splitMarkdownPath(filePath);
         const [entity] = colDb.select().from(entities)
-          .where(and(eq(entities.folder, htmlFolder), eq(entities.slug, htmlSlug)))
+          .where(and(eq(entities.folder, htmlFolder ?? ""), eq(entities.slug, htmlSlug ?? "")))
           .limit(1)
           .all();
 
@@ -498,12 +532,13 @@ export function createApiServer(
             });
             if (results.length > 0) {
               const entityIds = results.map((r) => r.entityId);
-              const entityRows = colDb
+              type SearchEntityRow = { id: number; folder: string | null; slug: string | null; title: string };
+              const entityRows: SearchEntityRow[] = colDb
                 .select({ id: entities.id, folder: entities.folder, slug: entities.slug, title: entities.title })
                 .from(entities)
                 .where(inArray(entities.id, entityIds))
                 .all();
-              const entityById = new Map(entityRows.map((e) => [e.id, e]));
+              const entityById = new Map<number, SearchEntityRow>(entityRows.map((e) => [e.id, e]));
               for (const r of results) {
                 const entity = entityById.get(r.entityId);
                 allResults.push({
@@ -612,13 +647,13 @@ export function createApiServer(
           .where(inArray(entities.externalId, outLinks))
           .all();
 
-        const results = linkedEntities.map((entity) => {
+        const results = linkedEntities.map((entity: { folder: string | null; slug: string | null; title: string }) => {
           const mdPath = entityMarkdownPath(entity.folder, entity.slug);
           const displayTitle = entity.slug ?? entity.title;
           return { title: displayTitle, markdownPath: mdPath };
         });
 
-        results.sort((a, b) => a.title.localeCompare(b.title));
+        results.sort((a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title));
         return jsonResponse(results);
       }
 
