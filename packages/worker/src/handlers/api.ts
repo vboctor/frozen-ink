@@ -320,19 +320,33 @@ api.get("/api/search", async (c) => {
   return c.json(enriched);
 });
 
-// GET /api/collections/:name/backlinks/:externalId
-api.get("/api/collections/:name/backlinks/:externalId", async (c) => {
-  const name = c.req.param("name");
-  const externalId = decodeURIComponent(c.req.param("externalId"));
+// Resolve an entity from a markdown path like "mantisbt/issues/36614-foo.md".
+// The UI always has the path, not the external_id, so we derive folder/slug
+// and look up by the indexed (folder, slug) columns.
+async function resolveEntityFromPath(
+  db: D1Database,
+  path: string,
+): Promise<Awaited<ReturnType<typeof getEntityByFolderSlug>>> {
+  const decoded = decodeURIComponent(path).replace(/\.md$/, "");
+  const lastSlash = decoded.lastIndexOf("/");
+  const folder = lastSlash >= 0 ? decoded.slice(0, lastSlash) : "";
+  const slug = lastSlash >= 0 ? decoded.slice(lastSlash + 1) : decoded;
+  return getEntityByFolderSlug(db, folder, slug);
+}
 
-  const targetEntity = await getEntityByExternalId(c.env.DB, externalId);
+// GET /api/collections/:name/backlinks/<markdown path>
+api.get("/api/collections/:name/backlinks/*", async (c) => {
+  const name = c.req.param("name");
+  const targetPath = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/backlinks/`, "");
+
+  const targetEntity = await resolveEntityFromPath(c.env.DB, targetPath);
   if (!targetEntity) return c.json({ error: "Entity not found" }, 404);
 
   const links = await getBacklinks(c.env.DB, targetEntity);
 
   const results = links.map(({ entity }) => {
     const mdPath = entityMarkdownPath(entity);
-    const displayTitle = entity.slug ?? entity.title;
+    const displayTitle = entity.title ?? entity.slug;
     return {
       entityId: entity.id,
       externalId: entity.external_id,
@@ -345,12 +359,12 @@ api.get("/api/collections/:name/backlinks/:externalId", async (c) => {
   return c.json(results);
 });
 
-// GET /api/collections/:name/outgoing-links/:externalId
-api.get("/api/collections/:name/outgoing-links/:externalId", async (c) => {
+// GET /api/collections/:name/outgoing-links/<markdown path>
+api.get("/api/collections/:name/outgoing-links/*", async (c) => {
   const name = c.req.param("name");
-  const externalId = decodeURIComponent(c.req.param("externalId"));
+  const targetPath = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/outgoing-links/`, "");
 
-  const sourceEntity = await getEntityByExternalId(c.env.DB, externalId);
+  const sourceEntity = await resolveEntityFromPath(c.env.DB, targetPath);
   if (!sourceEntity) return c.json({ error: "Entity not found" }, 404);
 
   const links = await getOutgoingLinks(c.env.DB, sourceEntity);
@@ -359,7 +373,7 @@ api.get("/api/collections/:name/outgoing-links/:externalId", async (c) => {
     .filter(({ entity }) => entity !== null)
     .map(({ entity }) => {
       const mdPath = entityMarkdownPath(entity!);
-      const displayTitle = entity!.slug ?? entity!.title;
+      const displayTitle = entity!.title ?? entity!.slug;
       return { title: displayTitle, markdownPath: mdPath };
     })
     .sort((a, b) => a.title.localeCompare(b.title));

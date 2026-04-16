@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./theme": "./src/theme/index.ts",
-    "./export": "./src/export/index.ts"
+    "./export": "./src/export/index.ts",
+    "./search/fts-query": "./src/search/fts-query.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

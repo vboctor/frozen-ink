@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { compress } from "hono/compress";
 import type { Env } from "./types";
 import { authMiddleware, handleLogin, handleLogout } from "./auth";
 import { renderLoginPage } from "./login";
@@ -7,11 +6,10 @@ import { api } from "./handlers/api";
 import { ui } from "./handlers/ui";
 import { handleMcpRequest } from "./handlers/mcp";
 
+declare const __BUILD_ID__: string;
 const CACHE_TTL = 60 * 60 * 24;
 
 const app = new Hono<{ Bindings: Env }>();
-
-app.use("*", compress());
 
 // Public routes (no auth)
 app.get("/login", renderLoginPage);
@@ -28,7 +26,9 @@ app.use("/api/*", authMiddleware);
 app.use("/api/*", async (c, next) => {
   if (c.req.method !== "GET") return next();
   const cache = caches.default;
-  const cacheKey = c.req.raw;
+  const cacheUrl = new URL(c.req.url);
+  cacheUrl.searchParams.set("__v", __BUILD_ID__);
+  const cacheKey = new Request(cacheUrl.toString(), c.req.raw);
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
   await next();

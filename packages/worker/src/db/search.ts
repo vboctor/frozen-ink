@@ -1,3 +1,5 @@
+import { buildFtsQuery } from "@frozenink/core/search/fts-query";
+
 export interface SearchResult {
   entityId: number;
   externalId: string;
@@ -5,34 +7,6 @@ export interface SearchResult {
   title: string;
   rank: number;
   snippet: string;
-}
-
-/**
- * Build an FTS5 query from raw user input. Whitespace-separated "words" are
- * independent AND clauses; a word with internal punctuation (e.g. "8.4") is
- * expanded to an FTS5 phrase of its sub-tokens so they must appear adjacent
- * in the index — mirroring how FTS5's default unicode61 tokenizer actually
- * stored them at index time.
- *
- *   "PHP 8.4"       → PHP* "8 4*"
- *   "fix lo"        → fix* lo*
- *   "mantis 1.2.3"  → mantis* "1 2 3*"
- */
-function buildFtsQuery(raw: string): string {
-  const words = raw.trim().split(/\s+/).filter(Boolean);
-  const clauses: string[] = [];
-  for (const word of words) {
-    const sub = word.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-    if (sub.length === 0) continue;
-    if (sub.length === 1) {
-      clauses.push(`${sub[0]}*`);
-    } else {
-      const head = sub.slice(0, -1).join(" ");
-      const tail = sub[sub.length - 1];
-      clauses.push(`"${head} ${tail}*"`);
-    }
-  }
-  return clauses.join(" ");
 }
 
 export async function searchEntities(
@@ -49,12 +23,13 @@ export async function searchEntities(
   // matches rank ahead of body mentions. bm25() weights are positional for
   // every declared column including UNINDEXED ones. Published worker schema:
   //   entity_id, external_id, entity_type, title, content, tags.
-  // Lower bm25 = better match.
+  // Lower bm25 = better match. Snippet uses column 4 (content) so the UI
+  // shows where in the body the query matched, not a re-render of the title.
   let sql = `
     SELECT
       entity_id, external_id, entity_type, title,
       bm25(entities_fts, 1.0, 1.0, 1.0, 10.0, 1.0, 2.0) AS rank,
-      snippet(entities_fts, 3, '<mark>', '</mark>', '…', 48) AS snippet
+      snippet(entities_fts, 4, '<mark>', '</mark>', '…', 48) AS snippet
     FROM entities_fts
     WHERE entities_fts MATCH ?
   `;

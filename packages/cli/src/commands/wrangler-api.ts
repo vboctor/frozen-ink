@@ -186,6 +186,32 @@ export async function executeD1File(dbName: string, sqlFilePath: string): Promis
   );
 }
 
+/**
+ * Execute SQL against D1 via the REST API directly. Much faster than spawning
+ * a wrangler subprocess per batch (saves ~500ms-1s per call).
+ */
+export async function executeD1Query(databaseId: string, sql: string): Promise<void> {
+  const { apiToken, accountId } = await getCredentials();
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
+  const res = await fetchWithRetry(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ sql }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`D1 query failed: ${res.status} ${text.slice(0, 500)}`);
+  }
+  const data = (await res.json()) as { success: boolean; errors?: Array<{ code?: number; message: string }> };
+  if (!data.success) {
+    const errs = (data.errors ?? []).map((e) => `[${e.code ?? "?"}] ${e.message}`).join("; ");
+    throw new Error(`D1 query failed: ${errs || "unknown error"}`);
+  }
+}
+
 export async function executeD1Command(dbName: string, sql: string): Promise<string> {
   const { stdout } = await runWrangler(["d1", "execute", dbName, "--remote", "--command", sql, "--json", "--yes"]);
   return stdout;
