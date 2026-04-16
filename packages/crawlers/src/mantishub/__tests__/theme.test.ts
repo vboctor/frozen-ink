@@ -42,8 +42,6 @@ function makeIssueContext(overrides: Partial<ThemeRenderContext["entity"]["data"
         notes: [],
         relationships: [],
         customFields: [],
-        _projectNameToId: {},
-        _singleProject: false,
         ...overrides,
       },
       tags: [],

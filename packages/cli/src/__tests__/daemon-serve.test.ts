@@ -61,10 +61,11 @@ function addTestCollection(
         externalId: "issue-1",
         entityType: "issue",
         title: "Test Issue One",
+        folder: "issues",
+        slug: "issue-1",
         data: {
           source: { number: 1, body: "First test issue body" },
           url: "https://github.com/test/repo/issues/1",
-          markdown_path: "issues/issue-1.md",
           tags: ["bug", "critical"],
         },
       })
@@ -76,10 +77,11 @@ function addTestCollection(
         externalId: "pr-2",
         entityType: "pull_request",
         title: "Test Pull Request",
+        folder: "pull-requests",
+        slug: "pr-2",
         data: {
           source: { number: 2, body: "PR description" },
           url: "https://github.com/test/repo/pull/2",
-          markdown_path: "pull-requests/pr-2.md",
         },
       })
       .run();

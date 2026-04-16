@@ -12,6 +12,7 @@ import {
   type FolderConfig,
   type EntityData,
   entities,
+  entityMarkdownPath,
 } from "@frozenink/core";
 import { eq, sql } from "drizzle-orm";
 import { createDefaultRegistry } from "@frozenink/crawlers";
@@ -25,20 +26,20 @@ type ColDb = ReturnType<typeof getCollectionDb>;
 function makeEntityPathLookup(colDb: ColDb): (id: string) => string | undefined {
   return (externalId: string) => {
     const rows = colDb
-      .select({ data: entities.data })
+      .select({ folder: entities.folder, slug: entities.slug })
       .from(entities)
       .where(eq(entities.externalId, externalId))
       .all();
-    const mdPath = (rows[0]?.data as EntityData)?.markdown_path;
-    if (!mdPath) return undefined;
-    return mdPath.endsWith(".md") ? mdPath.slice(0, -3) : mdPath;
+    const r = rows[0];
+    if (!r || r.folder == null || r.slug == null) return undefined;
+    return r.folder ? `${r.folder}/${r.slug}` : r.slug;
   };
 }
 
 /** Build stem-matching wikilink resolver (for Obsidian-style [[bare name]] links). */
 function makeResolveWikilink(colDb: ColDb): (target: string) => string | undefined {
   const allRows = colDb
-    .select({ externalId: entities.externalId, data: entities.data })
+    .select({ externalId: entities.externalId, folder: entities.folder, slug: entities.slug })
     .from(entities)
     .all();
 
@@ -46,9 +47,8 @@ function makeResolveWikilink(colDb: ColDb): (target: string) => string | undefin
   const byStem = new Map<string, string>();
 
   for (const row of allRows) {
-    const markdownPath = (row.data as EntityData)?.markdown_path;
-    if (!markdownPath) continue;
-    const noExt = markdownPath.endsWith(".md") ? markdownPath.slice(0, -3) : markdownPath;
+    if (row.folder == null || row.slug == null) continue;
+    const noExt = row.folder ? `${row.folder}/${row.slug}` : row.slug;
     byExtId.set(row.externalId, noExt);
     const stem = row.externalId.replace(/\.md$/, "");
     const stemName = stem.includes("/") ? stem.split("/").pop()! : stem;
@@ -228,7 +228,8 @@ async function checkSamples(
 
     for (const entity of sample) {
       const entityData = entity.data as EntityData;
-      if (!entityData.markdown_path) continue;
+      const mdPath = entityMarkdownPath(entity.folder, entity.slug);
+      if (!mdPath) continue;
       sampled++;
 
       const ctx = {
@@ -255,7 +256,7 @@ async function checkSamples(
       // Check markdown: compare on-disk file against fresh render
       let onDisk: string | null = null;
       try {
-        onDisk = await storage.read(`${basePath}/${entityData.markdown_path}`);
+        onDisk = await storage.read(`${basePath}/${mdPath}`);
       } catch { /* file missing */ }
 
       // Re-render with the derived title (same logic as generateCollection)

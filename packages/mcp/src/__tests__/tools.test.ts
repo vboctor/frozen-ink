@@ -61,16 +61,24 @@ function addEntity(
   },
 ): number {
   const colDb = getCollectionDb(dbPath);
+  let folder: string | null = null;
+  let slug: string | null = null;
+  if (data.markdownPath) {
+    const lastSlash = data.markdownPath.lastIndexOf("/");
+    folder = lastSlash >= 0 ? data.markdownPath.slice(0, lastSlash) : "";
+    slug = data.markdownPath.slice(lastSlash + 1).replace(/\.md$/, "");
+  }
   colDb
     .insert(entities)
     .values({
       externalId: data.externalId,
       entityType: data.entityType,
       title: data.title,
+      folder,
+      slug,
       data: {
         source: data.data,
         url: data.url ?? null,
-        markdown_path: data.markdownPath ?? null,
         tags: data.tags ?? [],
       } as any,
     })
@@ -498,10 +506,10 @@ describe("entity_get_markdown tool", () => {
     const { dbPath } = addCollection("md-test");
     const collectionDir = join(TEST_DIR, "collections", "md-test");
     const mdContent = "# Issue 3\n\nSome content here.";
-    const mdPath = "markdown/issues/3-test.md";
+    const mdPath = "issues/3-test.md";
 
-    mkdirSync(join(collectionDir, "markdown", "issues"), { recursive: true });
-    writeFileSync(join(collectionDir, mdPath), mdContent);
+    mkdirSync(join(collectionDir, "content", "issues"), { recursive: true });
+    writeFileSync(join(collectionDir, "content", mdPath), mdContent);
 
     addEntity(dbPath, { externalId: "issue-3", entityType: "issue", title: "Test issue", data: { number: 3 }, markdownPath: mdPath });
 
@@ -1004,10 +1012,10 @@ describe("single-collection mode (allowedCollections with one entry)", () => {
     const { dbPath } = addCollection("solo-md-col");
     const collectionDir = join(TEST_DIR, "collections", "solo-md-col");
     const mdContent = "# Solo Issue\n\nContent.";
-    const mdPath = "markdown/issues/solo.md";
+    const mdPath = "issues/solo.md";
 
-    mkdirSync(join(collectionDir, "markdown", "issues"), { recursive: true });
-    writeFileSync(join(collectionDir, mdPath), mdContent);
+    mkdirSync(join(collectionDir, "content", "issues"), { recursive: true });
+    writeFileSync(join(collectionDir, "content", mdPath), mdContent);
 
     addEntity(dbPath, {
       externalId: "issue-solo-md",
@@ -1132,12 +1140,12 @@ describe("multi-collection mode: optional collection parameter", () => {
     const { dbPath: dbPath2 } = addCollection("md-multi-b");
     const collectionDirB = join(TEST_DIR, "collections", "md-multi-b");
     const mdContent = "# Found in B";
-    const mdPath = "markdown/issues/found-b.md";
+    const mdPath = "issues/found-b.md";
 
     // Entity only exists in collection B with markdown
     addEntity(dbPath1, { externalId: "other-entity", entityType: "issue", title: "Other", data: {} });
-    mkdirSync(join(collectionDirB, "markdown", "issues"), { recursive: true });
-    writeFileSync(join(collectionDirB, mdPath), mdContent);
+    mkdirSync(join(collectionDirB, "content", "issues"), { recursive: true });
+    writeFileSync(join(collectionDirB, "content", mdPath), mdContent);
     addEntity(dbPath2, { externalId: "cross-md-entity", entityType: "issue", title: "Found", data: {}, markdownPath: mdPath });
 
     await setupClient();

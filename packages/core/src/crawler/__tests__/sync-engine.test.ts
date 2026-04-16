@@ -497,7 +497,8 @@ describe("SyncEngine", () => {
 
     const db = getCollectionDb(dbPath);
     const [row] = db.select().from(entities).all();
-    expect((row.data as EntityData).markdown_path).toBe("issue/md-1.md");
+    expect(row.folder).toBe("issue");
+    expect(row.slug).toBe("md-1");
   });
 
   it("stores tags as inline JSON on entities", async () => {

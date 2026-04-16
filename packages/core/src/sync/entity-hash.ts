@@ -4,6 +4,8 @@ import type { EntityData } from "../db/collection-schema";
 export interface HashableEntity {
   entityType: string;
   title: string;
+  folder?: string | null;
+  slug?: string | null;
   data: EntityData | string;
 }
 
@@ -23,13 +25,12 @@ export function computeEntityHash(entity: HashableEntity): string {
   const canonical = JSON.stringify({
     entityType: entity.entityType,
     title: entity.title,
+    folder: entity.folder ?? null,
+    slug: entity.slug ?? null,
     source: d.source ?? {},
     out_links,
     in_links,
     assets,
-    markdown_mtime: d.markdown_mtime ?? null,
-    markdown_size: d.markdown_size ?? null,
-    markdown_path: d.markdown_path ?? null,
     url: d.url ?? null,
     tags,
   });

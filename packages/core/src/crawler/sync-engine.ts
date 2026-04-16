@@ -27,14 +27,6 @@ function isToolPath(filePath: string): boolean {
   return filePath.split("/").some((segment) => segment.startsWith("."));
 }
 
-/** Returns true when the stored mtime+size match the current file stat. */
-function statMatches(
-  stored: { markdown_mtime?: number | null; markdown_size?: number | null },
-  current: { mtimeMs: number; size: number } | null,
-): boolean {
-  if (!current) return false;
-  return stored.markdown_mtime === current.mtimeMs && stored.markdown_size === current.size;
-}
 
 /**
  * Extract internal link targets from rendered markdown.
@@ -295,6 +287,8 @@ export class SyncEngine {
     const hash = computeEntityHash({
       entityType: row.entityType,
       title: row.title,
+      folder: row.folder ?? null,
+      slug: row.slug ?? null,
       data: row.data as EntityData,
     });
     this.db.update(entities).set({ contentHash: hash }).where(eq(entities.id, entityId)).run();
@@ -357,12 +351,19 @@ export class SyncEngine {
       const filePath = this.getMarkdownPath(entityData, crawlerType);
       const storagePath = this.toStoragePath(filePath);
       await this.storage.write(storagePath, markdown);
-      const writtenStat = await this.storage.stat(storagePath);
+
+      // Extract folder/slug from the new file path
+      const lastSlashU = filePath.lastIndexOf("/");
+      const newFolder = lastSlashU >= 0 ? filePath.slice(0, lastSlashU) : "";
+      const newSlug = filePath.slice(lastSlashU + 1).replace(/\.md$/, "");
 
       // If the file path changed (e.g. title/name rename), delete the old file.
-      if (existingData.markdown_path && existingData.markdown_path !== filePath) {
+      const oldPath = existing.folder != null && existing.slug != null
+        ? (existing.folder ? `${existing.folder}/${existing.slug}.md` : `${existing.slug}.md`)
+        : null;
+      if (oldPath && oldPath !== filePath) {
         try {
-          await this.storage.delete(this.toStoragePath(existingData.markdown_path));
+          await this.storage.delete(this.toStoragePath(oldPath));
         } catch {
           // Old file may already be gone — ignore.
         }
@@ -372,9 +373,6 @@ export class SyncEngine {
       const updatedData: EntityData = {
         ...existingData,
         source: entityData.data as Record<string, unknown>,
-        markdown_mtime: writtenStat?.mtimeMs ?? null,
-        markdown_size: writtenStat?.size ?? null,
-        markdown_path: filePath,
         url: entityData.url ?? null,
         tags: entityData.tags ?? [],
       };
@@ -386,6 +384,8 @@ export class SyncEngine {
           title: entityData.title,
           entityType: entityData.entityType,
           data: updatedData,
+          folder: newFolder,
+          slug: newSlug,
           updatedAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
         })
         .where(eq(entities.id, existing.id))
@@ -420,14 +420,15 @@ export class SyncEngine {
     const filePath = this.getMarkdownPath(entityData, crawlerType);
     const storagePath = this.toStoragePath(filePath);
     await this.storage.write(storagePath, markdown);
-    const writtenStat = await this.storage.stat(storagePath);
+
+    // Extract folder/slug from the file path
+    const lastSlashN = filePath.lastIndexOf("/");
+    const newFolder = lastSlashN >= 0 ? filePath.slice(0, lastSlashN) : "";
+    const newSlug = filePath.slice(lastSlashN + 1).replace(/\.md$/, "");
 
     // Build EntityData
     const newData: EntityData = {
       source: entityData.data as Record<string, unknown>,
-      markdown_mtime: writtenStat?.mtimeMs ?? null,
-      markdown_size: writtenStat?.size ?? null,
-      markdown_path: filePath,
       url: entityData.url ?? null,
       tags: entityData.tags ?? [],
     };
@@ -440,6 +441,8 @@ export class SyncEngine {
         entityType: entityData.entityType,
         title: entityData.title,
         data: newData,
+        folder: newFolder,
+        slug: newSlug,
       })
       .run();
 
@@ -543,16 +546,18 @@ export class SyncEngine {
       .all();
     const sourceExternalId = sourceEntity?.externalId;
 
-    // Pre-load all entities for markdown_path lookup (no json_extract in Drizzle WHERE)
+    // Pre-load all entities for path lookup via folder/slug columns
     const allForLinks = this.db
-      .select({ id: entities.id, externalId: entities.externalId, data: entities.data })
+      .select({ id: entities.id, externalId: entities.externalId, data: entities.data, folder: entities.folder, slug: entities.slug })
       .from(entities)
       .all();
     type LinkRow = { id: number; externalId: string; data: unknown };
     const byMarkdownPath = new Map<string, LinkRow>();
     for (const r of allForLinks) {
-      const mdPath = (r.data as EntityData)?.markdown_path;
-      if (mdPath) byMarkdownPath.set(mdPath, r as LinkRow);
+      if (r.folder != null && r.slug != null) {
+        const mdPath = r.folder ? `${r.folder}/${r.slug}.md` : `${r.slug}.md`;
+        byMarkdownPath.set(mdPath, { id: r.id, externalId: r.externalId, data: r.data });
+      }
     }
 
     for (const target of wikiTargets) {
@@ -592,13 +597,13 @@ export class SyncEngine {
   private makeLookupEntityPath(): (externalId: string) => string | undefined {
     return (externalId: string) => {
       const rows = this.db
-        .select({ data: entities.data })
+        .select({ folder: entities.folder, slug: entities.slug })
         .from(entities)
         .where(eq(entities.externalId, externalId))
         .all();
-      const markdownPath = (rows[0]?.data as EntityData)?.markdown_path;
-      if (!markdownPath) return undefined;
-      return markdownPath.endsWith(".md") ? markdownPath.slice(0, -3) : markdownPath;
+      const r = rows[0];
+      if (!r || r.folder == null || r.slug == null) return undefined;
+      return r.folder ? `${r.folder}/${r.slug}` : r.slug;
     };
   }
 
@@ -608,7 +613,7 @@ export class SyncEngine {
    */
   private makeResolveWikilink(): (target: string) => string | undefined {
     const allRows = this.db
-      .select({ externalId: entities.externalId, data: entities.data })
+      .select({ externalId: entities.externalId, folder: entities.folder, slug: entities.slug })
       .from(entities)
       .all();
 
@@ -616,9 +621,8 @@ export class SyncEngine {
     const byStem = new Map<string, string>();
 
     for (const row of allRows) {
-      const markdownPath = (row.data as EntityData)?.markdown_path;
-      if (!markdownPath) continue;
-      const withoutExt = markdownPath.endsWith(".md") ? markdownPath.slice(0, -3) : markdownPath;
+      if (row.folder == null || row.slug == null) continue;
+      const withoutExt = row.folder ? `${row.folder}/${row.slug}` : row.slug;
 
       byExternalId.set(row.externalId, withoutExt);
 
@@ -723,22 +727,22 @@ export class SyncEngine {
       const filePath = this.getMarkdownPath(entityData, crawlerType);
       const storagePath = this.toStoragePath(filePath);
       await this.storage.write(storagePath, markdown);
-      const stat = await this.storage.stat(storagePath);
+
+      const lastSlashR = filePath.lastIndexOf("/");
+      const reFolder = lastSlashR >= 0 ? filePath.slice(0, lastSlashR) : "";
+      const reSlug = filePath.slice(lastSlashR + 1).replace(/\.md$/, "");
 
       // Delete old file if path changed
-      if (rowData.markdown_path && rowData.markdown_path !== filePath) {
-        try { await this.storage.delete(this.toStoragePath(rowData.markdown_path)); } catch { /* ignore */ }
+      const oldPath = row.folder != null && row.slug != null
+        ? (row.folder ? `${row.folder}/${row.slug}.md` : `${row.slug}.md`)
+        : null;
+      if (oldPath && oldPath !== filePath) {
+        try { await this.storage.delete(this.toStoragePath(oldPath)); } catch { /* ignore */ }
       }
-
-      await this.updateEntityData(row.id, {
-        markdown_mtime: stat?.mtimeMs ?? null,
-        markdown_size: stat?.size ?? null,
-        markdown_path: filePath,
-      });
 
       this.db
         .update(entities)
-        .set({ title })
+        .set({ title, folder: reFolder, slug: reSlug })
         .where(eq(entities.id, row.id))
         .run();
 
@@ -761,19 +765,15 @@ export class SyncEngine {
   private async reconcile(crawlerType: string): Promise<void> {
     const allEntities = this.db.select().from(entities).all();
 
-    // 1. Ensure every entity in DB has its markdown file on disk with the expected content.
-    // Use stored mtime+size to skip files that haven't changed since we last wrote them,
-    // avoiding expensive re-renders and reads for unchanged entities.
+    // 1. Re-render every entity's markdown from stored source data and write to disk.
     for (const entity of allEntities) {
-      const entityData = (entity.data as EntityData) ?? { source: {} };
-      if (!entityData.markdown_path) continue;
-      const storagePath = this.toStoragePath(entityData.markdown_path);
-      const currentStat = await this.storage.stat(storagePath);
-      if (statMatches(entityData, currentStat)) continue;
+      if (entity.folder == null || entity.slug == null) continue;
+      const markdownPath = entity.folder ? `${entity.folder}/${entity.slug}.md` : `${entity.slug}.md`;
+      const storagePath = this.toStoragePath(markdownPath);
 
-      // File is missing or has been modified — re-render and restore
+      const entityData = (entity.data as EntityData) ?? { source: {} };
       const entityTagNames = this.getEntityTagNames(entity.id);
-      const expected = this.themeEngine.render({
+      const rendered = this.themeEngine.render({
         entity: {
           externalId: entity.externalId,
           entityType: entity.entityType,
@@ -787,13 +787,19 @@ export class SyncEngine {
         lookupEntityPath: this.makeLookupEntityPath(),
         resolveWikilink: this.makeResolveWikilink(),
       });
-      await this.storage.write(storagePath, expected);
-      const writtenStat = await this.storage.stat(storagePath);
-      await this.updateEntityData(entity.id, {
-        markdown_mtime: writtenStat?.mtimeMs ?? null,
-        markdown_size: writtenStat?.size ?? null,
-      });
-      this.recomputeHash(entity.id);
+
+      // Read-before-write: preserve mtime when content is unchanged
+      let needsWrite = true;
+      try {
+        const existing = await this.storage.read(storagePath);
+        if (existing === rendered) needsWrite = false;
+      } catch {
+        // File doesn't exist yet
+      }
+      if (needsWrite) {
+        await this.storage.write(storagePath, rendered);
+        this.recomputeHash(entity.id);
+      }
     }
 
     // 2. Delete orphaned markdown files (on disk but no matching entity in DB)
@@ -802,8 +808,10 @@ export class SyncEngine {
     // recreated by them; we must not touch them.
     const dbStoragePaths = new Set<string>();
     for (const e of allEntities) {
-      const mp = (e.data as EntityData)?.markdown_path;
-      if (mp) dbStoragePaths.add(this.toStoragePath(mp));
+      if (e.folder != null && e.slug != null) {
+        const mp = e.folder ? `${e.folder}/${e.slug}.md` : `${e.slug}.md`;
+        dbStoragePaths.add(this.toStoragePath(mp));
+      }
     }
     const dbAssetStoragePaths = new Set<string>();
     for (const entity of allEntities) {
@@ -899,10 +907,12 @@ export class SyncEngine {
     if (!existing) return false;
 
     // Delete markdown file
-    const existingData = (existing.data as EntityData) ?? { source: {} };
-    if (existingData.markdown_path) {
+    const markdownPath = existing.folder != null && existing.slug != null
+      ? (existing.folder ? `${existing.folder}/${existing.slug}.md` : `${existing.slug}.md`)
+      : null;
+    if (markdownPath) {
       try {
-        await this.storage.delete(this.toStoragePath(existingData.markdown_path));
+        await this.storage.delete(this.toStoragePath(markdownPath));
       } catch {
         // File may already be gone
       }

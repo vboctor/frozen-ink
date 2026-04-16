@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { existsSync } from "fs";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   contextExists,
   listCollections,
@@ -10,8 +10,8 @@ import {
   getCollectionDbPath,
   SearchIndexer,
   entities,
+  entityMarkdownPath,
   type SearchResult,
-  type EntityData,
 } from "@frozenink/core";
 import type { McpServerOptions } from "../server";
 import {
@@ -68,15 +68,19 @@ async function runSearch(
     const indexer = new SearchIndexer(dbPath);
     try {
       const results = indexer.search(query, { entityType });
-      for (const r of results) {
-        const [entity] = colDb
-          .select({ data: entities.data })
+      if (results.length > 0) {
+        const entityIds = results.map((r) => r.entityId);
+        type EntityRow = { id: number; folder: string | null; slug: string | null };
+        const entityRows = colDb
+          .select({ id: entities.id, folder: entities.folder, slug: entities.slug })
           .from(entities)
-          .where(eq(entities.id, r.entityId))
-          .all();
-        const rawPath = (entity?.data as EntityData)?.markdown_path ?? null;
-        const filename = rawPath ? rawPath.replace(/^content\//, "") : null;
-        allResults.push({ ...r, collection: col.name, filename });
+          .where(inArray(entities.id, entityIds))
+          .all() as EntityRow[];
+        const entityById = new Map<number, EntityRow>(entityRows.map((e) => [e.id, e]));
+        for (const r of results) {
+          const entity = entityById.get(r.entityId);
+          allResults.push({ ...r, collection: col.name, filename: entityMarkdownPath(entity?.folder, entity?.slug) });
+        }
       }
     } finally {
       indexer.close();

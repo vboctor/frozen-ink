@@ -3,14 +3,14 @@ import type { Env } from "../types";
 import {
   getEntities,
   getEntityByExternalId,
-  getEntityByMarkdownPath,
-  getEntityMarkdownPathByExternalId,
+  getEntityByFolderSlug,
   getEntityCount,
   getBacklinks,
   getOutgoingLinks,
   getEntitiesByExternalIds,
   getFullManifest,
   parseEntityData,
+  entityMarkdownPath,
 } from "../db/client";
 import type { Entity } from "../db/client";
 import { getCollections, getCollectionConfig } from "../config";
@@ -80,7 +80,10 @@ api.get("/api/collections/:name/html/*", async (c) => {
   const filePath = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/html/`, "");
   const decoded = decodeURIComponent(filePath);
 
-  const entity = await getEntityByMarkdownPath(c.env.DB, decoded);
+  const slash = decoded.lastIndexOf("/");
+  const htmlFolder = slash >= 0 ? decoded.slice(0, slash) : "";
+  const htmlSlug = decoded.slice(slash + 1).replace(/\.md$/, "");
+  const entity = await getEntityByFolderSlug(c.env.DB, htmlFolder, htmlSlug);
   if (!entity) return c.text("Entity not found", 404);
 
   const ctx = buildRenderContext(name, col.crawler, entity);
@@ -95,13 +98,13 @@ api.get("/api/collections/:name/tree", async (c) => {
   const name = c.req.param("name");
   const col = await getCollectionConfig(c.env.BUCKET, name);
   // D1 .all() returns max 5000 rows — paginate to fetch all entities
-  const allResults: Array<{ markdown_path: string; title: string }> = [];
+  const allResults: Array<{ folder: string; slug: string; title: string }> = [];
   const PAGE_SIZE = 5000;
   let offset = 0;
   for (;;) {
     const { results } = await c.env.DB.prepare(
-      "SELECT json_extract(data, '$.markdown_path') as markdown_path, title FROM entities WHERE json_extract(data, '$.markdown_path') IS NOT NULL LIMIT ? OFFSET ?",
-    ).bind(PAGE_SIZE, offset).all<{ markdown_path: string; title: string }>();
+      "SELECT folder, slug, title FROM entities WHERE folder IS NOT NULL AND slug IS NOT NULL LIMIT ? OFFSET ?",
+    ).bind(PAGE_SIZE, offset).all<{ folder: string; slug: string; title: string }>();
     if (!results || results.length === 0) break;
     allResults.push(...results);
     if (results.length < PAGE_SIZE) break;
@@ -109,12 +112,9 @@ api.get("/api/collections/:name/tree", async (c) => {
   }
 
   const titleByPath = new Map<string, string>();
-  const contentPrefix = "content/";
   const mdPaths = allResults
     .map((row) => {
-      const rel = row.markdown_path.startsWith(contentPrefix)
-        ? row.markdown_path.slice(contentPrefix.length)
-        : row.markdown_path;
+      const rel = row.folder ? `${row.folder}/${row.slug}.md` : `${row.slug}.md`;
       if (row.title) titleByPath.set(rel, row.title);
       return rel;
     })
@@ -166,25 +166,28 @@ api.get("/api/collections/:name/default-file", async (c) => {
   // Pick the first file as it would appear in the tree:
   // directories sorted ASC, files within sorted per folder config (DESC for issues).
   const result = await c.env.DB.prepare(
-    "SELECT json_extract(data, '$.markdown_path') as markdown_path FROM entities WHERE json_extract(data, '$.markdown_path') IS NOT NULL ORDER BY json_extract(data, '$.markdown_path') ASC LIMIT 1",
-  ).first<{ markdown_path: string }>();
+    "SELECT folder, slug FROM entities WHERE folder IS NOT NULL AND slug IS NOT NULL ORDER BY folder ASC, slug ASC LIMIT 1",
+  ).first<{ folder: string; slug: string }>();
 
   if (!result) return c.json({ file: null });
+
+  const firstPath = result.folder ? `${result.folder}/${result.slug}.md` : `${result.slug}.md`;
 
   // If the collection has DESC-sorted folders (e.g. issues), prefer the last file in that folder
   if (col?.crawler) {
     const folderConfigs = themeEngine.getFolderConfigs(col.crawler);
-    const path = result.markdown_path.replace(/^content\//, "");
-    const folder = path.split("/")[0];
-    if (folderConfigs[folder]?.sort === "DESC") {
+    const topFolder = firstPath.split("/")[0];
+    if (folderConfigs[topFolder]?.sort === "DESC") {
       const desc = await c.env.DB.prepare(
-        "SELECT json_extract(data, '$.markdown_path') as markdown_path FROM entities WHERE json_extract(data, '$.markdown_path') LIKE ? ORDER BY json_extract(data, '$.markdown_path') DESC LIMIT 1",
-      ).bind(`${folder}/%`).first<{ markdown_path: string }>();
-      if (desc) return c.json({ file: desc.markdown_path.replace(/^content\//, "") });
+        "SELECT folder, slug FROM entities WHERE folder = ? ORDER BY slug DESC LIMIT 1",
+      ).bind(topFolder).first<{ folder: string; slug: string }>();
+      if (desc) {
+        return c.json({ file: desc.folder ? `${desc.folder}/${desc.slug}.md` : `${desc.slug}.md` });
+      }
     }
   }
 
-  return c.json({ file: result.markdown_path.replace(/^content\//, "") });
+  return c.json({ file: firstPath });
 });
 
 // GET /api/collections/:name/markdown/*
@@ -196,7 +199,10 @@ api.get("/api/collections/:name/markdown/*", async (c) => {
   const filePath = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/markdown/`, "");
   const decoded = decodeURIComponent(filePath);
 
-  const entity = await getEntityByMarkdownPath(c.env.DB, decoded);
+  const mdSlash = decoded.lastIndexOf("/");
+  const mdFolder = mdSlash >= 0 ? decoded.slice(0, mdSlash) : "";
+  const mdSlug = decoded.slice(mdSlash + 1).replace(/\.md$/, "");
+  const entity = await getEntityByFolderSlug(c.env.DB, mdFolder, mdSlug);
   if (!entity) return c.text("File not found", 404);
 
   const ctx = buildRenderContext(name, col.crawler, entity);
@@ -279,7 +285,7 @@ api.get("/api/collections/:name/entities/bulk", async (c) => {
       title: row.title,
       data: entityData,
       hash: row.content_hash ?? "",
-      markdownPath: entityData.markdown_path ?? null,
+      markdownPath: entityMarkdownPath(row),
       url: entityData.url ?? null,
       tags: entityData.tags ?? [],
       createdAt: row.created_at,
@@ -309,7 +315,7 @@ api.get("/api/search", async (c) => {
   const entityMap = new Map(entitiesList.map((e) => [e.external_id, e]));
   const enriched = results.map((r) => {
     const entity = entityMap.get(r.externalId) ?? null;
-    const markdownPath = entity ? parseEntityData(entity).markdown_path ?? null : null;
+    const markdownPath = entity ? entityMarkdownPath(entity) : null;
     return { ...r, title: entity?.title ?? r.title, collection: collection ?? "", markdownPath, snippet: r.snippet };
   });
 
@@ -327,16 +333,14 @@ api.get("/api/collections/:name/backlinks/:externalId", async (c) => {
   const links = await getBacklinks(c.env.DB, targetEntity);
 
   const results = links.map(({ entity }) => {
-    const ed = parseEntityData(entity);
-    const displayTitle = ed.markdown_path
-      ? ed.markdown_path.replace(/\.md$/, "").split("/").pop()!
-      : entity.title;
+    const mdPath = entityMarkdownPath(entity);
+    const displayTitle = entity.slug ?? entity.title;
     return {
       entityId: entity.id,
       externalId: entity.external_id,
       entityType: entity.entity_type,
       title: displayTitle,
-      markdownPath: ed.markdown_path ?? null,
+      markdownPath: mdPath,
     };
   });
 
@@ -356,11 +360,9 @@ api.get("/api/collections/:name/outgoing-links/:externalId", async (c) => {
   const results = links
     .filter(({ entity }) => entity !== null)
     .map(({ entity }) => {
-      const ed = parseEntityData(entity!);
-      const displayTitle = ed.markdown_path
-        ? ed.markdown_path.replace(/\.md$/, "").split("/").pop()!
-        : entity!.title;
-      return { title: displayTitle, markdownPath: ed.markdown_path ?? null };
+      const mdPath = entityMarkdownPath(entity!);
+      const displayTitle = entity!.slug ?? entity!.title;
+      return { title: displayTitle, markdownPath: mdPath };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 
@@ -422,29 +424,34 @@ function buildTreeFromPaths(
   }
 
   const root: TreeNode[] = [];
+  const rootMap = new Map<string, TreeNode>();
+  const dirChildMaps = new WeakMap<TreeNode, Map<string, TreeNode>>();
 
   for (const filePath of paths.sort()) {
     const parts = filePath.split("/");
-    let current = root;
+    let currentArr = root;
+    let currentMap = rootMap;
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       const partialPath = parts.slice(0, i + 1).join("/");
       const isFile = i === parts.length - 1;
 
-      const existing = current.find((n) => n.name === part);
-      if (existing && !isFile) {
-        current = existing.children!;
-      } else if (!existing) {
-        const node: TreeNode = isFile
-          ? { name: part, path: partialPath, type: "file" }
-          : { name: part, path: partialPath, type: "directory", children: [] };
-        if (isFile) {
-          const title = titleByPath.get(partialPath);
-          if (title) node.title = title;
+      if (isFile) {
+        const node: TreeNode = { name: part, path: partialPath, type: "file" };
+        const title = titleByPath.get(partialPath);
+        if (title) node.title = title;
+        currentArr.push(node);
+      } else {
+        let dir = currentMap.get(part);
+        if (!dir) {
+          dir = { name: part, path: partialPath, type: "directory", children: [] };
+          currentArr.push(dir);
+          currentMap.set(part, dir);
+          dirChildMaps.set(dir, new Map());
         }
-        current.push(node);
-        if (!isFile) current = node.children!;
+        currentArr = dir.children!;
+        currentMap = dirChildMaps.get(dir)!;
       }
     }
   }

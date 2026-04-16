@@ -59,8 +59,9 @@ export interface LocalEntity {
   externalId: string;
   entityType: string;
   title: string;
-  data: Record<string, unknown> | string;  // contains markdown_path, url, tags, etc.
+  data: Record<string, unknown> | string;  // contains url, tags, assets, etc.
   contentHash: string | null;
+  markdownPath?: string | null;            // derived from folder/slug columns
 }
 
 export function computeSyncPlan(
@@ -168,7 +169,7 @@ export function computeSyncPlan(
   for (const extId of deleteIds) {
     const local = localByExtId.get(extId);
     if (!local) continue;
-    const localMdPath = (local.data as any)?.markdown_path;
+    const localMdPath = local.markdownPath ?? (local.data as any)?.markdown_path;
     if (localMdPath) {
       deletes.push({ path: localMdPath, entityExternalId: extId, type: "markdown" });
     }

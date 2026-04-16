@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { memo, useState, useRef, useEffect, useMemo } from "react";
 import type { TreeNode } from "../types";
 
 interface FileTreeProps {
@@ -19,7 +19,7 @@ interface TreeItemProps {
 const LARGE_DIR_THRESHOLD = 200;
 const PAGE_SIZE = 200;
 
-function TreeItem({ node, selectedFile, onSelect, depth, defaultExpanded = false }: TreeItemProps) {
+const TreeItem = memo(function TreeItem({ node, selectedFile, onSelect, depth, defaultExpanded = false }: TreeItemProps) {
   const [expanded, setExpanded] = useState(true);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
@@ -93,42 +93,35 @@ function TreeItem({ node, selectedFile, onSelect, depth, defaultExpanded = false
       </button>
     </li>
   );
-}
+});
 
 export default function FileTree({ tree, loading, selectedFile, onSelect }: FileTreeProps) {
-  const navRef = useRef<HTMLElement>(null);
-
-  const totalFiles = useMemo(() => {
-    function count(nodes: TreeNode[]): number {
+  const { totalFiles, flatFilePaths } = useMemo(() => {
+    const paths: string[] = [];
+    function walk(nodes: TreeNode[]): number {
       let n = 0;
       for (const node of nodes) {
-        if (node.type === "file") n++;
-        if (node.children) n += count(node.children);
+        if (node.type === "file") { n++; paths.push(node.path); }
+        if (node.children) n += walk(node.children);
       }
       return n;
     }
-    return count(tree);
+    return { totalFiles: walk(tree), flatFilePaths: paths };
   }, [tree]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     e.preventDefault();
+    if (flatFilePaths.length === 0) return;
 
-    const buttons = Array.from(
-      navRef.current?.querySelectorAll<HTMLButtonElement>(".tree-file-button") ?? [],
-    );
-    if (buttons.length === 0) return;
-
-    const currentIndex = buttons.findIndex((btn) => btn.classList.contains("selected"));
+    const currentIndex = selectedFile ? flatFilePaths.indexOf(selectedFile) : -1;
     const nextIndex =
       e.key === "ArrowDown"
-        ? Math.min(currentIndex + 1, buttons.length - 1)
+        ? Math.min(currentIndex + 1, flatFilePaths.length - 1)
         : Math.max(currentIndex - 1, 0);
 
-    if (nextIndex !== currentIndex) {
-      const btn = buttons[nextIndex];
-      btn.focus();
-      onSelect(btn.title, false);
+    if (nextIndex !== currentIndex && nextIndex >= 0) {
+      onSelect(flatFilePaths[nextIndex], false);
     }
   }
 
@@ -149,7 +142,7 @@ export default function FileTree({ tree, loading, selectedFile, onSelect }: File
   }
 
   return (
-    <nav className="file-tree" aria-label="File tree" ref={navRef} onKeyDown={handleKeyDown}>
+    <nav className="file-tree" aria-label="File tree" onKeyDown={handleKeyDown}>
       {totalFiles > 1000 && (
         <div className="tree-summary">{totalFiles.toLocaleString()} files</div>
       )}

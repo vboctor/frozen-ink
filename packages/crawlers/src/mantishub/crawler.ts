@@ -595,15 +595,6 @@ export class MantisHubCrawler implements Crawler {
     return `content/${slugify(projectName ?? "unknown")}/${entityType}/assets`;
   }
 
-  /** Build a project name → ID mapping from collected projects. */
-  private getProjectNameToId(): Record<string, number> {
-    const map: Record<string, number> = {};
-    for (const p of this.collectedProjects.values()) {
-      map[p.name] = p.id;
-    }
-    return map;
-  }
-
   /** Get project IDs to browse for pages. Uses configured project or all collected projects. */
   private getPageProjectIds(): number[] {
     if (this.projectId) return [this.projectId];
@@ -821,8 +812,6 @@ export class MantisHubCrawler implements Crawler {
             storagePath: savedPaths.has(sp) ? sp : undefined,
           };
         }),
-        _projectNameToId: this.getProjectNameToId(),
-        _singleProject: !!this.projectId,
       },
       tags,
       attachments: entityAttachments.length > 0 ? entityAttachments : undefined,
@@ -1081,8 +1070,6 @@ export class MantisHubCrawler implements Crawler {
           name: cf.field.name,
           value: cf.value,
         })),
-        _projectNameToId: this.getProjectNameToId(),
-        _singleProject: !!this.projectId,
       },
       tags,
       attachments: entityAttachments.length > 0 ? entityAttachments : undefined,

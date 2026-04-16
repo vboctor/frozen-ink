@@ -9,6 +9,7 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
+  entityMarkdownPath,
 } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
@@ -195,7 +196,7 @@ async function handleGetAttachment(
       }
 
       sourceEntityId = sourceEntity.id;
-      sourceMarkdownPath = (sourceEntity.data as import("@frozenink/core").EntityData)?.markdown_path ?? null;
+      sourceMarkdownPath = entityMarkdownPath(sourceEntity.folder, sourceEntity.slug);
     }
 
     const effectiveCandidates = buildCandidates(extracted, sourceMarkdownPath);

@@ -11,7 +11,7 @@ import {
   getFrozenInkHome,
   SearchIndexer,
   entities,
-  type EntityData,
+  entityMarkdownPath,
 } from "@frozenink/core";
 import { desc, eq, sql } from "drizzle-orm";
 
@@ -67,13 +67,13 @@ function getMarkdownPath(result: SearchResult): string | null {
   try {
     const colDb = getCollectionDb(dbPath);
     const rows = colDb
-      .select()
+      .select({ folder: entities.folder, slug: entities.slug })
       .from(entities)
       .where(eq(entities.externalId, result.externalId))
       .all();
-    const mdPath0 = (rows[0]?.data as EntityData)?.markdown_path;
-    if (rows.length > 0 && mdPath0) {
-      const mdPath = join(home, "collections", result.collection, mdPath0);
+    const rel = entityMarkdownPath(rows[0]?.folder, rows[0]?.slug);
+    if (rel) {
+      const mdPath = join(home, "collections", result.collection, "content", rel);
       if (existsSync(mdPath)) return mdPath;
     }
   } catch { /* ignore */ }

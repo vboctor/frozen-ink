@@ -9,7 +9,7 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   entities,
-  type EntityData,
+  entityMarkdownPath,
 } from "@frozenink/core";
 import { eq } from "drizzle-orm";
 import type { McpServerOptions } from "../server";
@@ -63,15 +63,14 @@ async function handleGetMarkdown(
 
     if (!entity) continue;
 
-    const entityData = entity.data as EntityData;
-    const storedMarkdownPath = entityData.markdown_path ?? null;
+    const storedMarkdownPath = entityMarkdownPath(entity.folder, entity.slug);
 
     if (!storedMarkdownPath) {
       return textErr(`Entity "${externalId}" has no rendered markdown`);
     }
 
     const collectionDir = join(options.frozeninkHome, "collections", colName);
-    const markdownPath = join(collectionDir, storedMarkdownPath);
+    const markdownPath = join(collectionDir, "content", storedMarkdownPath);
 
     if (!existsSync(markdownPath)) {
       return textErr(`Markdown file not found: ${storedMarkdownPath}`);

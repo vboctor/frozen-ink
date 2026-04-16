@@ -15,6 +15,8 @@ import {
   getModuleDir,
   isBun,
   resolveUiDist,
+  entityMarkdownPath,
+  splitMarkdownPath,
   type EntityData,
 } from "@frozenink/core";
 import {
@@ -24,7 +26,7 @@ import {
   mantisHubTheme,
 } from "@frozenink/crawlers";
 import { startStdioServer } from "@frozenink/mcp";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, inArray, and } from "drizzle-orm";
 import { handleManagementRequest, setAppMode } from "./management-api";
 import { prepareCollections } from "./prepare";
 
@@ -261,19 +263,17 @@ export function createApiServer(
 
         const contentDir = join(home, "collections", name, "content");
 
-        // Build a map from relative content path → entity title
         const titleByPath = new Map<string, string>();
         const dbPath = getCollectionDbPath(name);
         if (existsSync(dbPath)) {
           const colDb = getCollectionDb(dbPath);
           const rows = colDb
-            .select({ data: entities.data, title: entities.title })
+            .select({ folder: entities.folder, slug: entities.slug, title: entities.title })
             .from(entities)
             .all();
           for (const row of rows) {
-            const mdPath = (row.data as EntityData)?.markdown_path;
-            if (!mdPath || !row.title) continue;
-            titleByPath.set(mdPath, row.title);
+            const mdPath = entityMarkdownPath(row.folder, row.slug);
+            if (mdPath && row.title) titleByPath.set(mdPath, row.title);
           }
         }
 
@@ -296,38 +296,72 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
         const [latest] = colDb
-          .select({ data: entities.data })
+          .select({ folder: entities.folder, slug: entities.slug })
           .from(entities)
           .orderBy(desc(entities.updatedAt))
           .limit(1)
           .all();
 
-        const filePath = (latest?.data as EntityData)?.markdown_path ?? null;
+        const filePath = entityMarkdownPath(latest?.folder, latest?.slug);
         return jsonResponse({ file: filePath });
       }
 
-      // GET /api/collections/:name/markdown/*path
+      // GET /api/collections/:name/markdown/*path — render entity as markdown on-the-fly
       const markdownMatch = path.match(
         /^\/api\/collections\/([^/]+)\/markdown\/(.+)$/,
       );
       if (markdownMatch && req.method === "GET") {
         const name = decodeURIComponent(markdownMatch[1]);
         const filePath = decodeURIComponent(markdownMatch[2]);
+        const col = getCollection(name);
+        if (!col) return errorResponse("Collection not found", 404);
 
-        const fullPath = join(home, "collections", name, "content", filePath);
+        const dbPath = getCollectionDbPath(name);
+        if (!existsSync(dbPath))
+          return errorResponse("Collection database not found", 404);
 
-        // Prevent path traversal
-        const collectionsBase = join(home, "collections", name);
-        if (!fullPath.startsWith(collectionsBase)) {
-          return errorResponse("Forbidden", 403);
+        const colDb = getCollectionDb(dbPath);
+
+        const { folder: mdFolder, slug: mdSlug } = splitMarkdownPath(filePath);
+        const [entity] = colDb.select().from(entities)
+          .where(and(eq(entities.folder, mdFolder ?? ""), eq(entities.slug, mdSlug ?? "")))
+          .limit(1)
+          .all();
+
+        if (!entity) return errorResponse("File not found", 404);
+
+        if (!themeEngine.has(col.crawler)) {
+          return errorResponse("No theme registered for this crawler", 404);
         }
 
-        if (!existsSync(fullPath)) {
-          return errorResponse("File not found", 404);
-        }
+        const entityDataObj = entity.data as EntityData;
+        const sourceData = entityDataObj?.source ?? {};
 
-        const content = readFileSync(fullPath, "utf-8");
-        return new Response(content, {
+        const lookupEntityPath = (externalId: string): string | undefined => {
+          const [row] = colDb
+            .select({ folder: entities.folder, slug: entities.slug })
+            .from(entities)
+            .where(eq(entities.externalId, externalId))
+            .all();
+          if (!row || row.folder == null || row.slug == null) return undefined;
+          return row.folder ? `${row.folder}/${row.slug}` : row.slug;
+        };
+
+        const markdown = themeEngine.render({
+          entity: {
+            externalId: entity.externalId,
+            entityType: entity.entityType,
+            title: entity.title,
+            data: sourceData,
+            url: entityDataObj.url ?? undefined,
+            tags: entityDataObj.tags ?? [],
+          },
+          collectionName: name,
+          crawlerType: col.crawler,
+          lookupEntityPath,
+        });
+
+        return new Response(markdown, {
           status: 200,
           headers: { "Content-Type": "text/markdown; charset=utf-8" },
         });
@@ -353,27 +387,25 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
 
-        // Look up entity by markdown_path (scan all since there's no column index)
-        const allEntitiesForHtml = colDb.select().from(entities).all() as Array<{ id: number; externalId: string; entityType: string; title: string; data: unknown; contentHash: string | null }>;
-        const entity = allEntitiesForHtml.find(
-          (e) => (e.data as EntityData)?.markdown_path === filePath,
-        );
+        const { folder: htmlFolder, slug: htmlSlug } = splitMarkdownPath(filePath);
+        const [entity] = colDb.select().from(entities)
+          .where(and(eq(entities.folder, htmlFolder ?? ""), eq(entities.slug, htmlSlug ?? "")))
+          .limit(1)
+          .all();
 
         if (!entity) return errorResponse("Entity not found", 404);
 
         const entityDataObj = entity.data as EntityData;
         const sourceData = entityDataObj?.source ?? {};
 
-        // Build entity path lookup for resolving cross-references (e.g. user pages)
         const lookupEntityPath = (externalId: string): string | undefined => {
           const [row] = colDb
-            .select({ data: entities.data })
+            .select({ folder: entities.folder, slug: entities.slug })
             .from(entities)
             .where(eq(entities.externalId, externalId))
             .all();
-          const mdPath = (row?.data as EntityData)?.markdown_path;
-          if (!mdPath) return undefined;
-          return mdPath.endsWith(".md") ? mdPath.slice(0, -3) : mdPath;
+          if (!row || row.folder == null || row.slug == null) return undefined;
+          return row.folder ? `${row.folder}/${row.slug}` : row.slug;
         };
 
         const html = themeEngine.renderHtml({
@@ -498,20 +530,25 @@ export function createApiServer(
             const results = indexer.search(query, {
               entityType: typeFilter || undefined,
             });
-            for (const r of results) {
-              const [entity] = colDb
-                .select({ data: entities.data, title: entities.title })
+            if (results.length > 0) {
+              const entityIds = results.map((r) => r.entityId);
+              type SearchEntityRow = { id: number; folder: string | null; slug: string | null; title: string };
+              const entityRows: SearchEntityRow[] = colDb
+                .select({ id: entities.id, folder: entities.folder, slug: entities.slug, title: entities.title })
                 .from(entities)
-                .where(eq(entities.id, r.entityId))
+                .where(inArray(entities.id, entityIds))
                 .all();
-              const markdownPath = (entity?.data as EntityData)?.markdown_path ?? null;
-              allResults.push({
-                ...r,
-                title: entity?.title ?? r.title,
-                collection: col.name,
-                markdownPath,
-                snippet: r.snippet,
-              });
+              const entityById = new Map<number, SearchEntityRow>(entityRows.map((e) => [e.id, e]));
+              for (const r of results) {
+                const entity = entityById.get(r.entityId);
+                allResults.push({
+                  ...r,
+                  title: entity?.title ?? r.title,
+                  collection: col.name,
+                  markdownPath: entityMarkdownPath(entity?.folder, entity?.slug),
+                  snippet: r.snippet,
+                });
+              }
             }
           } finally {
             indexer.close();
@@ -539,30 +576,16 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
 
-        // Find the target entity by markdown path variants
-        const targetVariants = [targetFile];
-        if (!targetFile.endsWith(".md")) {
-          targetVariants.push(`${targetFile}.md`);
-        }
-        const filename = targetFile.includes("/") ? targetFile.split("/").pop()! : null;
-        if (filename) {
-          targetVariants.push(filename);
-          if (!filename.endsWith(".md")) {
-            targetVariants.push(`${filename}.md`);
-          }
-        }
-
-        // Find target entities by markdown path and use their in_links
-        type BacklinkEntity = { id: number; externalId: string; entityType: string; title: string; data: unknown };
-        const allTargets = colDb.select().from(entities).all() as BacklinkEntity[];
-        const inLinkIds = new Set<string>();
-        for (const e of allTargets) {
-          const mdPath = (e.data as EntityData)?.markdown_path;
-          if (mdPath && targetVariants.includes(mdPath)) {
-            const eInLinks: string[] = (e.data as EntityData).in_links ?? [];
-            for (const id of eInLinks) inLinkIds.add(id);
-          }
-        }
+        const { folder: targetFolder, slug: targetSlug } = splitMarkdownPath(targetFile);
+        const [targetEntity] = colDb
+          .select({ data: entities.data })
+          .from(entities)
+          .where(and(eq(entities.folder, targetFolder ?? ""), eq(entities.slug, targetSlug ?? "")))
+          .limit(1)
+          .all();
+        const inLinkIds = new Set<string>(
+          targetEntity ? ((targetEntity.data as EntityData).in_links ?? []) : [],
+        );
 
         const results: Array<{
           entityId: number;
@@ -575,18 +598,16 @@ export function createApiServer(
         if (inLinkIds.size > 0) {
           const backlinkEntities = colDb.select().from(entities)
             .where(inArray(entities.externalId, [...inLinkIds]))
-            .all() as BacklinkEntity[];
+            .all();
           for (const entity of backlinkEntities) {
-            const entityData = entity.data as EntityData;
-            const displayTitle = entityData.markdown_path
-              ? entityData.markdown_path.replace(/\.md$/, "").split("/").pop()!
-              : entity.title;
+            const mdPath = entityMarkdownPath(entity.folder, entity.slug);
+            const displayTitle = entity.slug ?? entity.title;
             results.push({
               entityId: entity.id,
               externalId: entity.externalId,
               entityType: entity.entityType,
               title: displayTitle,
-              markdownPath: entityData.markdown_path ?? null,
+              markdownPath: mdPath,
             });
           }
         }
@@ -611,11 +632,11 @@ export function createApiServer(
 
         const colDb = getCollectionDb(dbPath);
 
-        // Find source entity by markdown path
-        type ServeEntity = { id: number; externalId: string; entityType: string; title: string; data: unknown };
-        const allForOutgoing = colDb.select().from(entities).all() as ServeEntity[];
-        const [sourceEntity] = allForOutgoing
-          .filter((e: ServeEntity) => (e.data as EntityData)?.markdown_path === sourceFile);
+        const { folder: sfFolder, slug: sfSlug } = splitMarkdownPath(sourceFile);
+        const [sourceEntity] = colDb.select().from(entities)
+          .where(and(eq(entities.folder, sfFolder ?? ""), eq(entities.slug, sfSlug ?? "")))
+          .limit(1)
+          .all();
 
         if (!sourceEntity) return jsonResponse([]);
 
@@ -624,17 +645,15 @@ export function createApiServer(
 
         const linkedEntities = colDb.select().from(entities)
           .where(inArray(entities.externalId, outLinks))
-          .all() as ServeEntity[];
+          .all();
 
-        const results = linkedEntities.map((entity) => {
-          const ed = entity.data as EntityData;
-          const displayTitle = ed.markdown_path
-            ? ed.markdown_path.replace(/\.md$/, "").split("/").pop()!
-            : entity.title;
-          return { title: displayTitle, markdownPath: ed.markdown_path ?? null };
+        const results = linkedEntities.map((entity: { folder: string | null; slug: string | null; title: string }) => {
+          const mdPath = entityMarkdownPath(entity.folder, entity.slug);
+          const displayTitle = entity.slug ?? entity.title;
+          return { title: displayTitle, markdownPath: mdPath };
         });
 
-        results.sort((a, b) => a.title.localeCompare(b.title));
+        results.sort((a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title));
         return jsonResponse(results);
       }
 

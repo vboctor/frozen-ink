@@ -10,6 +10,7 @@ import {
   entities,
   LocalStorageBackend,
   SearchIndexer,
+  splitMarkdownPath,
 } from "@frozenink/core";
 import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
@@ -96,6 +97,7 @@ export const cloneCommand = new Command("clone")
 
     // Insert entities into DB
     for (const re of remoteEntities) {
+      const { folder, slug } = splitMarkdownPath(re.markdownPath);
       colDb
         .insert(entities)
         .values({
@@ -104,25 +106,22 @@ export const cloneCommand = new Command("clone")
           title: re.title,
           data: re.data as unknown as EntityData,
           contentHash: re.hash,
+          folder,
+          slug,
         })
         .run();
     }
 
     // Download markdown files
-    const mdDownloads = remoteEntities.filter((e) => (e.data as unknown as EntityData).markdown_path);
+    const mdDownloads = remoteEntities.filter((e) => e.markdownPath);
     console.log(`Downloading ${mdDownloads.length} markdown files...`);
     let downloaded = 0;
     await runConcurrent(mdDownloads, 10, async (re) => {
-      const reData = re.data as unknown as EntityData;
-      const mdPath = reData.markdown_path!;
+      const mdPath = re.markdownPath!;
       assertSafePath(mdPath);
       const content = await client.getMarkdown(mdPath);
       if (content) {
         await storage.write(`content/${mdPath}`, content);
-        // Set file mtime from stored metadata
-        if (reData.markdown_mtime) {
-          await storage.utimes?.(`content/${mdPath}`, reData.markdown_mtime);
-        }
       }
       downloaded++;
       if (downloaded % 50 === 0) {
@@ -151,11 +150,10 @@ export const cloneCommand = new Command("clone")
     // Build search index
     const indexer = new SearchIndexer(dbPath);
     for (const re of remoteEntities) {
-      const reData = re.data as unknown as EntityData;
-      if (!reData.markdown_path) continue;
+      if (!re.markdownPath) continue;
       let content = "";
       try {
-        content = await storage.read(`content/${reData.markdown_path}`);
+        content = await storage.read(`content/${re.markdownPath}`);
       } catch { /* file may not exist */ }
       const [dbEntity] = colDb
         .select()
@@ -169,7 +167,7 @@ export const cloneCommand = new Command("clone")
           entityType: re.entityType,
           title: re.title,
           content,
-          tags: reData.tags ?? [],
+          tags: ((re.data as Record<string, unknown>)?.tags as string[] | undefined) ?? [],
         });
       }
     }
