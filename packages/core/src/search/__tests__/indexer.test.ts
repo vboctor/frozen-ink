@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync } from "fs";
 import { join } from "path";
-import { SearchIndexer } from "../indexer";
+import { SearchIndexer, buildFtsQuery } from "../indexer";
 
 const TEST_DIR = join(import.meta.dir, ".test-search");
 
@@ -282,6 +282,56 @@ describe("SearchIndexer", () => {
     expect(indexer.search("Narwhals")).toHaveLength(1);
 
     indexer.close();
+  });
+
+  it("expands punctuated query tokens into an FTS5 phrase so they match adjacent index tokens", () => {
+    const dbPath = join(TEST_DIR, "fts-punctuation.db");
+    const indexer = new SearchIndexer(dbPath);
+
+    // The default FTS5 tokenizer splits on punctuation, so "PHP 8.4" lands in
+    // the index as three adjacent tokens: PHP, 8, 4.
+    indexer.updateIndex({
+      id: 1,
+      externalId: "target",
+      entityType: "issue",
+      title: "0035216: PHP 8.4 compatibility",
+      content: "Make MantisBT compatible with PHP 8.4.",
+      tags: [],
+    });
+
+    // Unrelated entity that contains "8" and "4" but not adjacent.
+    indexer.updateIndex({
+      id: 2,
+      externalId: "noise",
+      entityType: "issue",
+      title: "Something else entirely",
+      content: "This doc mentions PHP, and has 4 widgets, and 8 gadgets.",
+      tags: [],
+    });
+
+    const results = indexer.search("PHP 8.4");
+    const titles = results.map((r) => r.externalId);
+    expect(titles).toContain("target");
+    // The noise doc has PHP + 8 + 4 but not adjacent 8-then-4, so the phrase
+    // "8 4*" must not match it.
+    expect(titles).not.toContain("noise");
+
+    indexer.close();
+  });
+
+  describe("buildFtsQuery", () => {
+    it("leaves plain words as prefix matches", () => {
+      expect(buildFtsQuery("fix lo")).toBe("fix* lo*");
+    });
+
+    it("expands a punctuated token into a phrase with a trailing prefix", () => {
+      expect(buildFtsQuery("PHP 8.4")).toBe('PHP* "8 4*"');
+      expect(buildFtsQuery("mantis 1.2.3")).toBe('mantis* "1 2 3*"');
+    });
+
+    it("returns empty string for whitespace-only input", () => {
+      expect(buildFtsQuery("   ")).toBe("");
+    });
   });
 
   it("returns empty array for no matches", () => {

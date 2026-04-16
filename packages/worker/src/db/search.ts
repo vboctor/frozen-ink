@@ -7,12 +7,43 @@ export interface SearchResult {
   snippet: string;
 }
 
+/**
+ * Build an FTS5 query from raw user input. Whitespace-separated "words" are
+ * independent AND clauses; a word with internal punctuation (e.g. "8.4") is
+ * expanded to an FTS5 phrase of its sub-tokens so they must appear adjacent
+ * in the index — mirroring how FTS5's default unicode61 tokenizer actually
+ * stored them at index time.
+ *
+ *   "PHP 8.4"       → PHP* "8 4*"
+ *   "fix lo"        → fix* lo*
+ *   "mantis 1.2.3"  → mantis* "1 2 3*"
+ */
+function buildFtsQuery(raw: string): string {
+  const words = raw.trim().split(/\s+/).filter(Boolean);
+  const clauses: string[] = [];
+  for (const word of words) {
+    const sub = word.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    if (sub.length === 0) continue;
+    if (sub.length === 1) {
+      clauses.push(`${sub[0]}*`);
+    } else {
+      const head = sub.slice(0, -1).join(" ");
+      const tail = sub[sub.length - 1];
+      clauses.push(`"${head} ${tail}*"`);
+    }
+  }
+  return clauses.join(" ");
+}
+
 export async function searchEntities(
   db: D1Database,
   query: string,
   opts?: { entityType?: string; limit?: number },
 ): Promise<SearchResult[]> {
   const limit = opts?.limit ?? 20;
+
+  const ftsQuery = buildFtsQuery(query);
+  if (!ftsQuery) return [];
 
   // FTS5 query — weight title column higher than content/tags so title
   // matches rank ahead of body mentions. bm25() weights are positional for
@@ -27,7 +58,7 @@ export async function searchEntities(
     FROM entities_fts
     WHERE entities_fts MATCH ?
   `;
-  const params: unknown[] = [query];
+  const params: unknown[] = [ftsQuery];
 
   if (opts?.entityType) {
     sql += " AND entity_type = ?";
