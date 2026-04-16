@@ -6,7 +6,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",
-    "build": "esbuild src/index.ts --bundle --outfile=dist/worker.js --format=esm --target=es2022 --minify --external:node:*",
+    "build": "node build.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

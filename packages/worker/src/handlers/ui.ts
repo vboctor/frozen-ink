@@ -27,23 +27,27 @@ ui.get("/*", async (c) => {
   const r2Key = `_ui${pathname}`;
   const obj = await getR2Object(c.env.BUCKET, r2Key);
   if (obj) {
-    return new Response(obj.body, {
-      headers: {
-        "Content-Type": getMimeType(pathname),
-        "Cache-Control": getCacheControl(pathname),
-      },
-    });
+    const headers: Record<string, string> = {
+      "Content-Type": getMimeType(pathname),
+      "Cache-Control": getCacheControl(pathname),
+    };
+    if (obj.httpMetadata?.contentEncoding) {
+      headers["Content-Encoding"] = obj.httpMetadata.contentEncoding;
+    }
+    return new Response(obj.body, { headers });
   }
 
   // SPA fallback — serve index.html (always revalidate)
   const indexObj = await getR2Object(c.env.BUCKET, "_ui/index.html");
   if (indexObj) {
-    return new Response(indexObj.body, {
-      headers: {
-        "Content-Type": "text/html",
-        "Cache-Control": "no-cache",
-      },
-    });
+    const headers: Record<string, string> = {
+      "Content-Type": "text/html",
+      "Cache-Control": "no-cache",
+    };
+    if (indexObj.httpMetadata?.contentEncoding) {
+      headers["Content-Encoding"] = indexObj.httpMetadata.contentEncoding;
+    }
+    return new Response(indexObj.body, { headers });
   }
 
   return c.text("Not found", 404);

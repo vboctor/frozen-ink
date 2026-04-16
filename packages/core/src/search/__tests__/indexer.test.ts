@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync } from "fs";
 import { join } from "path";
-import { SearchIndexer, buildFtsQuery } from "../indexer";
+import { SearchIndexer } from "../indexer";
+import { buildFtsQuery } from "../fts-query";
 
 const TEST_DIR = join(import.meta.dir, ".test-search");
 

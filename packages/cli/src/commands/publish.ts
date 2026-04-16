@@ -27,7 +27,11 @@ function randomSuffix(): string {
 }
 
 function escapeSQL(str: string): string {
-  return str.replace(/'/g, "''");
+  // Strip C0 control characters (except \t \n \r). NULL bytes break SQLite's
+  // C-based parser by acting as string terminators; other control chars render
+  // as garbage in the worker UI. Source data sometimes contains them when bug
+  // reports include binary file-upload code or other raw byte sequences.
+  return str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").replace(/'/g, "''");
 }
 
 function collectFiles(dir: string, base: string = ""): Array<{ relativePath: string; fullPath: string }> {
@@ -161,7 +165,7 @@ export async function publishCollections(
   const {
     checkWranglerAuth,
     createD1,
-    executeD1File,
+    executeD1Query,
 
     createR2Bucket,
     putR2Object,
@@ -423,6 +427,12 @@ export async function publishCollections(
 
       let entityIdOffset = 0;
 
+      // D1's per-statement SQL length limit appears to be ~100-128 KB. Skip
+      // entities whose serialized data alone exceeds this, since their INSERT
+      // would fail SQLITE_TOOBIG even as a single-statement batch.
+      const MAX_ENTITY_DATA_BYTES = 80 * 1024;
+      let skippedTooLarge = 0;
+
       for (const colName of collectionNames) {
         const col = getCollection(colName)!;
         const colDb = colName === collectionName ? colDbForDigest : getCollectionDb(getCollectionDbPath(colName));
@@ -430,8 +440,12 @@ export async function publishCollections(
         const allEntities = colDb.select().from(entities).all();
 
         for (const entity of allEntities) {
-          entityIdOffset++;
           const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
+          if (Buffer.byteLength(data, "utf8") > MAX_ENTITY_DATA_BYTES) {
+            skippedTooLarge++;
+            continue;
+          }
+          entityIdOffset++;
           const folderVal = entity.folder != null ? `'${escapeSQL(entity.folder)}'` : "NULL";
           const slugVal = entity.slug != null ? `'${escapeSQL(entity.slug)}'` : "NULL";
 
@@ -465,6 +479,9 @@ export async function publishCollections(
 
         onProgress("d1-build", `Built "${colName}": ${allEntities.length} entities`);
       }
+      if (skippedTooLarge > 0) {
+        onProgress("d1-build", `Skipped ${skippedTooLarge} oversized entit${skippedTooLarge === 1 ? "y" : "ies"} (data > ${MAX_ENTITY_DATA_BYTES / 1024} KB)`);
+      }
 
       // Upload in batches bounded by both size (large data blobs) and count (execution time).
       // Use Buffer.byteLength for accurate UTF-8 byte count — stmt.length undercounts Unicode.
@@ -489,15 +506,10 @@ export async function publishCollections(
       onProgress("d1-upload", `Uploading to D1 (${totalBatches} batches)...`);
       let batchCount = 0;
       for (const batch of batches) {
-        const batchFile = writeTempFile(batch.join("\n"), ".sql");
-        try {
-          await executeD1File(d1DatabaseName, batchFile);
-          batchCount++;
-          if (batchCount % 5 === 0 || batchCount === totalBatches) {
-            onProgress("d1-upload", `Uploading to D1... ${batchCount}/${totalBatches} batches`);
-          }
-        } finally {
-          cleanupTempFile(batchFile);
+        await executeD1Query(d1DatabaseId, batch.join("\n"));
+        batchCount++;
+        if (batchCount % 5 === 0 || batchCount === totalBatches) {
+          onProgress("d1-upload", `Uploading to D1... ${batchCount}/${totalBatches} batches`);
         }
       }
       await putR2String(r2BucketName, `${collectionName}/db-digest`, dbDigest);
