@@ -16,6 +16,7 @@ import {
   CollectionEntry,
   entityMarkdownPath,
   splitMarkdownPath,
+  computeEntityHash,
 } from "@frozenink/core";
 import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
@@ -243,6 +244,23 @@ export async function generateCollection(
       .set({ data: { ...eData, in_links: newInLinks } })
       .where(eq(entities.id, e.id))
       .run();
+  }
+
+  // Recompute content_hash for every entity so that the stored hash stays
+  // consistent with the regenerated title/folder/slug/links. Without this,
+  // downstream publish/pull diff tooling sees phantom mismatches.
+  const allEntitiesForHash = colDb.select().from(entities).all();
+  for (const e of allEntitiesForHash) {
+    const hash = computeEntityHash({
+      entityType: e.entityType,
+      title: e.title,
+      folder: e.folder ?? null,
+      slug: e.slug ?? null,
+      data: e.data as EntityData,
+    });
+    if (hash !== e.contentHash) {
+      colDb.update(entities).set({ contentHash: hash }).where(eq(entities.id, e.id)).run();
+    }
   }
 
   // Write folder config yml files (visible/sort settings)
