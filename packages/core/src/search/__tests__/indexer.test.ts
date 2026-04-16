@@ -225,6 +225,65 @@ describe("SearchIndexer", () => {
     indexer.close();
   });
 
+  it("ranks title matches ahead of content matches", () => {
+    const dbPath = join(TEST_DIR, "fts-title-rank.db");
+    const indexer = new SearchIndexer(dbPath);
+
+    // Entity A: "widget" only in content
+    indexer.updateIndex({
+      id: 1,
+      externalId: "a",
+      entityType: "issue",
+      title: "Authentication flow broken",
+      content: "The widget submission path fails at step two.",
+      tags: [],
+    });
+
+    // Entity B: "widget" in title
+    indexer.updateIndex({
+      id: 2,
+      externalId: "b",
+      entityType: "issue",
+      title: "Widget rendering regression",
+      content: "The page loads but nothing appears.",
+      tags: [],
+    });
+
+    const results = indexer.search("widget");
+    expect(results).toHaveLength(2);
+    // The title match should outrank the content-only match.
+    expect(results[0].externalId).toBe("b");
+    expect(results[1].externalId).toBe("a");
+    indexer.close();
+  });
+
+  it("refreshTitleAndTags rewrites only title/tags and leaves content searchable", () => {
+    const dbPath = join(TEST_DIR, "fts-refresh.db");
+    const indexer = new SearchIndexer(dbPath);
+
+    indexer.updateIndex({
+      id: 1,
+      externalId: "ext-1",
+      entityType: "issue",
+      title: "Old Title",
+      content: "Narwhals in the pipeline",
+      tags: ["legacy"],
+    });
+
+    indexer.refreshTitleAndTags(1, "New Title", ["modern"]);
+
+    // New title and tag are findable
+    expect(indexer.search("New")).toHaveLength(1);
+    expect(indexer.search("modern")).toHaveLength(1);
+    // Old title and tag are no longer findable
+    expect(indexer.search("Old")).toHaveLength(0);
+    expect(indexer.search("legacy")).toHaveLength(0);
+    // Content is preserved
+    expect(indexer.search("Narwhals")).toHaveLength(1);
+
+    indexer.close();
+  });
+
   it("returns empty array for no matches", () => {
     const dbPath = join(TEST_DIR, "fts-empty.db");
     const indexer = new SearchIndexer(dbPath);

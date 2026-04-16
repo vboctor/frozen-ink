@@ -330,24 +330,25 @@ export class SyncEngine {
       // Compare source data to decide if re-render is needed
       const sourceChanged = JSON.stringify(entityData.data) !== JSON.stringify(existingData.source);
 
-      if (!sourceChanged) {
-        // Source unchanged — still update tags/links/assets/mtime in data
-        // Update title if it changed
-        if (existing.title !== entityData.title) {
-          this.db
-            .update(entities)
-            .set({
-              title: entityData.title,
-              updatedAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
-            })
-            .where(eq(entities.id, existing.id))
-            .run();
-        }
+      // A title change drives a different rendered markdown (since the
+      // title appears in the body), so treat it like a source change and
+      // fall through to the full re-render path. Tag-only drift is handled
+      // cheaply in place: the rendered markdown doesn't depend on tags, so
+      // we just refresh the FTS tags column without re-rendering.
+      const titleChanged = existing.title !== entityData.title;
+      if (!sourceChanged && !titleChanged) {
+        const newTags = entityData.tags ?? [];
+        const oldTags = existingData.tags ?? [];
+        const tagsChanged = JSON.stringify(newTags) !== JSON.stringify(oldTags);
         // Update url and tags in data
         await this.updateEntityData(existing.id, {
           url: entityData.url ?? null,
-          tags: entityData.tags ?? [],
+          tags: newTags,
         });
+        // Keep FTS in sync with the DB row.
+        if (tagsChanged) {
+          this.searchIndexer.refreshTitleAndTags(existing.id, entityData.title, newTags);
+        }
         // Handle assets (update data.assets)
         await this.syncAssets(existing.id, entityData);
         // Defer link syncing

@@ -76,6 +76,19 @@ export class SearchIndexer {
     );
   }
 
+  /**
+   * Refresh only the title/tags columns for an entity, leaving content intact.
+   * Use this on the sync-engine's source-unchanged path — the crawler returned
+   * the same payload but title or tags drifted (e.g. status rename), and the
+   * rendered markdown didn't change so content is still correct.
+   */
+  refreshTitleAndTags(entityId: number, title: string, tags: string[]): void {
+    const stmt = this.sqlite.prepare(
+      `UPDATE entities_fts SET title = ?, tags = ? WHERE entity_id = ?`,
+    );
+    stmt.run(title, tags.join(" "), String(entityId));
+  }
+
   removeIndex(entityId: number): void {
     this.sqlite.exec(
       `DELETE FROM entities_fts WHERE entity_id = '${entityId}'`,
@@ -103,8 +116,16 @@ export class SearchIndexer {
 
     if (!ftsQuery) return [];
 
+    // Weight title matches much more heavily than body/tags so an entity
+    // with the query in its title ranks above one that only mentions the
+    // query in its content. bm25() weights are positional for every
+    // declared column (UNINDEXED columns included), not just indexed ones.
+    // Column order: collection_name, entity_id, external_id, entity_type,
+    //               title, content, tags.
+    // Lower bm25 score = better match.
     let sql = `
-      SELECT entity_id, external_id, entity_type, title, rank,
+      SELECT entity_id, external_id, entity_type, title,
+        bm25(entities_fts, 1.0, 1.0, 1.0, 1.0, 10.0, 1.0, 2.0) AS rank,
         snippet(entities_fts, 5, '<mark>', '</mark>', '…', 48) AS snippet
       FROM entities_fts
       WHERE entities_fts MATCH ?
