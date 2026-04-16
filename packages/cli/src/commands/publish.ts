@@ -1,10 +1,11 @@
 import { Command } from "commander";
-import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "fs";
 import { join, extname } from "path";
 import { createInterface } from "readline";
 import {
   getFrozenInkHome,
   getCollectionDb,
+  openDatabase,
   ensureInitialized,
   getCollection,
   updateCollection,
@@ -26,8 +27,12 @@ function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 8);
 }
 
-function escapeSQL(str: string): string {
-  return str.replace(/'/g, "''");
+/** Format a value read from SQLite as a SQL literal for use in a dump. */
+function sqlLiteral(v: unknown): string {
+  if (v === null || v === undefined) return "NULL";
+  if (typeof v === "number" || typeof v === "bigint") return String(v);
+  if (v instanceof Uint8Array) return "X'" + Buffer.from(v).toString("hex").toUpperCase() + "'";
+  return "'" + String(v).replace(/'/g, "''") + "'";
 }
 
 function collectFiles(dir: string, base: string = ""): Array<{ relativePath: string; fullPath: string }> {
@@ -395,75 +400,107 @@ export async function publishCollections(
       onProgress("d1-build", `Database unchanged (digest match) — skipping D1 rebuild`);
     } else {
       onProgress("d1-build", "Building D1 payload...");
-      const schemaSql: string[] = [];
 
-      schemaSql.push("DROP TABLE IF EXISTS entities_fts;");
-      schemaSql.push("DROP TABLE IF EXISTS entities;");
-      schemaSql.push("DROP TABLE IF EXISTS collections_meta;");
-      schemaSql.push("");
-      schemaSql.push(`CREATE TABLE entities (
+      // Build a temp SQLite DB with the target schema using prepared statements
+      // (no manual string escaping), then dump it to SQL for D1 upload.
+      const tmpDbPath = join(process.env.TMPDIR || "/tmp", `fink-d1-${randomSuffix()}.db`);
+      let tmpDb: any = null;
+      const schemaSql: string[] = [];
+      try {
+        tmpDb = openDatabase(tmpDbPath);
+
+        const D1_DDL = [
+          "DROP TABLE IF EXISTS entities_fts;",
+          "DROP TABLE IF EXISTS entities;",
+          "DROP TABLE IF EXISTS collections_meta;",
+          `CREATE TABLE entities (
   id INTEGER PRIMARY KEY,
   external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
   title TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
-  content_hash TEXT,
-  folder TEXT,
-  slug TEXT,
+  content_hash TEXT, folder TEXT, slug TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);`);
-      schemaSql.push("CREATE INDEX idx_entities_external ON entities(external_id);");
-      schemaSql.push("CREATE INDEX idx_entities_folder   ON entities(folder, slug);");
-      schemaSql.push("CREATE INDEX idx_entities_type     ON entities(entity_type);");
-      schemaSql.push("CREATE INDEX idx_entities_updated  ON entities(updated_at);");
-      schemaSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
-      schemaSql.push("");
-
-      const themeEngine = createGenerateThemeEngine();
-      const MAX_FTS_CONTENT = 8000;
-
-      let entityIdOffset = 0;
-
-      for (const colName of collectionNames) {
-        const col = getCollection(colName)!;
-        const colDb = colName === collectionName ? colDbForDigest : getCollectionDb(getCollectionDbPath(colName));
-
-        const allEntities = colDb.select().from(entities).all();
-
-        for (const entity of allEntities) {
-          entityIdOffset++;
-          const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
-          const folderVal = entity.folder != null ? `'${escapeSQL(entity.folder)}'` : "NULL";
-          const slugVal = entity.slug != null ? `'${escapeSQL(entity.slug)}'` : "NULL";
-
-          schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, folder, slug, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${folderVal}, ${slugVal}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
-
-          // FTS inline via theme engine
-          const entityDataParsed: EntityData = typeof entity.data === "object" ? entity.data as EntityData : JSON.parse(entity.data as string);
-          const entityTagNames = (entityDataParsed.tags ?? []).join(" ");
-          let ftsContent = "";
-          const hasMarkdown = entity.folder != null && entity.slug != null;
-          if (hasMarkdown && themeEngine.has(col.crawler)) {
-            try {
-              ftsContent = themeEngine.render({
-                entity: {
-                  externalId: entity.externalId,
-                  entityType: entity.entityType,
-                  title: entity.title,
-                  data: (entityDataParsed.source ?? {}) as Record<string, unknown>,
-                  url: entityDataParsed.url ?? undefined,
-                  tags: entityDataParsed.tags ?? [],
-                },
-                collectionName: colName,
-                crawlerType: col.crawler,
-              });
-            } catch { /* fall back to empty content */ }
-          }
-          if (ftsContent.length > MAX_FTS_CONTENT) ftsContent = ftsContent.slice(0, MAX_FTS_CONTENT);
-
-          schemaSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(ftsContent)}', '${escapeSQL(entityTagNames)}');`);
+);`,
+          "CREATE INDEX idx_entities_external ON entities(external_id);",
+          "CREATE INDEX idx_entities_folder   ON entities(folder, slug);",
+          "CREATE INDEX idx_entities_type     ON entities(entity_type);",
+          "CREATE INDEX idx_entities_updated  ON entities(updated_at);",
+          "CREATE VIRTUAL TABLE entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);",
+        ];
+        for (const stmt of D1_DDL) {
+          // Apply schema to temp DB and include in upload SQL
+          if (!stmt.startsWith("DROP")) tmpDb.exec(stmt);
+          schemaSql.push(stmt);
         }
 
-        onProgress("d1-build", `Built "${colName}": ${allEntities.length} entities`);
+        const insertEntity = tmpDb.prepare(
+          "INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, folder, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        );
+        const insertFts = tmpDb.prepare(
+          "INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (?, ?, ?, ?, ?, ?)",
+        );
+
+        const themeEngine = createGenerateThemeEngine();
+        const MAX_FTS_CONTENT = 8000;
+        let entityIdOffset = 0;
+
+        for (const colName of collectionNames) {
+          const col = getCollection(colName)!;
+          const colDb = colName === collectionName ? colDbForDigest : getCollectionDb(getCollectionDbPath(colName));
+          const allEntities = colDb.select().from(entities).all();
+
+          for (const entity of allEntities) {
+            entityIdOffset++;
+            const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
+
+            insertEntity.run(
+              entityIdOffset, entity.externalId, entity.entityType, entity.title,
+              data, entity.contentHash ?? null, entity.folder ?? null, entity.slug ?? null,
+              entity.createdAt ?? null, entity.updatedAt ?? null,
+            );
+
+            const entityDataParsed: EntityData = typeof entity.data === "object" ? entity.data as EntityData : JSON.parse(entity.data as string);
+            const entityTagNames = (entityDataParsed.tags ?? []).join(" ");
+            let ftsContent = "";
+            const hasMarkdown = entity.folder != null && entity.slug != null;
+            if (hasMarkdown && themeEngine.has(col.crawler)) {
+              try {
+                ftsContent = themeEngine.render({
+                  entity: {
+                    externalId: entity.externalId,
+                    entityType: entity.entityType,
+                    title: entity.title,
+                    data: (entityDataParsed.source ?? {}) as Record<string, unknown>,
+                    url: entityDataParsed.url ?? undefined,
+                    tags: entityDataParsed.tags ?? [],
+                  },
+                  collectionName: colName,
+                  crawlerType: col.crawler,
+                });
+              } catch { /* fall back to empty content */ }
+            }
+            if (ftsContent.length > MAX_FTS_CONTENT) ftsContent = ftsContent.slice(0, MAX_FTS_CONTENT);
+
+            insertFts.run(entityIdOffset, entity.externalId, entity.entityType, entity.title, ftsContent, entityTagNames);
+          }
+
+          onProgress("d1-build", `Built "${colName}": ${allEntities.length} entities`);
+        }
+
+        // Dump temp DB rows to SQL statements
+        const entityRows: Record<string, unknown>[] = tmpDb.prepare("SELECT * FROM entities").all();
+        for (const row of entityRows) {
+          schemaSql.push(`INSERT INTO entities VALUES (${Object.values(row).map(sqlLiteral).join(", ")});`);
+        }
+        const ftsRows: Record<string, unknown>[] = tmpDb.prepare(
+          "SELECT entity_id, external_id, entity_type, title, content, tags FROM entities_fts",
+        ).all();
+        for (const row of ftsRows) {
+          schemaSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${Object.values(row).map(sqlLiteral).join(", ")});`);
+        }
+      } finally {
+        tmpDb?.close();
+        try { unlinkSync(tmpDbPath); } catch { /* ignore cleanup errors */ }
       }
 
       // Upload in batches bounded by both size (large data blobs) and count (execution time).
