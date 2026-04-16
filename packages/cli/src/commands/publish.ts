@@ -36,6 +36,7 @@ function collectFiles(dir: string, base: string = ""): Array<{ relativePath: str
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const relPath = base ? `${base}/${entry.name}` : entry.name;
     const fullPath = join(dir, entry.name);
+    if (entry.name.startsWith(".")) continue;
     if (entry.isDirectory()) {
       files.push(...collectFiles(fullPath, relPath));
     } else {
@@ -161,7 +162,7 @@ export async function publishCollections(
     checkWranglerAuth,
     createD1,
     executeD1File,
-    executeD1Command,
+
     createR2Bucket,
     putR2Object,
     putR2String,
@@ -241,6 +242,12 @@ export async function publishCollections(
 
   assertInitialPublishConfirmation({ isUpdate, workerOnly, passwordHash, forcePublic });
 
+  // Check worker bundle exists before touching any infrastructure
+  const workerBundlePath = resolveWorkerBundle(__moduleDir);
+  if (!workerBundlePath || !existsSync(workerBundlePath)) {
+    throw new Error("Worker bundle not found. If developing locally, run 'cd packages/worker && bun run build'.");
+  }
+
   // --- Phase 1: Create infrastructure + deploy worker ---
 
   if (!workerOnly) {
@@ -254,10 +261,6 @@ export async function publishCollections(
   await createR2Bucket(r2BucketName);
 
   onProgress("deploy", "Deploying worker...");
-  const workerBundlePath = resolveWorkerBundle(__moduleDir);
-  if (!workerBundlePath || !existsSync(workerBundlePath)) {
-    throw new Error("Worker bundle not found. If developing locally, run 'cd packages/worker && bun run build'.");
-  }
 
   const tomlContent = generateWranglerToml({
     workerName,
@@ -295,22 +298,15 @@ export async function publishCollections(
       });
     }
   } else {
-    // Read R2 manifest from D1 (still intact — D1 hasn't been rebuilt yet)
-    const existingR2Manifest = new Map<string, number>();
+    // Fetch existing R2 objects once — used for both upload skipping and stale cleanup
+    const existingR2Objects = new Map<string, number>();
     if (isUpdate) {
       try {
-        onProgress("r2-manifest", "Reading existing R2 manifest...");
-        const manifestJson = await executeD1Command(
-          d1DatabaseName,
-          "SELECT key, size FROM r2_manifest",
-        );
-        const parsed = JSON.parse(manifestJson);
-        const results = Array.isArray(parsed) ? parsed[0]?.results : parsed?.results;
-        if (Array.isArray(results)) {
-          for (const row of results) existingR2Manifest.set(row.key, row.size ?? -1);
-        }
+        onProgress("r2-list", "Listing existing R2 objects...");
+        const remoteObjects = await listR2Objects(r2BucketName);
+        for (const obj of remoteObjects) existingR2Objects.set(obj.key, obj.size);
       } catch {
-        // Manifest table may not exist or lack size column on old deployments
+        // Treat as empty on error; all files will be uploaded
       }
     }
 
@@ -333,7 +329,7 @@ export async function publishCollections(
     for (const { r2Key, fullPath } of uploads) {
       const localSize = statSync(fullPath).size;
       fileSizes.set(r2Key, localSize);
-      if (existingR2Manifest.get(r2Key) === localSize) {
+      if (existingR2Objects.get(r2Key) === localSize) {
         skippedCount++;
       } else {
         toUpload.push({ r2Key, fullPath });
@@ -346,49 +342,24 @@ export async function publishCollections(
     }
 
     let uploadCount = 0;
-    const pendingManifest: Array<{ key: string; size: number }> = [];
-    const CHECKPOINT_INTERVAL = 500;
-
-    const flushManifestCheckpoint = async () => {
-      if (pendingManifest.length === 0) return;
-      const batch = pendingManifest.splice(0);
-      const sql = batch
-        .map((e) => `INSERT OR REPLACE INTO r2_manifest (key, size) VALUES ('${escapeSQL(e.key)}', ${e.size});`)
-        .join("\n");
-      const tmpFile = writeTempFile(sql, ".sql");
-      try {
-        await executeD1File(d1DatabaseName, tmpFile);
-      } finally {
-        cleanupTempFile(tmpFile);
-      }
-    };
-
     await runConcurrent(toUpload, 3, async ({ r2Key, fullPath }) => {
       await putR2Object(r2BucketName, r2Key, fullPath, getMimeType(fullPath));
-      pendingManifest.push({ key: r2Key, size: fileSizes.get(r2Key)! });
       uploadCount++;
-      if (uploadCount % CHECKPOINT_INTERVAL === 0) {
-        onProgress("r2-upload", `${uploadCount}/${toUpload.length} files uploaded`);
-        await flushManifestCheckpoint();
-      }
     });
-    await flushManifestCheckpoint();
 
-    // Stale cleanup via R2 list (source of truth)
+    // Stale cleanup: remove R2 keys no longer in the local set
     let deletedCount = 0;
     if (isUpdate) {
       const allKeys = new Set(fileSizes.keys());
-      onProgress("r2-cleanup", "Checking for stale R2 files...");
       try {
-        const remoteKeys = await listR2Objects(r2BucketName);
-        const staleKeys = remoteKeys.filter((key) => !allKeys.has(key) && !key.endsWith("/db-digest"));
+        const staleKeys = [...existingR2Objects.keys()].filter((key) => !allKeys.has(key) && !key.endsWith("/db-digest"));
         if (staleKeys.length > 0) {
           onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
           await deleteR2Objects(r2BucketName, staleKeys);
           deletedCount = staleKeys.length;
         }
       } catch {
-        onProgress("r2-cleanup", "Warning: could not list R2 objects for stale cleanup");
+        onProgress("r2-cleanup", "Warning: could not clean up stale R2 files");
       }
     }
 
@@ -427,7 +398,6 @@ export async function publishCollections(
       const schemaSql: string[] = [];
 
       schemaSql.push("DROP TABLE IF EXISTS entities_fts;");
-      schemaSql.push("DROP TABLE IF EXISTS r2_manifest;");
       schemaSql.push("DROP TABLE IF EXISTS entities;");
       schemaSql.push("DROP TABLE IF EXISTS collections_meta;");
       schemaSql.push("");
@@ -496,13 +466,29 @@ export async function publishCollections(
         onProgress("d1-build", `Built "${colName}": ${allEntities.length} entities`);
       }
 
-      // Upload in batches (D1 has execution time limits on large SQL files)
-      const D1_BATCH_SIZE = 500;
-      const totalBatches = Math.ceil(schemaSql.length / D1_BATCH_SIZE);
+      // Upload in batches bounded by both size (large data blobs) and count (execution time).
+      // Use Buffer.byteLength for accurate UTF-8 byte count — stmt.length undercounts Unicode.
+      const MAX_BATCH_BYTES = 100 * 1024; // 100 KB — conservative against D1's SQL length limit
+      const MAX_BATCH_COUNT = 500;
+      const batches: string[][] = [];
+      let current: string[] = [];
+      let currentBytes = 0;
+      for (const stmt of schemaSql) {
+        const stmtBytes = Buffer.byteLength(stmt, "utf8");
+        if (current.length > 0 && (currentBytes + stmtBytes > MAX_BATCH_BYTES || current.length >= MAX_BATCH_COUNT)) {
+          batches.push(current);
+          current = [];
+          currentBytes = 0;
+        }
+        current.push(stmt);
+        currentBytes += stmtBytes;
+      }
+      if (current.length > 0) batches.push(current);
+
+      const totalBatches = batches.length;
       onProgress("d1-upload", `Uploading to D1 (${totalBatches} batches)...`);
       let batchCount = 0;
-      for (let i = 0; i < schemaSql.length; i += D1_BATCH_SIZE) {
-        const batch = schemaSql.slice(i, i + D1_BATCH_SIZE);
+      for (const batch of batches) {
         const batchFile = writeTempFile(batch.join("\n"), ".sql");
         try {
           await executeD1File(d1DatabaseName, batchFile);
