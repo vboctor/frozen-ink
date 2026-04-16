@@ -20,6 +20,7 @@ function serializeFolderConfig(config: FolderConfig): string {
   if (config.hide && config.hide.length > 0) {
     lines.push(`hide: [${config.hide.join(", ")}]`);
   }
+  if (config.showCount === true) lines.push("showCount: true");
   return lines.join("\n") + "\n";
 }
 

@@ -587,12 +587,10 @@ export class MantisHubCrawler implements Crawler {
 
   /** Compute the assets directory prefix for an entity type and project. */
   private assetDir(entityType: string, projectName?: string): string {
-    if (this.projectId) {
-      // Single project: content/<entity-type>/assets/
-      return `content/${entityType}/assets`;
-    }
-    // Multi-project: content/<project-slug>/<entity-type>/assets/
-    return `content/${slugify(projectName ?? "unknown")}/${entityType}/assets`;
+    // Always nest under the project so assets sit alongside the markdown that
+    // references them via `assets/<filename>` (e.g. content/<project-slug>/issues/assets/).
+    const projectSlug = slugify(projectName ?? "unknown") || "unknown";
+    return `content/${projectSlug}/${entityType}/assets`;
   }
 
   /** Get project IDs to browse for pages. Uses configured project or all collected projects. */

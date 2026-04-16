@@ -28,8 +28,8 @@ function assetRef(storagePath: string | undefined): string {
 function issueFilePath(id: number, summary: string, projectName?: string): string {
   const slug = slugify(summary);
   const issuePart = slug ? `${padId(id)}-${slug}` : padId(id);
-  if (!projectName) return `issues/${issuePart}`;
-  return `${slugify(projectName)}/issues/${issuePart}`;
+  const projectSlug = slugify(projectName ?? "unknown") || "unknown";
+  return `${projectSlug}/issues/${issuePart}`;
 }
 
 function formatDate(iso: string): string {
@@ -455,8 +455,8 @@ function mdUserRefFull(
 function pageFilePath(name: string, projectName?: string): string {
   const slug = slugify(name);
   const pagePart = slug || name;
-  if (!projectName) return `pages/${pagePart}`;
-  return `${slugify(projectName)}/pages/${pagePart}`;
+  const projectSlug = slugify(projectName ?? "unknown") || "unknown";
+  return `${projectSlug}/pages/${pagePart}`;
 }
 
 export class MantisHubTheme implements Theme {
@@ -471,7 +471,9 @@ export class MantisHubTheme implements Theme {
 
   folderConfigs() {
     return {
-      issues: { sort: "DESC" as const },
+      issues: { sort: "DESC" as const, showCount: true },
+      pages: { showCount: true },
+      users: { showCount: true },
       assets: { visible: false },
     };
   }
@@ -516,8 +518,10 @@ export class MantisHubTheme implements Theme {
 
     if (context.entity.entityType === "project") {
       const name = d.name as string;
-      const slug = slugify(name);
-      return `projects/${slug || "unnamed"}.md`;
+      const slug = slugify(name) || "unnamed";
+      // Project entity lives inside its own project folder so every project's
+      // issues/pages/metadata nest together under one subtree.
+      return `${slug}/${slug}.md`;
     }
 
     if (context.entity.entityType === "page") {
