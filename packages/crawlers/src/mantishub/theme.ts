@@ -24,11 +24,11 @@ function assetRef(storagePath: string | undefined): string {
   return `assets/${filename}`;
 }
 
-/** Returns the wikilink path (no extension) for an issue by id and summary. Includes project folder for multi-project collections. */
-function issueFilePath(id: number, summary: string, projectName?: string, singleProject?: boolean): string {
+/** Returns the wikilink path (no extension) for an issue by id and summary. */
+function issueFilePath(id: number, summary: string, projectName?: string): string {
   const slug = slugify(summary);
   const issuePart = slug ? `${padId(id)}-${slug}` : padId(id);
-  if (singleProject || !projectName) return `issues/${issuePart}`;
+  if (!projectName) return `issues/${issuePart}`;
   return `${slugify(projectName)}/issues/${issuePart}`;
 }
 
@@ -102,19 +102,14 @@ function textToHtml(
   text: string,
   lookup?: Lookup,
   projectId?: number,
-  projectNameToId?: Record<string, number>,
 ): string {
   let html = esc(text);
 
   if (lookup) {
-    // Resolve cross-project page links: [[/Project Name/page-name]]
+    // Resolve cross-project page links: [[/project-name/page-name]]
     html = html.replace(/\[\[\/(.+?)\/([\w-]+)\]\]/g, (match, projName: string, pageName: string) => {
-      // projName may be HTML-escaped; unescape for lookup
       const rawProjName = projName.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
-      const pid = projectNameToId?.[rawProjName];
-      if (!pid) return match;
-      const path = lookup(`page:${pid}:${pageName}`);
-      if (!path) return match;
+      const path = `${slugify(rawProjName)}/pages/${slugify(pageName)}`;
       return `<a class="mt-page-link" href="#wikilink/${encodeURIComponent(path)}">${projName}/${esc(pageName)}</a>`;
     });
 
@@ -163,7 +158,6 @@ function markdownToHtml(
   text: string,
   lookup?: Lookup,
   projectId?: number,
-  projectNameToId?: Record<string, number>,
 ): string {
   let raw = text.replace(/\r\n/g, "\n");
 
@@ -189,11 +183,9 @@ function markdownToHtml(
 
   // ── Step 3: resolve MantisHub page links before escaping (names may have &, <, >) ──
   if (lookup) {
-    // Cross-project: [[/Project Name/page-name]]
+    // Cross-project: [[/project-name/page-name]]
     raw = raw.replace(/\[\[\/(.+?)\/([\w-]+)\]\]/g, (_m, projName: string, pageName: string) => {
-      const pid = projectNameToId?.[projName];
-      const path = pid ? lookup(`page:${pid}:${pageName}`) : undefined;
-      if (!path) return `[[/${projName}/${pageName}]]`;
+      const path = `${slugify(projName)}/pages/${slugify(pageName)}`;
       const idx = links.length;
       links.push(`<a class="mt-page-link" href="#wikilink/${encodeURIComponent(path)}">${esc(projName)}/${esc(pageName)}</a>`);
       return `\x00LINK${idx}\x00`;
@@ -357,7 +349,6 @@ function linkifyContent(
   text: string,
   lookup: (externalId: string) => string | undefined,
   projectId?: number,
-  projectNameToId?: Record<string, number>,
 ): string {
   // Split on code fences and inline code to avoid corrupting code samples.
   const codeSkip = /(```[\s\S]*?```|`[^`\n]+`)/g;
@@ -365,11 +356,11 @@ function linkifyContent(
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = codeSkip.exec(text)) !== null) {
-    parts.push(linkifySegment(text.slice(last, m.index), lookup, projectId, projectNameToId));
+    parts.push(linkifySegment(text.slice(last, m.index), lookup, projectId));
     parts.push(m[0]);
     last = m.index + m[0].length;
   }
-  parts.push(linkifySegment(text.slice(last), lookup, projectId, projectNameToId));
+  parts.push(linkifySegment(text.slice(last), lookup, projectId));
   return parts.join("");
 }
 
@@ -381,14 +372,10 @@ function linkifySegment(
   text: string,
   lookup: (externalId: string) => string | undefined,
   projectId?: number,
-  projectNameToId?: Record<string, number>,
 ): string {
-  // Step 1: Resolve cross-project page links [[/Project Name/page-name]]
+  // Step 1: Resolve cross-project page links [[/project-name/page-name]]
   text = text.replace(/\[\[\/(.+?)\/([\w-]+)\]\]/g, (_match, projName: string, pageName: string) => {
-    const pid = projectNameToId?.[projName];
-    if (!pid) return `[[${projName}/${pageName}]]`;
-    const path = lookup(`page:${pid}:${pageName}`);
-    if (!path) return `[[${projName}/${pageName}]]`;
+    const path = `${slugify(projName)}/pages/${slugify(pageName)}`;
     return `[[${path}|${projName}/${pageName}]]`;
   });
 
@@ -464,11 +451,11 @@ function mdUserRefFull(
   return fullName;
 }
 
-/** Returns the file path (no extension) for a page. Includes project folder for multi-project collections. */
-function pageFilePath(name: string, projectName?: string, singleProject?: boolean): string {
+/** Returns the file path (no extension) for a page. */
+function pageFilePath(name: string, projectName?: string): string {
   const slug = slugify(name);
   const pagePart = slug || name;
-  if (singleProject || !projectName) return `pages/${pagePart}`;
+  if (!projectName) return `pages/${pagePart}`;
   return `${slugify(projectName)}/pages/${pagePart}`;
 }
 
@@ -536,15 +523,13 @@ export class MantisHubTheme implements Theme {
     if (context.entity.entityType === "page") {
       const name = d.name as string;
       const projectName = (d.project as { name: string })?.name;
-      const singleProject = d._singleProject as boolean | undefined;
-      return `${pageFilePath(name, projectName, singleProject)}.md`;
+      return `${pageFilePath(name, projectName)}.md`;
     }
 
     const id = d.id as number;
     const summary = d.summary as string;
     const projectName = (d.project as { name: string })?.name;
-    const singleProject = d._singleProject as boolean | undefined;
-    return `${issueFilePath(id, summary, projectName, singleProject)}.md`;
+    return `${issueFilePath(id, summary, projectName)}.md`;
   }
 
   renderHtml(context: ThemeRenderContext): string | null {
@@ -579,7 +564,6 @@ export class MantisHubTheme implements Theme {
     const d = context.entity.data;
     const lookup = context.lookupEntityPath;
     const projectId = (d.project as { id: number } | null)?.id;
-    const projectNameToId = d._projectNameToId as Record<string, number> | undefined;
 
     const status = d.status as { name: string; label: string; color?: string };
     const resolution = d.resolution as { name: string; label: string };
@@ -603,7 +587,7 @@ export class MantisHubTheme implements Theme {
       const crumbs = [projectHtml, category ? esc(category.name) : null, esc(padId(d.id as number))].filter(Boolean);
       parts.push(`<div class="mt-breadcrumb">${crumbs.join(" &rsaquo; ")}</div>`);
     }
-    parts.push(`<h1 class="mt-title">${markdownToHtml(d.summary as string, lookup, projectId, projectNameToId)}</h1>`);
+    parts.push(`<h1 class="mt-title">${markdownToHtml(d.summary as string, lookup, projectId)}</h1>`);
 
     // Tags as badges
     const tags = context.entity.tags ?? [];
@@ -624,15 +608,15 @@ export class MantisHubTheme implements Theme {
     parts.push(`<h2 class="mt-section-title">Details</h2>`);
     parts.push(`<div class="mt-section-body">`);
     if (d.description) {
-      parts.push(`<div class="mt-description">${markdownToHtml(d.description as string, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`<div class="mt-description">${markdownToHtml(d.description as string, lookup, projectId)}</div>`);
     }
     if (d.stepsToReproduce) {
       parts.push(`<h3 class="mt-subsection-title">Steps to Reproduce</h3>`);
-      parts.push(`<div class="mt-description">${markdownToHtml(d.stepsToReproduce as string, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`<div class="mt-description">${markdownToHtml(d.stepsToReproduce as string, lookup, projectId)}</div>`);
     }
     if (d.additionalInformation) {
       parts.push(`<h3 class="mt-subsection-title">Additional Information</h3>`);
-      parts.push(`<div class="mt-description">${markdownToHtml(d.additionalInformation as string, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`<div class="mt-description">${markdownToHtml(d.additionalInformation as string, lookup, projectId)}</div>`);
     }
 
     // Text custom fields
@@ -640,7 +624,7 @@ export class MantisHubTheme implements Theme {
     for (const cf of customFields ?? []) {
       if (!cf.value) continue;
       parts.push(`<h3 class="mt-subsection-title">${esc(cf.name)}</h3>`);
-      parts.push(`<div class="mt-description">${markdownToHtml(cf.value, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`<div class="mt-description">${markdownToHtml(cf.value, lookup, projectId)}</div>`);
     }
 
     // Issue-level attachments
@@ -667,7 +651,7 @@ export class MantisHubTheme implements Theme {
       parts.push(`<h2 class="mt-section-title">Relationships</h2>`);
       parts.push(`<div class="mt-section-body">`);
       for (const rel of relationships) {
-        const targetPath = lookup?.(`issue:${rel.issue.id}`) ?? issueFilePath(rel.issue.id, rel.issue.summary ?? "", project?.name, !!(d._singleProject));
+        const targetPath = lookup?.(`issue:${rel.issue.id}`) ?? issueFilePath(rel.issue.id, rel.issue.summary ?? "", project?.name);
         const label = rel.issue.summary
           ? `${padId(rel.issue.id)} - ${esc(rel.issue.summary)}`
           : padId(rel.issue.id);
@@ -737,7 +721,7 @@ export class MantisHubTheme implements Theme {
           parts.push(`</div>`);
           parts.push(`<div class="mt-activity-body">`);
           parts.push(`<div class="mt-note-body ${borderClass}">`);
-          parts.push(`<div class="mt-note-text">${markdownToHtml(note.text, lookup, projectId, projectNameToId)}</div>`);
+          parts.push(`<div class="mt-note-text">${markdownToHtml(note.text, lookup, projectId)}</div>`);
 
           // Note attachments
           if (note.attachments?.length) {
@@ -896,7 +880,7 @@ export class MantisHubTheme implements Theme {
     const source = this.getFilePath(context);
     const lookup = context.lookupEntityPath ?? (() => undefined);
     const projectId = (d.project as { id: number } | null)?.id;
-    const projectNameToId = d._projectNameToId as Record<string, number> | undefined;
+
     const project = d.project as { id: number; name: string } | null;
     const createdBy = d.createdBy as { name: string; real_name?: string } | null;
     const updatedBy = d.updatedBy as { name: string; real_name?: string } | null;
@@ -922,7 +906,7 @@ export class MantisHubTheme implements Theme {
 
     // Page content (raw markdown)
     if (content) {
-      sections.push(linkifyContent(content, lookup, projectId, projectNameToId));
+      sections.push(linkifyContent(content, lookup, projectId));
     }
 
     // File attachments
@@ -961,7 +945,7 @@ export class MantisHubTheme implements Theme {
     const d = context.entity.data;
     const lookup = context.lookupEntityPath;
     const projectId = (d.project as { id: number } | null)?.id;
-    const projectNameToId = d._projectNameToId as Record<string, number> | undefined;
+
     const project = d.project as { id: number; name: string } | null;
     const createdBy = d.createdBy as { name: string; real_name?: string } | null;
     const updatedBy = d.updatedBy as { name: string; real_name?: string } | null;
@@ -989,7 +973,7 @@ export class MantisHubTheme implements Theme {
     if (content) {
       parts.push(`<div class="mt-section">`);
       parts.push(`<div class="mt-section-body">`);
-      parts.push(`<div class="mt-description">${textToHtml(content, lookup, projectId, projectNameToId)}</div>`);
+      parts.push(`<div class="mt-description">${textToHtml(content, lookup, projectId)}</div>`);
       parts.push(`</div>`);
       parts.push(`</div>`);
     }
@@ -1060,7 +1044,7 @@ export class MantisHubTheme implements Theme {
 
     const lookup = context.lookupEntityPath ?? (() => undefined);
     const projectId = project?.id;
-    const projectNameToId = d._projectNameToId as Record<string, number> | undefined;
+
 
     // Frontmatter
     const fm: Record<string, unknown> = {
@@ -1119,7 +1103,7 @@ export class MantisHubTheme implements Theme {
     // Description
     if (d.description) {
       sections.push(
-        linkifyContent(d.description as string, lookup, projectId, projectNameToId),
+        linkifyContent(d.description as string, lookup, projectId),
       );
     }
 
@@ -1127,7 +1111,7 @@ export class MantisHubTheme implements Theme {
     if (d.stepsToReproduce) {
       sections.push(
         "### Steps to Reproduce\n\n" +
-          linkifyContent(d.stepsToReproduce as string, lookup, projectId, projectNameToId),
+          linkifyContent(d.stepsToReproduce as string, lookup, projectId),
       );
     }
 
@@ -1135,7 +1119,7 @@ export class MantisHubTheme implements Theme {
     if (d.additionalInformation) {
       sections.push(
         "### Additional Information\n\n" +
-          linkifyContent(d.additionalInformation as string, lookup, projectId, projectNameToId),
+          linkifyContent(d.additionalInformation as string, lookup, projectId),
       );
     }
 
@@ -1143,7 +1127,7 @@ export class MantisHubTheme implements Theme {
     const customFields = d.customFields as Array<{ id: number; name: string; value: string }> | undefined;
     for (const cf of customFields ?? []) {
       if (!cf.value) continue;
-      sections.push(`### ${cf.name}\n\n${linkifyContent(cf.value, lookup, projectId, projectNameToId)}`);
+      sections.push(`### ${cf.name}\n\n${linkifyContent(cf.value, lookup, projectId)}`);
     }
 
     // Relationships — label: "00042 Title" (no # prefix)
@@ -1153,7 +1137,7 @@ export class MantisHubTheme implements Theme {
     }>;
     if (relationships?.length) {
       const relLines = relationships.map((rel) => {
-        const targetPath = lookup(`issue:${rel.issue.id}`) ?? issueFilePath(rel.issue.id, rel.issue.summary ?? "", project?.name, !!projectId && !!(d._singleProject));
+        const targetPath = lookup(`issue:${rel.issue.id}`) ?? issueFilePath(rel.issue.id, rel.issue.summary ?? "", project?.name);
         const label = rel.issue.summary
           ? `${padId(rel.issue.id)} ${rel.issue.summary}`
           : padId(rel.issue.id);
@@ -1180,7 +1164,7 @@ export class MantisHubTheme implements Theme {
         if (isPrivate) headerParts.push("private");
         const header = `**${headerParts.join(" | ")}**`;
 
-        const body = linkifyContent(note.text, lookup, projectId, projectNameToId);
+        const body = linkifyContent(note.text, lookup, projectId);
 
         // Embed note attachments using stored paths (relative from markdown/<type>/)
         const embeds = (note.attachments ?? [])
