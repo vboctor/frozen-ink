@@ -17,7 +17,7 @@ import { getCollections, getCollectionConfig } from "../config";
 import { searchEntities } from "../db/search";
 import { getR2Object, getMimeType } from "../storage/r2";
 import { ThemeEngine } from "@frozenink/core/theme";
-import type { ThemeRenderContext } from "@frozenink/core/theme";
+import type { ThemeRenderContext, FolderConfig } from "@frozenink/core/theme";
 import { GitHubTheme, ObsidianTheme, GitTheme, MantisHubTheme } from "@frozenink/crawlers/themes";
 
 const themeEngine = new ThemeEngine();
@@ -163,31 +163,29 @@ api.get("/api/collections/:name/default-file", async (c) => {
   const name = c.req.param("name");
   const col = await getCollectionConfig(c.env.BUCKET, name);
 
-  // Pick the first file as it would appear in the tree:
-  // directories sorted ASC, files within sorted per folder config (DESC for issues).
-  const result = await c.env.DB.prepare(
-    "SELECT folder, slug FROM entities WHERE folder IS NOT NULL AND slug IS NOT NULL ORDER BY folder ASC, slug ASC LIMIT 1",
-  ).first<{ folder: string; slug: string }>();
-
-  if (!result) return c.json({ file: null });
-
-  const firstPath = result.folder ? `${result.folder}/${result.slug}.md` : `${result.slug}.md`;
-
-  // If the collection has DESC-sorted folders (e.g. issues), prefer the last file in that folder
-  if (col?.crawler) {
-    const folderConfigs = themeEngine.getFolderConfigs(col.crawler);
-    const topFolder = firstPath.split("/")[0];
-    if (folderConfigs[topFolder]?.sort === "DESC") {
-      const desc = await c.env.DB.prepare(
-        "SELECT folder, slug FROM entities WHERE folder = ? ORDER BY slug DESC LIMIT 1",
-      ).bind(topFolder).first<{ folder: string; slug: string }>();
-      if (desc) {
-        return c.json({ file: desc.folder ? `${desc.folder}/${desc.slug}.md` : `${desc.slug}.md` });
-      }
-    }
+  // Load every (folder, slug) so we can mirror the tree-walk ordering used by
+  // the sidebar: subdirs first (ASC), then files within the leaf folder sorted
+  // per the folder's theme config (e.g. DESC for issues).
+  const PAGE_SIZE_D1 = 5000;
+  const all: Array<{ folder: string; slug: string }> = [];
+  let offset = 0;
+  for (;;) {
+    const { results } = await c.env.DB.prepare(
+      "SELECT folder, slug FROM entities WHERE folder IS NOT NULL AND slug IS NOT NULL LIMIT ? OFFSET ?",
+    ).bind(PAGE_SIZE_D1, offset).all<{ folder: string; slug: string }>();
+    if (!results || results.length === 0) break;
+    all.push(...results);
+    if (results.length < PAGE_SIZE_D1) break;
+    offset += PAGE_SIZE_D1;
   }
 
-  return c.json({ file: firstPath });
+  if (all.length === 0) return c.json({ file: null });
+
+  const folderConfigs = col?.crawler ? themeEngine.getFolderConfigs(col.crawler) : {};
+  const picked = pickFirstTreeFile(all, folderConfigs);
+  if (!picked) return c.json({ file: null });
+  const filePath = picked.folder ? `${picked.folder}/${picked.slug}.md` : `${picked.slug}.md`;
+  return c.json({ file: filePath });
 });
 
 // GET /api/collections/:name/markdown/*
@@ -397,6 +395,60 @@ function compileHidePatterns(patterns: string[]): RegExp[] {
 
 function matchesHidePattern(compiled: RegExp[], filename: string): boolean {
   return compiled.some((re) => re.test(filename));
+}
+
+/**
+ * Pick the first file in visible tree order: subdirs first (sorted ASC),
+ * then files in the leaf folder sorted per its theme config (ASC/DESC).
+ * Mirrors what the sidebar renders so the default-open file matches.
+ */
+function pickFirstTreeFile(
+  rows: Array<{ folder: string; slug: string }>,
+  folderConfigs: Record<string, FolderConfig>,
+): { folder: string; slug: string } | null {
+  const filesByFolder = new Map<string, string[]>();
+  const folderSet = new Set<string>();
+  for (const row of rows) {
+    folderSet.add(row.folder);
+    const arr = filesByFolder.get(row.folder) ?? [];
+    arr.push(row.slug);
+    filesByFolder.set(row.folder, arr);
+  }
+
+  const dirChildren = new Map<string, Set<string>>();
+  for (const folder of folderSet) {
+    if (!folder) continue;
+    const parts = folder.split("/");
+    for (let i = 0; i < parts.length; i++) {
+      const parent = parts.slice(0, i).join("/");
+      const child = parts.slice(0, i + 1).join("/");
+      const set = dirChildren.get(parent) ?? new Set<string>();
+      set.add(child);
+      dirChildren.set(parent, set);
+    }
+  }
+
+  function recurse(folder: string): { folder: string; slug: string } | null {
+    const subs = Array.from(dirChildren.get(folder) ?? []).sort((a, b) => a.localeCompare(b));
+    for (const sub of subs) {
+      const leaf = sub.includes("/") ? sub.split("/").pop()! : sub;
+      if (folderConfigs[leaf]?.visible === false) continue;
+      const found = recurse(sub);
+      if (found) return found;
+    }
+    const slugs = filesByFolder.get(folder);
+    if (slugs && slugs.length > 0) {
+      const leaf = folder ? (folder.includes("/") ? folder.split("/").pop()! : folder) : "";
+      const sort = folderConfigs[leaf]?.sort ?? "ASC";
+      const sorted = slugs.slice().sort((a, b) =>
+        sort === "DESC" ? b.localeCompare(a) : a.localeCompare(b),
+      );
+      return { folder, slug: sorted[0] };
+    }
+    return null;
+  }
+
+  return recurse("");
 }
 
 // Helper to build tree from flat file paths, honoring folder yml configs
