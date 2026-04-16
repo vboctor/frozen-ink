@@ -18,6 +18,7 @@ import {
   entityMarkdownPath,
   splitMarkdownPath,
   type EntityData,
+  type FolderConfig,
 } from "@frozenink/core";
 import {
   gitHubTheme,
@@ -111,6 +112,68 @@ function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | 
   } catch {
     return {};
   }
+}
+
+/**
+ * Pick the first file in the visible tree order: subdirectories are visited
+ * before files at every level, subdirectories are sorted ASC by name, and the
+ * leaf folder's `sort` config (ASC/DESC) decides file order within it. This
+ * mirrors what `buildFileTree` renders so the default-open file matches what
+ * the user sees in the sidebar.
+ */
+function pickFirstTreeFile(
+  rows: Array<{ folder: string; slug: string }>,
+  folderConfigs: Record<string, FolderConfig>,
+): { folder: string; slug: string } | null {
+  // Group entity slugs by folder path
+  const filesByFolder = new Map<string, string[]>();
+  const folderSet = new Set<string>();
+  for (const row of rows) {
+    folderSet.add(row.folder);
+    const arr = filesByFolder.get(row.folder) ?? [];
+    arr.push(row.slug);
+    filesByFolder.set(row.folder, arr);
+  }
+
+  // Build child-dir lookup keyed by parent path ("" is root)
+  const dirChildren = new Map<string, Set<string>>();
+  for (const folder of folderSet) {
+    if (!folder) continue;
+    const parts = folder.split("/");
+    for (let i = 0; i < parts.length; i++) {
+      const parent = parts.slice(0, i).join("/");
+      const child = parts.slice(0, i + 1).join("/");
+      const set = dirChildren.get(parent) ?? new Set<string>();
+      set.add(child);
+      dirChildren.set(parent, set);
+    }
+  }
+
+  function recurse(folder: string): { folder: string; slug: string } | null {
+    // Visit subdirs first (sorted ASC) — matches `buildFileTree` which lists
+    // directories before files at every level.
+    const subs = Array.from(dirChildren.get(folder) ?? []).sort((a, b) => a.localeCompare(b));
+    for (const sub of subs) {
+      const leaf = sub.includes("/") ? sub.split("/").pop()! : sub;
+      // Honor visible: false on subdirs.
+      if (folderConfigs[leaf]?.visible === false) continue;
+      const found = recurse(sub);
+      if (found) return found;
+    }
+    // Fall through to files in this folder, ordered per its sort config.
+    const slugs = filesByFolder.get(folder);
+    if (slugs && slugs.length > 0) {
+      const leaf = folder ? (folder.includes("/") ? folder.split("/").pop()! : folder) : "";
+      const sort = folderConfigs[leaf]?.sort ?? "ASC";
+      const sorted = slugs.slice().sort((a, b) =>
+        sort === "DESC" ? b.localeCompare(a) : a.localeCompare(b),
+      );
+      return { folder, slug: sorted[0] };
+    }
+    return null;
+  }
+
+  return recurse("");
 }
 
 /** Recursively count all file nodes in a built subtree. */
@@ -302,14 +365,18 @@ export function createApiServer(
           return errorResponse("Collection database not found", 404);
 
         const colDb = getCollectionDb(dbPath);
-        const [latest] = colDb
+        const folderConfigs = themeEngine.getFolderConfigs(col.crawler);
+        const rows: Array<{ folder: string; slug: string }> = [];
+        for (const r of colDb
           .select({ folder: entities.folder, slug: entities.slug })
           .from(entities)
-          .orderBy(desc(entities.updatedAt))
-          .limit(1)
-          .all();
-
-        const filePath = entityMarkdownPath(latest?.folder, latest?.slug);
+          .all()) {
+          if (r.folder != null && r.slug != null) {
+            rows.push({ folder: r.folder, slug: r.slug });
+          }
+        }
+        const picked = pickFirstTreeFile(rows, folderConfigs);
+        const filePath = picked ? entityMarkdownPath(picked.folder, picked.slug) : null;
         return jsonResponse({ file: filePath });
       }
 

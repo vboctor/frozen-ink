@@ -16,12 +16,42 @@ interface TreeItemProps {
   defaultExpanded?: boolean;
 }
 
-const LARGE_DIR_THRESHOLD = 200;
-const PAGE_SIZE = 200;
+const LARGE_DIR_THRESHOLD = 1000;
+const PAGE_SIZE = 1000;
+
+/**
+ * Return true if `selectedFile` is at or beneath `node`. Used to decide whether
+ * this directory's visibleCount needs bumping to reveal an externally-selected
+ * file (e.g. one clicked from search) that would otherwise sit past the current
+ * pagination cut-off.
+ */
+function containsPath(node: TreeNode, selectedFile: string | null): boolean {
+  if (!selectedFile) return false;
+  if (node.path === selectedFile) return true;
+  if (!node.children) return false;
+  return node.children.some((child) => containsPath(child, selectedFile));
+}
 
 const TreeItem = memo(function TreeItem({ node, selectedFile, onSelect, depth, defaultExpanded = false }: TreeItemProps) {
   const [expanded, setExpanded] = useState(true);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // When a file outside the currently-paginated slice is selected (e.g. via
+  // search), bump visibleCount so the containing subtree is rendered and
+  // scrollIntoView has something to land on.
+  useEffect(() => {
+    if (node.type !== "directory" || !selectedFile) return;
+    const children = node.children ?? [];
+    if (children.length <= LARGE_DIR_THRESHOLD) return;
+    const idx = children.findIndex((child) => containsPath(child, selectedFile));
+    if (idx < 0) return;
+    if (idx + 1 > visibleCount) {
+      // Round up to the next page boundary so the user sees some context below
+      // the selected row instead of it landing right at the cut-off.
+      const bumped = Math.ceil((idx + 1) / PAGE_SIZE) * PAGE_SIZE;
+      setVisibleCount(bumped);
+    }
+  }, [selectedFile, node, visibleCount]);
 
   if (node.type === "directory") {
     const children = node.children ?? [];
