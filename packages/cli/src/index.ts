@@ -20,6 +20,7 @@ import { tableplusCommand } from "./commands/tableplus";
 import { vscodeCommand } from "./commands/vscode";
 import { cloneCommand } from "./commands/clone";
 import { pullCommand } from "./commands/pull";
+import { compactCommand } from "./commands/compact";
 import { startTui } from "./tui/index";
 
 const program = new Command();
@@ -49,6 +50,7 @@ program.addCommand(tableplusCommand);
 program.addCommand(vscodeCommand);
 program.addCommand(cloneCommand);
 program.addCommand(pullCommand);
+program.addCommand(compactCommand);
 
 // If no arguments passed (just "fink"), launch TUI by default
 const args = process.argv.slice(2);
