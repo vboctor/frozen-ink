@@ -14,6 +14,7 @@ import {
 } from "./tools";
 import type { McpTransport } from "./tools/types";
 import { getPublishCredentialKey } from "../commands/publish-credentials";
+import { resolveHttpParams } from "./http-params";
 
 export interface AvailableToolInfo {
   tool: McpToolCanonicalName;
@@ -95,36 +96,14 @@ export async function listAvailableMcpTools(): Promise<AvailableToolInfo[]> {
   return rows;
 }
 
-function resolveHttpParams(collectionName: string, providedPassword: string | undefined): {
-  httpUrl: string;
-  bearerToken?: string;
-} {
-  const publishState = getCollectionPublishState(collectionName);
-  if (!publishState) {
-    throw new Error(
-      `Collection "${collectionName}" is not published. Run \`fink publish ${collectionName}\` before linking HTTP MCP.`,
-    );
-  }
-  const httpUrl = publishState.mcpUrl;
-  const trimmed = providedPassword?.trim();
-  if (trimmed) {
-    return { httpUrl, bearerToken: trimmed };
-  }
-
-  const stored = getNamedCredentials(getPublishCredentialKey(collectionName));
-  const storedPassword = typeof stored?.password === "string" ? stored.password : "";
-  if (storedPassword) {
-    return { httpUrl, bearerToken: storedPassword };
-  }
-
-  if (publishState.protected) {
-    throw new Error(
-      `Collection "${collectionName}" is password protected but no password is stored locally. ` +
-      "Pass --password <value> or re-publish with --password to record it.",
-    );
-  }
-
-  return { httpUrl };
+function getHttpParams(collectionName: string, providedPassword: string | undefined) {
+  return resolveHttpParams(
+    collectionName,
+    providedPassword,
+    getCollectionPublishState,
+    getNamedCredentials,
+    getPublishCredentialKey(collectionName),
+  );
 }
 
 export async function addMcpConnections(params: {
@@ -166,7 +145,7 @@ export async function addMcpConnections(params: {
 
     const connectionName = getConnectionName(collectionName);
     if (transport === "http") {
-      const { httpUrl, bearerToken } = resolveHttpParams(collectionName, params.password);
+      const { httpUrl, bearerToken } = getHttpParams(collectionName, params.password);
       await adapter.addConnection({
         collection: collectionName,
         connectionName,
