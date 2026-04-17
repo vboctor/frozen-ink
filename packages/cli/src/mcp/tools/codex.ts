@@ -84,7 +84,14 @@ export const codexAdapter: McpToolAdapter = {
     }
   },
 
+  supportsTransport(transport) {
+    return transport === "stdio";
+  },
+
   async addConnection(spec: ToolConnectionSpec): Promise<void> {
+    if (spec.transport !== "stdio") {
+      throw new Error("Codex CLI does not support HTTP MCP transport yet");
+    }
     const commandArgs = getMcpServeCommandArgs(spec.collection);
     const args = ["mcp", "add", spec.connectionName];
     if (spec.description) {

@@ -24,7 +24,12 @@ const adapterMap: Record<McpToolName, McpToolAdapter> = {
 
 export { MCP_TOOL_NAMES };
 export { MCP_TOOL_CANONICAL_NAMES };
-export type { McpToolAdapter, McpToolCanonicalName, McpToolName } from "./types";
+export type {
+  McpToolAdapter,
+  McpToolCanonicalName,
+  McpToolName,
+  McpTransport,
+} from "./types";
 export { getConnectionName, getMcpServeCommandArgs } from "./types";
 
 export function isMcpToolName(value: string): value is McpToolName {

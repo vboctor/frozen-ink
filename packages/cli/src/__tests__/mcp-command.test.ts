@@ -59,6 +59,8 @@ describe("mcp command", () => {
       tool: "claude-code",
       collections: ["collection-a", "collection-b"],
       description: undefined,
+      transport: "stdio",
+      password: undefined,
     });
   });
 
@@ -105,6 +107,32 @@ describe("mcp command", () => {
       tool: "codex-cli",
       collections: ["collection-a"],
       description: undefined,
+      transport: "stdio",
+      password: undefined,
+    });
+  });
+
+  it("passes --http and --password to the manager", async () => {
+    const { addCollection } = await import("@frozenink/core");
+    addCollection("collection-a", { crawler: "github", config: {}, credentials: {} });
+
+    const { mcpCommand } = await import("../commands/mcp");
+    await mcpCommand.parseAsync([
+      "add",
+      "--tool",
+      "claude-code",
+      "--http",
+      "--password",
+      "secret",
+      "collection-a",
+    ], { from: "user" });
+
+    expect(addArgs).toEqual({
+      tool: "claude-code",
+      collections: ["collection-a"],
+      description: undefined,
+      transport: "http",
+      password: "secret",
     });
   });
 

@@ -18,6 +18,10 @@ export const chatgptDesktopAdapter: McpToolAdapter = {
     return { available: true };
   },
 
+  supportsTransport(transport) {
+    return transport === "stdio";
+  },
+
   async addConnection(_spec: ToolConnectionSpec): Promise<void> {
     throw new Error(getChatGptRemediationMessage());
   },

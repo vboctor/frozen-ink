@@ -4,10 +4,18 @@ import { homedir } from "os";
 import type { McpToolAdapter, ToolConnectionSpec } from "./types";
 import { getMcpServeCommandArgs, resolveFinkCommand } from "./types";
 
-interface ClaudeDesktopMcpServer {
+interface ClaudeDesktopStdioServer {
   command: string;
   args: string[];
 }
+
+interface ClaudeDesktopHttpServer {
+  url: string;
+  transport: "streamable-http";
+  headers?: Record<string, string>;
+}
+
+type ClaudeDesktopMcpServer = ClaudeDesktopStdioServer | ClaudeDesktopHttpServer;
 
 interface ClaudeDesktopConfig {
   mcpServers: Record<string, ClaudeDesktopMcpServer>;
@@ -73,14 +81,29 @@ export const claudeDesktopAdapter: McpToolAdapter = {
     };
   },
 
+  supportsTransport(_transport) {
+    return true;
+  },
+
   async addConnection(spec: ToolConnectionSpec): Promise<void> {
     const config = readConfig();
-    const commandArgs = getMcpServeCommandArgs(spec.collection);
-    const { command, prefixArgs } = resolveFinkCommand();
-    config.mcpServers[spec.connectionName] = {
-      command,
-      args: [...prefixArgs, ...commandArgs.slice(1)],
-    };
+    if (spec.transport === "http") {
+      const entry: ClaudeDesktopHttpServer = {
+        url: spec.httpUrl,
+        transport: "streamable-http",
+      };
+      if (spec.bearerToken) {
+        entry.headers = { Authorization: `Bearer ${spec.bearerToken}` };
+      }
+      config.mcpServers[spec.connectionName] = entry;
+    } else {
+      const commandArgs = getMcpServeCommandArgs(spec.collection);
+      const { command, prefixArgs } = resolveFinkCommand();
+      config.mcpServers[spec.connectionName] = {
+        command,
+        args: [...prefixArgs, ...commandArgs.slice(1)],
+      };
+    }
     writeConfig(config);
   },
 

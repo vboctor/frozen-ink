@@ -4,6 +4,8 @@ export { loadConfig, getFrozenInkHome } from "./loader";
 export {
   listNamedCredentials,
   getNamedCredentials,
+  saveNamedCredentials,
+  removeNamedCredentials,
   resolveCredentials,
 } from "./credentials";
 export {

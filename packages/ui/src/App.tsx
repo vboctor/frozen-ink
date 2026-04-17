@@ -17,6 +17,7 @@ import CollectionForm from "./components/manage/CollectionForm";
 import PublishPanel from "./components/manage/PublishPanel";
 import ExportPanel from "./components/manage/ExportPanel";
 import SettingsPanel from "./components/manage/SettingsPanel";
+import McpPanel from "./components/manage/McpPanel";
 import type { Collection, TreeNode, AppInfo, UIMode } from "./types";
 
 function loadTheme(): ThemeId {
@@ -909,6 +910,8 @@ export default function App() {
         />
       ) : manageSection === "publish" ? (
         <PublishPanel />
+      ) : manageSection === "mcp" ? (
+        <McpPanel />
       ) : manageSection === "export" ? (
         <ExportPanel />
       ) : manageSection === "settings" ? (

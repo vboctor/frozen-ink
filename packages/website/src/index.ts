@@ -17,6 +17,8 @@ import { chatgptDesktopPage } from "./docs/chatgpt-desktop";
 import { anythingllmMcpPage } from "./docs/anythingllm-mcp";
 import { publishingPage } from "./docs/publishing";
 import { desktopAppPage } from "./docs/desktop-app";
+import { localMcpPage } from "./docs/local-mcp";
+import { cloudMcpPage } from "./docs/cloud-mcp";
 import { connectorGithubPage } from "./docs/connector-github";
 import { connectorObsidianPage } from "./docs/connector-obsidian";
 import { connectorGitPage } from "./docs/connector-git";
@@ -35,6 +37,8 @@ const DOC_PAGES: Record<string, string> = {
   "/docs/anythingllm-mcp": anythingllmMcpPage,
   "/docs/publishing": publishingPage,
   "/docs/desktop-app": desktopAppPage,
+  "/docs/local-mcp": localMcpPage,
+  "/docs/cloud-mcp": cloudMcpPage,
   "/docs/connectors/github": connectorGithubPage,
   "/docs/connectors/obsidian": connectorObsidianPage,
   "/docs/connectors/git": connectorGitPage,

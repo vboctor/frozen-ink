@@ -16,10 +16,7 @@ const assetsConfigSchema = z.object({
 const publishStateSchema = z.object({
   url: z.string(),
   mcpUrl: z.string(),
-  password: z.object({
-    protected: z.boolean(),
-    hash: z.string().optional(),
-  }).optional(),
+  protected: z.boolean().optional(),
   publishedAt: z.string(),
   dbDigest: z.string().optional(),
 });
@@ -182,7 +179,7 @@ export function migrateFromLegacyContext(): void {
             updateCollectionPublishState(colName, {
               url: dep.url,
               mcpUrl: dep.mcpUrl,
-              password: { protected: dep.passwordProtected, hash: dep.passwordHash },
+              protected: dep.passwordProtected,
               publishedAt: dep.publishedAt,
             });
           }
@@ -330,7 +327,7 @@ export function migrateLegacyPublishYml(): void {
           updateCollectionPublishState(colName, {
             url: dep.url,
             mcpUrl: dep.mcpUrl,
-            password: { protected: dep.passwordProtected, hash: dep.passwordHash },
+            protected: dep.passwordProtected,
             publishedAt: dep.publishedAt,
           });
         }
@@ -362,10 +359,11 @@ export function migrateLegacySites(): void {
           const colName = collections[0];
           const col = getCollection(colName);
           if (col && !col.publish) {
+            const legacyPassword = config.password as { protected?: boolean } | undefined;
             updateCollectionPublishState(colName, {
               url: config.url as string,
               mcpUrl: config.mcpUrl as string,
-              password: config.password as { protected: boolean; hash?: string } | undefined,
+              protected: legacyPassword?.protected,
               publishedAt,
             });
           }

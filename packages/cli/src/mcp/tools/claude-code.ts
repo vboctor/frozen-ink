@@ -84,7 +84,23 @@ export const claudeCodeAdapter: McpToolAdapter = {
     }
   },
 
+  supportsTransport(_transport) {
+    return true;
+  },
+
   async addConnection(spec: ToolConnectionSpec): Promise<void> {
+    if (spec.transport === "http") {
+      const args = ["mcp", "add", spec.connectionName, "--transport", "http", spec.httpUrl];
+      if (spec.bearerToken) {
+        args.push("--header", `Authorization: Bearer ${spec.bearerToken}`);
+      }
+      if (spec.description) {
+        args.push("--description", spec.description);
+      }
+      await ensureSuccess(args, "mcp add");
+      return;
+    }
+
     const commandArgs = getMcpServeCommandArgs(spec.collection);
     const args = ["mcp", "add", spec.connectionName];
     if (spec.description) {

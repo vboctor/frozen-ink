@@ -480,6 +480,68 @@ export function handleManagementRequest(req: Request): Response | null {
     });
   }
 
+  // --- MCP tool links ---
+
+  if (path === "/api/mcp/status" && method === "GET") {
+    return handleAsync(async () => {
+      const { listMcpConnections } = await import("../mcp/manager");
+      const statuses = await listMcpConnections();
+      return jsonResponse(statuses);
+    });
+  }
+
+  if (path === "/api/mcp/add" && method === "POST") {
+    return handleAsync(async () => {
+      const body = await readBody(req);
+      const tool = body.tool as string | undefined;
+      const collections = body.collections as string[] | undefined;
+      if (!tool || !collections?.length) {
+        return errorResponse("Missing tool or collections", 400);
+      }
+      const transport = (body.transport as string | undefined) === "http" ? "http" : "stdio";
+      const password = body.password as string | undefined;
+      const description = body.description as string | undefined;
+      try {
+        const { addMcpConnections } = await import("../mcp/manager");
+        const { normalizeMcpToolName, isMcpToolName } = await import("../mcp/tools");
+        if (!isMcpToolName(tool)) return errorResponse(`Unsupported tool "${tool}"`, 400);
+        const results = await addMcpConnections({
+          tool: normalizeMcpToolName(tool),
+          collections,
+          description,
+          transport,
+          password,
+        });
+        return jsonResponse({ ok: true, results });
+      } catch (err) {
+        return errorResponse(err instanceof Error ? err.message : String(err), 400);
+      }
+    });
+  }
+
+  if (path === "/api/mcp/remove" && method === "POST") {
+    return handleAsync(async () => {
+      const body = await readBody(req);
+      const tool = body.tool as string | undefined;
+      const collections = body.collections as string[] | undefined;
+      if (!tool || !collections?.length) {
+        return errorResponse("Missing tool or collections", 400);
+      }
+      try {
+        const { removeMcpConnections } = await import("../mcp/manager");
+        const { normalizeMcpToolName, isMcpToolName } = await import("../mcp/tools");
+        if (!isMcpToolName(tool)) return errorResponse(`Unsupported tool "${tool}"`, 400);
+        const results = await removeMcpConnections({
+          tool: normalizeMcpToolName(tool),
+          collections,
+        });
+        return jsonResponse({ ok: true, results });
+      } catch (err) {
+        return errorResponse(err instanceof Error ? err.message : String(err), 400);
+      }
+    });
+  }
+
   // --- Publish ---
 
   // POST /api/collections/:name/publish

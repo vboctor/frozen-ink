@@ -12,6 +12,7 @@ export const localMcpPage = renderDocsPage({
     { id: "link-to-claude-desktop", title: "Link to Claude Desktop" },
     { id: "link-to-codex-cli", title: "Link to Codex CLI" },
     { id: "link-to-chatgpt-desktop", title: "Link to ChatGPT Desktop" },
+    { id: "remote-endpoint", title: "Adding a remote endpoint" },
     { id: "available-tools", title: "Available MCP tools" },
     { id: "available-resources", title: "Available MCP resources" },
     { id: "multiple-collections", title: "Multiple collections" },
@@ -120,6 +121,11 @@ https://my-vault-pub.workers.dev/mcp
 <span class="cmt"># Header</span>
 Authorization: Bearer secret123</code></pre>
   <p>Running <code>fink mcp add --tool chatgpt-desktop ...</code> returns setup guidance because ChatGPT Desktop does not currently expose a stable local config file for automatic stdio link registration.</p>
+
+  <h2 id="remote-endpoint">Adding a remote endpoint</h2>
+  <p>Once a collection is <a href="/docs/publishing">published</a> to Cloudflare, you can register the remote HTTP MCP endpoint instead of the local stdio transport:</p>
+  <pre><code>fink mcp add <span class="flag">--http</span> <span class="flag">--tool</span> claude-code my-vault</code></pre>
+  <p>The password saved during <code>fink publish</code> is reused automatically. Use <code>--password &lt;value&gt;</code> to override it. See <a href="/docs/cloud-mcp">Cloud MCP Access</a> for the full remote flow.</p>
 
   <h2 id="available-tools">Available MCP tools</h2>
   <p>Each Frozen Ink MCP connection exposes the following tools to your MCP client:</p>
