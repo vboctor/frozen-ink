@@ -82,7 +82,14 @@ export const anythingllmAdapter: McpToolAdapter = {
     };
   },
 
+  supportsTransport(transport) {
+    return transport === "stdio";
+  },
+
   async addConnection(spec: ToolConnectionSpec): Promise<void> {
+    if (spec.transport !== "stdio") {
+      throw new Error("AnythingLLM does not support HTTP MCP transport yet");
+    }
     const config = readConfig();
     const commandArgs = getMcpServeCommandArgs(spec.collection);
     const { command, prefixArgs } = resolveFinkCommand();

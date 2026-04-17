@@ -54,6 +54,13 @@ const NAV_SECTIONS = [
       { label: "Publishing to Cloudflare", href: "/docs/publishing" },
     ],
   },
+  {
+    title: "MCP",
+    items: [
+      { label: "Local MCP Setup", href: "/docs/local-mcp" },
+      { label: "Cloud MCP Access", href: "/docs/cloud-mcp" },
+    ],
+  },
 ];
 
 function buildSidebarNav(activePath: string): string {

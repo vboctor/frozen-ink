@@ -15,7 +15,11 @@ import {
   getModuleDir,
   resolveWorkerBundle,
   resolveUiDist,
+  getNamedCredentials,
+  saveNamedCredentials,
+  removeNamedCredentials,
 } from "@frozenink/core";
+import { getPublishCredentialKey } from "./publish-credentials";
 import type { EntityData } from "@frozenink/core";
 
 const __moduleDir = getModuleDir(import.meta.url);
@@ -227,21 +231,29 @@ export async function publishCollections(
   let r2BucketName = `${workerName}-files`;
 
   // Password behavior:
-  // - New password supplied: rotate hash.
-  // - removePassword=true: clear protection.
-  // - Otherwise preserve existing hash on updates.
+  // - New password supplied: rotate hash, save plaintext to credentials.yml.
+  // - removePassword=true: clear protection + remove credentials.yml entry.
+  // - Otherwise reuse plaintext from credentials.yml on updates.
+  const credentialKey = getPublishCredentialKey(collectionName);
   let passwordHash = "";
+  let plaintextPassword = "";
   if (password) {
+    plaintextPassword = password;
     passwordHash = await hashPassword(password);
   } else if (removePassword) {
     passwordHash = "";
-  } else if (existingPublish?.password?.hash) {
-    passwordHash = existingPublish.password.hash;
-  } else if (isUpdate && existingPublish?.password?.protected) {
-    throw new Error(
-      `Collection "${collectionName}" is password protected but no reusable password hash is stored locally. ` +
-      "Re-publish with --password <new-password> to rotate credentials or --remove-password to disable protection.",
-    );
+  } else if (isUpdate) {
+    const stored = getNamedCredentials(credentialKey);
+    const storedPassword = typeof stored?.password === "string" ? stored.password : "";
+    if (storedPassword) {
+      plaintextPassword = storedPassword;
+      passwordHash = await hashPassword(storedPassword);
+    } else if (existingPublish?.protected) {
+      throw new Error(
+        `Collection "${collectionName}" is password protected but no reusable password is stored locally. ` +
+        "Re-publish with --password <new-password> to rotate credentials or --remove-password to disable protection.",
+      );
+    }
   }
 
   assertInitialPublishConfirmation({ isUpdate, workerOnly, passwordHash, forcePublic });
@@ -536,11 +548,17 @@ export async function publishCollections(
   const mcpUrl = `${workerUrl}/mcp`;
   const passwordProtected = passwordHash.length > 0;
 
+  if (passwordProtected && plaintextPassword) {
+    saveNamedCredentials(credentialKey, { password: plaintextPassword });
+  } else if (!passwordProtected) {
+    removeNamedCredentials(credentialKey);
+  }
+
   // Save publish state on the collection
   updateCollectionPublishState(collectionName, {
     url: workerUrl,
     mcpUrl,
-    password: { protected: passwordProtected, hash: passwordHash || undefined },
+    protected: passwordProtected,
     publishedAt: new Date().toISOString(),
     ...(dbDigest ? { dbDigest } : {}),
   });

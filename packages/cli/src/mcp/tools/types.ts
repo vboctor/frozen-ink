@@ -23,16 +23,29 @@ export type McpToolCanonicalName = (typeof MCP_TOOL_CANONICAL_NAMES)[number];
 export type McpToolAliasName = keyof typeof MCP_TOOL_ALIAS_MAP;
 export type McpToolName = McpToolCanonicalName | McpToolAliasName;
 
-export interface ToolConnectionSpec {
-  collection: string;
-  connectionName: string;
-  description?: string;
-}
+export type McpTransport = "stdio" | "http";
+
+export type ToolConnectionSpec =
+  | {
+      collection: string;
+      connectionName: string;
+      description?: string;
+      transport: "stdio";
+    }
+  | {
+      collection: string;
+      connectionName: string;
+      description?: string;
+      transport: "http";
+      httpUrl: string;
+      bearerToken?: string;
+    };
 
 export interface McpToolAdapter {
   tool: McpToolCanonicalName;
   displayName: string;
   isAvailable(): Promise<{ available: boolean; reason?: string }>;
+  supportsTransport(transport: McpTransport): boolean;
   addConnection(spec: ToolConnectionSpec): Promise<void>;
   removeConnection(connectionName: string): Promise<void>;
   listConnectionNames(): Promise<Set<string>>;

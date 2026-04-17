@@ -68,8 +68,15 @@ mcpCommand
   .description("Add MCP tool links for one or more collections")
   .requiredOption("--tool <tool>", `Target MCP client tool (${TOOL_HELP})`)
   .option("--description <text>", "Optional tool description to store on collection(s)")
+  .option("--http", "Link the remote HTTP MCP endpoint of a published collection instead of local stdio")
+  .option("--password <value>", "Bearer token for --http (defaults to the password stored in credentials.yml)")
   .argument("<collections...>", "Collection names")
-  .action(async (collectionNames: string[], opts: { tool: string; description?: string }) => {
+  .action(async (collectionNames: string[], opts: {
+    tool: string;
+    description?: string;
+    http?: boolean;
+    password?: string;
+  }) => {
     requireInitialized();
     const tool = parseTool(opts.tool);
 
@@ -78,6 +85,8 @@ mcpCommand
         tool,
         collections: collectionNames,
         description: opts.description,
+        transport: opts.http ? "http" : "stdio",
+        password: opts.password,
       });
 
       for (const row of results) {

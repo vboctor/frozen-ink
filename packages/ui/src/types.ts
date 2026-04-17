@@ -1,11 +1,35 @@
 export interface PublishState {
   url: string;
   mcpUrl: string;
-  password?: {
-    protected: boolean;
-    hash?: string;
-  };
+  protected?: boolean;
   publishedAt: string;
+}
+
+export type McpTransport = "stdio" | "http";
+
+export interface McpToolLink {
+  collection: string;
+  connectionName: string;
+  linked: boolean;
+  description?: string;
+}
+
+export interface McpLinkStatus {
+  tool: string;
+  displayName: string;
+  available: boolean;
+  reason?: string;
+  supportsStdio: boolean;
+  supportsHttp: boolean;
+  links: McpToolLink[];
+}
+
+export interface McpAddRequest {
+  tool: string;
+  collections: string[];
+  transport: McpTransport;
+  password?: string;
+  description?: string;
 }
 
 export interface Collection {

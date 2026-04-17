@@ -1,4 +1,4 @@
-export type ManageSection = "collections" | "publish" | "export" | "settings";
+export type ManageSection = "collections" | "publish" | "mcp" | "export" | "settings";
 
 interface ManageNavProps {
   active: ManageSection;
@@ -8,6 +8,7 @@ interface ManageNavProps {
 const sections: { id: ManageSection; label: string }[] = [
   { id: "collections", label: "Collections" },
   { id: "publish", label: "Publish" },
+  { id: "mcp", label: "MCP" },
   { id: "export", label: "Export" },
   { id: "settings", label: "Settings" },
 ];

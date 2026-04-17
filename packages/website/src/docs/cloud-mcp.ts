@@ -121,13 +121,21 @@ export const cloudMcpPage = renderDocsPage({
     </div>
   </div>
 
-  <h2 id="configure-claude-code">Configure Claude Code</h2>
-  <p>Claude Code supports both local (stdio) and remote (HTTP) MCP connections. To add the cloud MCP endpoint to Claude Code, add it to your MCP configuration file manually:</p>
+  <h2 id="configure-claude-code">Configure Claude Code &amp; Claude Desktop</h2>
+  <p>From v0.2 onward, <code>fink mcp add --http</code> registers the remote MCP endpoint automatically for Claude Code and Claude Desktop, reusing the password stored in <code>credentials.yml</code> when you published:</p>
 
-  <p>Edit <code>~/.claude/mcp_servers.json</code> (create it if it doesn't exist):</p>
+  <pre><code><span class="cmt"># Claude Code</span>
+fink mcp add <span class="flag">--http</span> <span class="flag">--tool</span> claude-code my-vault
+
+<span class="cmt"># Claude Desktop</span>
+fink mcp add <span class="flag">--http</span> <span class="flag">--tool</span> claude-desktop my-vault</code></pre>
+
+  <p>Pass <code>--password &lt;value&gt;</code> if you want to override the stored token (useful when sharing a deployment across machines). For other MCP clients that don't yet support <code>--http</code>, edit the configuration file by hand:</p>
+
+  <p>Example for Claude Code's <code>~/.claude/mcp_servers.json</code>:</p>
   <pre><code>{
   "mcpServers": {
-    "frozen-ink-cloud": {
+    "fink-my-vault": {
       "transport": "http",
       "url": "https://my-deployment.your-account.workers.dev/mcp",
       "headers": {
@@ -137,7 +145,7 @@ export const cloudMcpPage = renderDocsPage({
   }
 }</code></pre>
 
-  <p>Restart Claude Code for the change to take effect. The cloud MCP connection will appear alongside any local collection links you've configured.</p>
+  <p>Restart Claude Code / Claude Desktop for the new MCP server to take effect.</p>
 
   <div class="callout callout-tip">
     <div class="callout-icon">💡</div>
@@ -234,7 +242,7 @@ fink publish github-issues architecture-notes runbooks \
       <tr>
         <td><strong>Setup</strong></td>
         <td><code>fink mcp add --tool claude-code</code></td>
-        <td>Publish + configure client manually</td>
+        <td><code>fink mcp add --http --tool claude-code</code> (after publish)</td>
       </tr>
       <tr>
         <td><strong>Data location</strong></td>

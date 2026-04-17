@@ -191,7 +191,7 @@ export default function PublishPanel() {
                       <a href={col.publish.url} target="_blank" rel="noopener noreferrer" className="preset-url">{col.publish.url.replace("https://", "")}</a>
                     </span>
                     <span className="text-muted">
-                      Password: {col.publish.password?.protected ? "protected" : "public"}
+                      Password: {col.publish.protected ? "protected" : "public"}
                     </span>
                   </>
                 )}

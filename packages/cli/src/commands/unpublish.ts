@@ -4,7 +4,9 @@ import {
   ensureInitialized,
   getCollection,
   clearCollectionPublishState,
+  removeNamedCredentials,
 } from "@frozenink/core";
+import { getPublishCredentialKey } from "./publish-credentials";
 
 async function confirm(message: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -73,8 +75,9 @@ export async function unpublishCollection(
     onProgress("worker", `Warning: could not delete worker: ${err}`);
   }
 
-  // 4. Clear publish state from collection config
+  // 4. Clear publish state from collection config + drop any stored password
   clearCollectionPublishState(collectionName);
+  removeNamedCredentials(getPublishCredentialKey(collectionName));
   onProgress("done", `Collection "${collectionName}" unpublished`);
 }
 

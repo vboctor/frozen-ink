@@ -1,5 +1,7 @@
 import {
   getCollection,
+  getCollectionPublishState,
+  getNamedCredentials,
   listCollections,
   updateCollection,
   spawnProcess,
@@ -10,12 +12,16 @@ import {
   listMcpToolAdapters,
   type McpToolCanonicalName,
 } from "./tools";
+import type { McpTransport } from "./tools/types";
+import { getPublishCredentialKey } from "../commands/publish-credentials";
 
 export interface AvailableToolInfo {
   tool: McpToolCanonicalName;
   displayName: string;
   available: boolean;
   reason?: string;
+  supportsStdio: boolean;
+  supportsHttp: boolean;
 }
 
 export interface AddMcpResult {
@@ -41,6 +47,8 @@ export interface ToolLinkStatus {
   displayName: string;
   available: boolean;
   reason?: string;
+  supportsStdio: boolean;
+  supportsHttp: boolean;
   links: ToolCollectionLink[];
 }
 
@@ -79,24 +87,68 @@ export async function listAvailableMcpTools(): Promise<AvailableToolInfo[]> {
       displayName: adapter.displayName,
       available: availability.available,
       reason: availability.reason,
+      supportsStdio: adapter.supportsTransport("stdio"),
+      supportsHttp: adapter.supportsTransport("http"),
     });
   }
 
   return rows;
 }
 
+function resolveHttpParams(collectionName: string, providedPassword: string | undefined): {
+  httpUrl: string;
+  bearerToken?: string;
+} {
+  const publishState = getCollectionPublishState(collectionName);
+  if (!publishState) {
+    throw new Error(
+      `Collection "${collectionName}" is not published. Run \`fink publish ${collectionName}\` before linking HTTP MCP.`,
+    );
+  }
+  const httpUrl = publishState.mcpUrl;
+  const trimmed = providedPassword?.trim();
+  if (trimmed) {
+    return { httpUrl, bearerToken: trimmed };
+  }
+
+  const stored = getNamedCredentials(getPublishCredentialKey(collectionName));
+  const storedPassword = typeof stored?.password === "string" ? stored.password : "";
+  if (storedPassword) {
+    return { httpUrl, bearerToken: storedPassword };
+  }
+
+  if (publishState.protected) {
+    throw new Error(
+      `Collection "${collectionName}" is password protected but no password is stored locally. ` +
+      "Pass --password <value> or re-publish with --password to record it.",
+    );
+  }
+
+  return { httpUrl };
+}
+
 export async function addMcpConnections(params: {
   tool: McpToolCanonicalName;
   collections: string[];
   description?: string;
+  transport?: McpTransport;
+  password?: string;
 }): Promise<AddMcpResult[]> {
-  // Remote-only integrations (for example ChatGPT Desktop) don't spawn local stdio subprocesses.
-  if (params.tool !== "chatgpt-desktop") {
+  const transport: McpTransport = params.transport ?? "stdio";
+
+  const adapter = getMcpToolAdapter(params.tool);
+  if (!adapter.supportsTransport(transport)) {
+    throw new Error(
+      `${adapter.displayName} does not support ${transport === "http" ? "HTTP" : "stdio"} MCP transport yet`,
+    );
+  }
+
+  // Stdio needs `fink` on PATH for subprocess spawns; HTTP doesn't.
+  if (transport === "stdio" && params.tool !== "chatgpt-desktop") {
     await ensureFinkOnPath();
   }
   await ensureToolAvailable(params.tool);
 
-  const adapter = getMcpToolAdapter(params.tool);
   const results: AddMcpResult[] = [];
 
   for (const collectionName of params.collections) {
@@ -113,11 +165,24 @@ export async function addMcpConnections(params: {
     }
 
     const connectionName = getConnectionName(collectionName);
-    await adapter.addConnection({
-      collection: collectionName,
-      connectionName,
-      description: finalDescription,
-    });
+    if (transport === "http") {
+      const { httpUrl, bearerToken } = resolveHttpParams(collectionName, params.password);
+      await adapter.addConnection({
+        collection: collectionName,
+        connectionName,
+        description: finalDescription,
+        transport: "http",
+        httpUrl,
+        bearerToken,
+      });
+    } else {
+      await adapter.addConnection({
+        collection: collectionName,
+        connectionName,
+        description: finalDescription,
+        transport: "stdio",
+      });
+    }
 
     results.push({
       collection: collectionName,
@@ -168,6 +233,8 @@ export async function listMcpConnections(tool?: McpToolCanonicalName): Promise<T
         displayName: adapter.displayName,
         available: false,
         reason: availability.reason,
+        supportsStdio: adapter.supportsTransport("stdio"),
+        supportsHttp: adapter.supportsTransport("http"),
         links: collections.map((collection) => ({
           collection: collection.name,
           connectionName: getConnectionName(collection.name),
@@ -183,6 +250,8 @@ export async function listMcpConnections(tool?: McpToolCanonicalName): Promise<T
       tool: adapter.tool,
       displayName: adapter.displayName,
       available: true,
+      supportsStdio: adapter.supportsTransport("stdio"),
+      supportsHttp: adapter.supportsTransport("http"),
       links: collections.map((collection) => {
         const connectionName = getConnectionName(collection.name);
         return {

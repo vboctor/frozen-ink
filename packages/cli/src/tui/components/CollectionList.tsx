@@ -758,7 +758,7 @@ export function CollectionList({
       if (input === "u") {
         setMode("confirm-unpublish");
       }
-      if (input === "r" && (current?.publish as any)?.password?.protected) {
+      if (input === "r" && current?.publish?.protected) {
         startPublish(editingCollection, { removePassword: true });
       }
     } else if (mode === "confirm-unpublish") {
@@ -867,7 +867,7 @@ export function CollectionList({
 
   if (mode === "publish-menu") {
     const isPublished = !!(current?.publish);
-    const isProtected = !!(current?.publish as any)?.password?.protected;
+    const isProtected = !!current?.publish?.protected;
     return (
       <Box flexDirection="column" paddingY={1}>
         <Text bold>Publishing: {editingCollection}</Text>
@@ -889,7 +889,7 @@ export function CollectionList({
 
   if (mode === "publish-password") {
     const existingState = getCollectionPublishState(editingCollection);
-    const isProtected = !!existingState?.password?.protected;
+    const isProtected = !!existingState?.protected;
     return (
       <Box flexDirection="column" paddingY={1}>
         <Text bold>Publish: {editingCollection}</Text>
@@ -1052,9 +1052,9 @@ export function CollectionList({
             <Box flexDirection="column" marginTop={1}>
               <Text dimColor bold>Published:</Text>
               <Box gap={1} marginLeft={1}>
-                <Text color="blue">{(current.publish as { url: string }).url}</Text>
-                <Text color={(current.publish as { password?: { protected: boolean } }).password?.protected ? "green" : "yellow"}>
-                  [{(current.publish as { password?: { protected: boolean } }).password?.protected ? "protected" : "public"}]
+                <Text color="blue">{current.publish.url}</Text>
+                <Text color={current.publish.protected ? "green" : "yellow"}>
+                  [{current.publish.protected ? "protected" : "public"}]
                 </Text>
               </Box>
             </Box>

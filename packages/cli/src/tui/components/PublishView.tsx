@@ -299,15 +299,16 @@ export function PublishView({
         ) : (
           <>
             <Box flexDirection="column" marginTop={1}>
-              {deployments.map((dep: { name: string; url: string; collections: string[]; password?: { protected: boolean }; publishedAt: string; mcpUrl: string }, i: number) => {
+              {deployments.map((dep, i: number) => {
                 let depEntities = 0;
                 let depSize = 0;
                 for (const cn of dep.collections) { const s = getCollectionStats(cn); depEntities += s.entityCount; depSize += s.diskSize; }
+                const isProtected = dep.password?.protected ?? false;
                 return (
                   <Box key={dep.name} gap={1}>
                     <Text color={i === depCursor ? "cyan" : undefined}>{i === depCursor ? "❯" : " "}</Text>
                     <Text bold={i === depCursor}>{dep.name}</Text>
-                    <Text color={dep.password?.protected ? "green" : "yellow"}>[{dep.password?.protected ? "protected" : "public"}]</Text>
+                    <Text color={isProtected ? "green" : "yellow"}>[{isProtected ? "protected" : "public"}]</Text>
                     <Text dimColor>{depEntities} entities</Text>
                     <Text dimColor>{formatSize(depSize)}</Text>
                   </Box>
