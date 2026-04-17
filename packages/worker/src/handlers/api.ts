@@ -48,6 +48,11 @@ export function buildRenderContext(
 
 const api = new Hono<{ Bindings: Env }>();
 
+// GET /api/app-info
+api.get("/api/app-info", (c) => {
+  return c.json({ mode: "published" });
+});
+
 // GET /api/collections
 api.get("/api/collections", async (c) => {
   const collections = await getCollections(c.env.BUCKET);

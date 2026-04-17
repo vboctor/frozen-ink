@@ -146,6 +146,33 @@ function loadUIMode(): UIMode {
   return "browse";
 }
 
+function FrozenInkBanner({ collectionTitle }: { collectionTitle: string | null }) {
+  return (
+    <div className="frozenink-banner">
+      <span className="frozenink-banner-title">{collectionTitle ?? ""}</span>
+      <a
+        href="https://frozen.ink"
+        target="_blank"
+        rel="noopener"
+        className="frozenink-banner-link"
+        aria-label="Powered by Frozen Ink"
+      >
+        <svg width="16" height="16" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="2" y="3" width="28" height="8" rx="2" fill="#cf222e"/>
+          <rect x="3.5" y="12" width="25" height="8" rx="2" fill="#1a9e8f"/>
+          <rect x="2" y="21" width="28" height="8" rx="2" fill="#e36209"/>
+        </svg>
+        <span>Powered by Frozen Ink</span>
+        <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+      </a>
+    </div>
+  );
+}
+
 function saveUIMode(mode: UIMode) {
   try { localStorage.setItem("frozenink-ui-mode", mode); } catch {}
 }
@@ -333,6 +360,11 @@ export default function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    const title = collections.find((c) => c.name === selectedCollection)?.title ?? selectedCollection;
+    document.title = title ?? "Frozen Ink";
+  }, [selectedCollection, collections]);
 
   useEffect(() => {
     fetch("/api/collections")
@@ -850,7 +882,7 @@ export default function App() {
 
   const canGoBack = navIndex > 0;
   const canGoForward = navIndex < navHistory.length - 1;
-  const showLogout = isPublishedDeployment();
+  const showLogout = isPublishedDeployment() || appMode === "published";
 
   const isDesktop = appMode === "desktop";
 
@@ -1216,6 +1248,11 @@ export default function App() {
 
   return (
     <>
+      {appMode !== "desktop" && (
+        <FrozenInkBanner
+          collectionTitle={collections.find((c) => c.name === selectedCollection)?.title ?? selectedCollection}
+        />
+      )}
       <Layout
         sidebar={sidebar}
         main={main}

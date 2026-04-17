@@ -327,10 +327,55 @@ body {
   line-height: 1.5;
 }
 
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ===== Frozen Ink Banner ===== */
+.frozenink-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-family: var(--font-sans);
+  flex-shrink: 0;
+}
+
+.frozenink-banner-title {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.frozenink-banner-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  text-decoration: none;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.frozenink-banner-link:hover {
+  color: var(--text);
+}
+
 /* ===== Layout ===== */
 .layout {
   display: flex;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
