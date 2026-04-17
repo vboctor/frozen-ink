@@ -41,6 +41,7 @@ const K = {
   title: "title",
   description: "description",
   version: "version",
+  crawlerType: "crawler.type",
 } as const;
 
 export class MetadataStore {
@@ -170,6 +171,16 @@ export class MetadataStore {
 
   getCollectionVersion(): string | null {
     return this.getOptional(K.version);
+  }
+
+  /** The crawler type used to render this collection (e.g. "mantishub", "github"). */
+  setCrawlerType(crawlerType: string | null | undefined): void {
+    if (crawlerType == null || crawlerType === "") this.delete(K.crawlerType);
+    else this.set(K.crawlerType, crawlerType);
+  }
+
+  getCrawlerType(): string | null {
+    return this.getOptional(K.crawlerType);
   }
 
   close(): void {

@@ -61,14 +61,18 @@ export class RemoteClient {
   }
 
   async getManifest(): Promise<{ manifest: ManifestResponse; entries: ManifestEntity[] }> {
-    const manifest = await this.fetchJson<ManifestResponse>("/api/collections/_default/manifest");
-
-    // If the collection name comes back from the server, we use it going forward
-    if (manifest.collection?.name) {
-      this.collectionName = manifest.collection.name;
+    // Try _default alias first; a 404 means the server uses explicit collection names only
+    let manifest: ManifestResponse | undefined;
+    try {
+      manifest = await this.fetchJson<ManifestResponse>("/api/collections/_default/manifest");
+      if (manifest.collection?.name) {
+        this.collectionName = manifest.collection.name;
+      }
+    } catch (err) {
+      if (!(err instanceof Error) || !err.message.startsWith("HTTP 404 ")) throw err;
     }
 
-    // Try with actual collection name
+    // Fall back to enumerating collections when _default is not found or returned no name
     if (!this.collectionName) {
       const collections = await this.fetchJson<Array<{ name: string }>>("/api/collections");
       if (collections.length > 0) {
@@ -81,6 +85,10 @@ export class RemoteClient {
         }
         return { manifest: retried, entries: parseManifestEntities(retried.entities) };
       }
+    }
+
+    if (!manifest) {
+      throw new Error("No collections found on remote site.");
     }
 
     if (manifest.version > 1) {

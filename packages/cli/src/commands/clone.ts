@@ -10,6 +10,7 @@ import {
   entities,
   LocalStorageBackend,
   SearchIndexer,
+  MetadataStore,
   splitMarkdownPath,
 } from "@frozenink/core";
 import type { EntityData } from "@frozenink/core";
@@ -22,6 +23,7 @@ import {
   assertSafePath,
   type RemoteEntityData,
 } from "./sync-plan";
+import { createGenerateThemeEngine } from "./generate";
 
 async function runConcurrent<T>(
   items: T[],
@@ -86,6 +88,11 @@ export const cloneCommand = new Command("clone")
     const collectionDir = join(home, "collections", localName);
     const storage = new LocalStorageBackend(collectionDir);
 
+    // Persist the original crawler type so serve/prepare can use the right theme
+    const meta = new MetadataStore(dbPath);
+    meta.setCrawlerType(manifest.collection?.crawlerType ?? null);
+    meta.close();
+
     // Batch-fetch all entity data
     const allExternalIds = entries.map((e) => e.externalId);
     console.log(`Fetching ${allExternalIds.length} entities...`);
@@ -112,22 +119,94 @@ export const cloneCommand = new Command("clone")
         .run();
     }
 
-    // Download markdown files
-    const mdDownloads = remoteEntities.filter((e) => e.markdownPath);
-    console.log(`Downloading ${mdDownloads.length} markdown files...`);
-    let downloaded = 0;
-    await runConcurrent(mdDownloads, 10, async (re) => {
-      const mdPath = re.markdownPath!;
-      assertSafePath(mdPath);
-      const content = await client.getMarkdown(mdPath);
-      if (content) {
-        await storage.write(`content/${mdPath}`, content);
+    // Generate markdown locally using the theme engine (same as generateCollection) so that
+    // the on-disk files match what prepare/serve render — no re-generation needed on first serve.
+    const crawlerType = manifest.collection?.crawlerType ?? "";
+    const themeEngine = createGenerateThemeEngine();
+    const indexer = new SearchIndexer(dbPath);
+
+    if (themeEngine.has(crawlerType)) {
+      // Build cross-entity lookup helpers (same pattern as generateCollection)
+      const entityPathLookup = (externalId: string): string | undefined => {
+        const [row] = colDb
+          .select({ folder: entities.folder, slug: entities.slug })
+          .from(entities)
+          .where(eq(entities.externalId, externalId))
+          .all();
+        if (!row || row.folder == null || row.slug == null) return undefined;
+        return row.folder ? `${row.folder}/${row.slug}` : row.slug;
+      };
+
+      const byExtId = new Map<string, string>();
+      const byStem = new Map<string, string>();
+      for (const re of remoteEntities) {
+        if (!re.markdownPath) continue;
+        const { folder, slug } = splitMarkdownPath(re.markdownPath);
+        if (folder == null || slug == null) continue;
+        const noExt = folder ? `${folder}/${slug}` : slug;
+        byExtId.set(re.externalId, noExt);
+        const stemName = slug.includes("/") ? slug.split("/").pop()! : slug;
+        if (!byStem.has(stemName)) byStem.set(stemName, noExt);
       }
-      downloaded++;
-      if (downloaded % 50 === 0) {
-        console.log(`  ${downloaded}/${mdDownloads.length} downloaded...`);
+      const resolveWikilink = (target: string): string | undefined => {
+        const clean = target.replace(/[#^].*$/, "").trim();
+        if (!clean) return undefined;
+        const withMd = clean.endsWith(".md") ? clean : `${clean}.md`;
+        if (byExtId.has(withMd)) return byExtId.get(withMd);
+        if (byExtId.has(clean)) return byExtId.get(clean);
+        const stemName = clean.includes("/") ? clean.split("/").pop()! : clean;
+        return byStem.get(stemName);
+      };
+
+      const mdEntities = remoteEntities.filter((e) => e.markdownPath);
+      console.log(`Generating ${mdEntities.length} markdown files...`);
+      let generated = 0;
+
+      for (const re of mdEntities) {
+        const entityData = re.data as unknown as EntityData;
+        const ctx = {
+          entity: {
+            externalId: re.externalId,
+            entityType: re.entityType,
+            title: re.title,
+            data: (entityData.source ?? {}) as Record<string, unknown>,
+            url: entityData.url ?? undefined,
+            tags: re.tags ?? [],
+          },
+          collectionName: localName,
+          crawlerType,
+          lookupEntityPath: entityPathLookup,
+          resolveWikilink,
+        };
+        const derivedTitle = themeEngine.getTitle(ctx);
+        const renderCtx = derivedTitle ? { ...ctx, entity: { ...ctx.entity, title: derivedTitle } } : ctx;
+        const markdown = themeEngine.render(renderCtx);
+        await storage.write(`content/${re.markdownPath!}`, markdown);
+
+        // Index inline — content is already in memory, no storage read needed
+        const [dbEntity] = colDb.select().from(entities).where(eq(entities.externalId, re.externalId)).all();
+        if (dbEntity) {
+          indexer.updateIndex({
+            id: dbEntity.id,
+            externalId: re.externalId,
+            entityType: re.entityType,
+            title: derivedTitle ?? re.title,
+            content: markdown,
+            tags: re.tags ?? [],
+          });
+        }
+
+        generated++;
+        if (process.stdout.isTTY) {
+          process.stdout.write(`\r  ${generated}/${mdEntities.length} generated...`);
+        } else if (generated % 50 === 0 || generated === mdEntities.length) {
+          console.log(`  ${generated}/${mdEntities.length} generated...`);
+        }
       }
-    });
+      if (process.stdout.isTTY) process.stdout.write("\n");
+    }
+
+    indexer.close();
 
     // Download asset files
     const assetDownloads: Array<{ path: string; entity: RemoteEntityData }> = [];
@@ -146,32 +225,6 @@ export const cloneCommand = new Command("clone")
         }
       });
     }
-
-    // Build search index
-    const indexer = new SearchIndexer(dbPath);
-    for (const re of remoteEntities) {
-      if (!re.markdownPath) continue;
-      let content = "";
-      try {
-        content = await storage.read(`content/${re.markdownPath}`);
-      } catch { /* file may not exist */ }
-      const [dbEntity] = colDb
-        .select()
-        .from(entities)
-        .where(eq(entities.externalId, re.externalId))
-        .all();
-      if (dbEntity) {
-        indexer.updateIndex({
-          id: dbEntity.id,
-          externalId: re.externalId,
-          entityType: re.entityType,
-          title: re.title,
-          content,
-          tags: ((re.data as Record<string, unknown>)?.tags as string[] | undefined) ?? [],
-        });
-      }
-    }
-    indexer.close();
 
     console.log(`\nCloned "${localName}": ${remoteEntities.length} entities`);
   });
