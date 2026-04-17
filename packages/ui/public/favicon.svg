@@ -1,0 +1,8 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Top book (red) -->
+  <rect x="2" y="3" width="28" height="8" rx="2" fill="#cf222e"/>
+  <!-- Middle book (teal, slightly inset) -->
+  <rect x="3.5" y="12" width="25" height="8" rx="2" fill="#1a9e8f"/>
+  <!-- Bottom book (orange) -->
+  <rect x="2" y="21" width="28" height="8" rx="2" fill="#e36209"/>
+</svg>
