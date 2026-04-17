@@ -11,6 +11,7 @@ import {
   entities,
   SearchIndexer,
   ThemeEngine,
+  MetadataStore,
   loadConfig,
   getModuleDir,
   isBun,
@@ -40,6 +41,23 @@ function createThemeEngine(): ThemeEngine {
   themeEngine.register(gitTheme);
   themeEngine.register(mantisHubTheme);
   return themeEngine;
+}
+
+/**
+ * For cloned ("remote") collections, resolve the original crawler type stored
+ * in the DB metadata at clone time so that theme rendering and folder configs
+ * work correctly.
+ */
+function effectiveCrawlerType(col: ReturnType<typeof getCollection>, dbPath: string): string {
+  if (col!.crawler === "remote" && existsSync(dbPath)) {
+    try {
+      const meta = new MetadataStore(dbPath);
+      const orig = meta.getCrawlerType();
+      meta.close();
+      if (orig) return orig;
+    } catch { /* fall through */ }
+  }
+  return col!.crawler;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -392,7 +410,7 @@ export function createApiServer(
           return errorResponse("Collection database not found", 404);
 
         const colDb = getCollectionDb(dbPath);
-        const folderConfigs = themeEngine.getFolderConfigs(col.crawler);
+        const folderConfigs = themeEngine.getFolderConfigs(effectiveCrawlerType(col, dbPath));
         const rows: Array<{ folder: string; slug: string }> = [];
         for (const r of colDb
           .select({ folder: entities.folder, slug: entities.slug })
@@ -431,7 +449,8 @@ export function createApiServer(
 
         if (!entity) return errorResponse("File not found", 404);
 
-        if (!themeEngine.has(col.crawler)) {
+        const crawlerType = effectiveCrawlerType(col, dbPath);
+        if (!themeEngine.has(crawlerType)) {
           return errorResponse("No theme registered for this crawler", 404);
         }
 
@@ -458,7 +477,7 @@ export function createApiServer(
             tags: entityDataObj.tags ?? [],
           },
           collectionName: name,
-          crawlerType: col.crawler,
+          crawlerType,
           lookupEntityPath,
         });
 
@@ -478,13 +497,14 @@ export function createApiServer(
         const col = getCollection(name);
         if (!col) return errorResponse("Collection not found", 404);
 
-        if (!themeEngine.hasHtmlRenderer(col.crawler)) {
-          return errorResponse("HTML rendering not supported for this crawler", 404);
-        }
-
         const dbPath = getCollectionDbPath(name);
         if (!existsSync(dbPath))
           return errorResponse("Collection database not found", 404);
+
+        const htmlCrawlerType = effectiveCrawlerType(col, dbPath);
+        if (!themeEngine.hasHtmlRenderer(htmlCrawlerType)) {
+          return errorResponse("HTML rendering not supported for this crawler", 404);
+        }
 
         const colDb = getCollectionDb(dbPath);
 
@@ -519,7 +539,7 @@ export function createApiServer(
             tags: entityDataObj.tags ?? [],
           },
           collectionName: name,
-          crawlerType: col.crawler,
+          crawlerType: htmlCrawlerType,
           lookupEntityPath,
         });
 
@@ -539,7 +559,8 @@ export function createApiServer(
         const name = decodeURIComponent(htmlSupportMatch[1]);
         const col = getCollection(name);
         if (!col) return errorResponse("Collection not found", 404);
-        return jsonResponse({ supported: themeEngine.hasHtmlRenderer(col.crawler) });
+        const htmlSupportDbPath = getCollectionDbPath(name);
+        return jsonResponse({ supported: themeEngine.hasHtmlRenderer(effectiveCrawlerType(col, htmlSupportDbPath)) });
       }
 
       // GET /api/collections/:name/entities

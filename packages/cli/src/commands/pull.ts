@@ -10,6 +10,7 @@ import {
   entities,
   LocalStorageBackend,
   SearchIndexer,
+  MetadataStore,
   entityMarkdownPath,
   splitMarkdownPath,
   resolveCredentials,
@@ -83,6 +84,13 @@ export const pullCommand = new Command("pull")
     // Fetch remote manifest
     console.log("Fetching manifest...");
     const { manifest, entries } = await client.getManifest();
+
+    // Keep crawler.type in sync — repairs clones created before this field existed
+    if (manifest.collection?.crawlerType) {
+      const meta = new MetadataStore(dbPath);
+      meta.setCrawlerType(manifest.collection.crawlerType);
+      meta.close();
+    }
 
     // Build local entity list
     const allLocal = colDb.select().from(entities).all();

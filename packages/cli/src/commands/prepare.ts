@@ -8,6 +8,7 @@ import {
   updateCollection,
   ThemeEngine,
   LocalStorageBackend,
+  MetadataStore,
   CollectionEntry,
   type FolderConfig,
   type EntityData,
@@ -313,19 +314,28 @@ export async function prepareCollection(
   const storage = new LocalStorageBackend(collectionDir);
   const basePath = "content";
 
+  // For cloned ("remote") collections, resolve the original crawler type stored
+  // in the DB metadata so that theme rendering and folder configs work correctly.
+  let crawlerType = col.crawler;
+  if (col.crawler === "remote") {
+    const meta = new MetadataStore(dbPath);
+    crawlerType = meta.getCrawlerType() ?? col.crawler;
+    meta.close();
+  }
+
   // Step 1: Write folder yml files and root content.yml (incorporating collection-level hide)
   const collectionHide = col.hide ?? [];
-  const ymlUpdated = await writeFolderConfigFiles(themeEngine, col.crawler, storage, basePath, collectionHide);
+  const ymlUpdated = await writeFolderConfigFiles(themeEngine, crawlerType, storage, basePath, collectionHide);
   if (ymlUpdated) log(`  Folder config files updated`);
 
   // Step 1b: Always write AGENTS.md and CLAUDE.md (at collection root, outside content/)
   await writeAgentFiles(themeEngine, col, storage, log);
 
   // Step 2: Sample check — skip if theme is not registered
-  if (!themeEngine.has(col.crawler)) return;
+  if (!themeEngine.has(crawlerType)) return;
 
   const { sampled, titleMismatches, markdownMismatches, hashMismatches } = await checkSamples(
-    colDb, storage, themeEngine, col.crawler, col.name, basePath, 10,
+    colDb, storage, themeEngine, crawlerType, col.name, basePath, 10,
   );
 
   if (sampled === 0) return;
