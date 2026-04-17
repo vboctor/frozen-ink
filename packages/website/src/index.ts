@@ -1,4 +1,5 @@
 import html from "./site.html";
+import faviconSvg from "./favicon.svg";
 import ogImageSvg from "./og-image.svg";
 
 // Base64-encode the PNG at build time isn't possible with text modules,
@@ -70,6 +71,15 @@ export default {
 
     if (path === "/og.svg") {
       return new Response(ogImageSvg, {
+        headers: {
+          "content-type": "image/svg+xml",
+          "cache-control": "public, max-age=86400",
+        },
+      });
+    }
+
+    if (path === "/favicon.svg") {
+      return new Response(faviconSvg, {
         headers: {
           "content-type": "image/svg+xml",
           "cache-control": "public, max-age=86400",
