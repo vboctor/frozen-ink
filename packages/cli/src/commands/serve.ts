@@ -321,6 +321,7 @@ function tryServeStatic(
 export function createApiServer(
   home: string,
   port: number,
+  collectionFilter?: string,
 ): { port: number; stop?: () => void } | Promise<{ port: number; stop?: () => void }> {
   const uiDistDir = resolveUiDistDir();
   const themeEngine = createThemeEngine();
@@ -335,7 +336,9 @@ export function createApiServer(
 
       // GET /api/collections
       if (path === "/api/collections" && req.method === "GET") {
-        const rows = listCollections();
+        const rows = collectionFilter
+          ? (() => { const col = getCollection(collectionFilter); return col ? [col] : []; })()
+          : listCollections();
         const result = rows.map((r) => ({
           name: r.name,
           title: r.title ?? r.name,
@@ -890,13 +893,22 @@ export function createApiServer(
 
 export const serveCommand = new Command("serve")
   .description("Start the API and/or MCP server")
+  .argument("[collection-name]", "Serve only this collection")
   .option("--mcp-only", "Start only the MCP server (no REST API)")
   .option("--ui-only", "Start only the REST API server (no MCP)")
   .option("--port <port>", "Port for the REST API server")
-  .action(async (opts: { mcpOnly?: boolean; uiOnly?: boolean; port?: string }) => {
+  .action(async (collectionName: string | undefined, opts: { mcpOnly?: boolean; uiOnly?: boolean; port?: string }) => {
     const home = getFrozenInkHome();
 
     ensureInitialized();
+
+    if (collectionName) {
+      const col = getCollection(collectionName);
+      if (!col) {
+        console.error(`Error: Collection "${collectionName}" not found.`);
+        process.exit(1);
+      }
+    }
 
     const config = loadConfig();
     const port = opts.port ? parseInt(opts.port, 10) : config.ui.port;
@@ -910,13 +922,13 @@ export const serveCommand = new Command("serve")
     }
 
     if (opts.uiOnly) {
-      const server = await Promise.resolve(createApiServer(home, port));
+      const server = await Promise.resolve(createApiServer(home, port, collectionName));
       console.log(`Frozen Ink API server running on http://localhost:${server.port}`);
       return;
     }
 
     // Start both
-    const server = await Promise.resolve(createApiServer(home, port));
+    const server = await Promise.resolve(createApiServer(home, port, collectionName));
     console.log(`Frozen Ink API server running on http://localhost:${server.port}`);
     console.error("Starting Frozen Ink MCP server (STDIO)...");
     await startStdioServer({ frozeninkHome: home });
