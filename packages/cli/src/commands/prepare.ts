@@ -362,9 +362,12 @@ export async function prepareCollection(
 export async function prepareCollections(
   home: string = getFrozenInkHome(),
   log: Log = console.log,
+  collectionName?: string,
 ): Promise<void> {
   const themeEngine = createGenerateThemeEngine();
-  const collections = listCollections().filter((c) => c.enabled);
+  const collections = collectionName
+    ? listCollections().filter((c) => c.name === collectionName)
+    : listCollections().filter((c) => c.enabled);
 
   for (const col of collections) {
     if (!existsSync(getCollectionDbPath(col.name))) continue;

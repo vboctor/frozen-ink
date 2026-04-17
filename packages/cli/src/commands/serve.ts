@@ -913,7 +913,7 @@ export const serveCommand = new Command("serve")
     const config = loadConfig();
     const port = opts.port ? parseInt(opts.port, 10) : config.ui.port;
 
-    await prepareCollections(home);
+    await prepareCollections(home, console.log, collectionName);
 
     if (opts.mcpOnly) {
       console.error("Starting Frozen Ink MCP server (STDIO)...");
