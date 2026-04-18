@@ -6,7 +6,7 @@ export const gettingStartedPage = renderDocsPage({
     "Install Frozen Ink, add your first collection, and start browsing your knowledge base in minutes.",
   activePath: "/docs",
   canonicalPath: "/docs",
-  section: "Getting Started",
+  section: "Overview",
   tocLinks: [
     { id: "prerequisites", title: "Prerequisites" },
     { id: "install", title: "Installation" },
