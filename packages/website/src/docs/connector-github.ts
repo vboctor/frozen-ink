@@ -101,9 +101,7 @@ fink sync my-issues
 
 <span class="cmt"># Subsequent syncs are incremental — only changed items are re-fetched</span>
 fink sync my-issues
-
-<span class="cmt"># Keep it fresh automatically with the background daemon</span>
-fink daemon start</code></pre>
+</code></pre>
 
   <p>The first sync on a large repository may take several minutes. Subsequent syncs are fast — only issues and PRs updated since the last run are fetched.</p>
 
@@ -121,14 +119,16 @@ fink daemon start</code></pre>
   <h2 id="tips">Tips &amp; notes</h2>
   <ul>
     <li><strong>One collection per repo.</strong> The GitHub connector connects to a single repository. To index multiple repos, add a separate collection for each.</li>
-    <li><strong>From scattered sources to a single index.</strong> Combine GitHub issues with your Obsidian notes and Git commit history into one searchable index. Once synced, <code>fink search "payment flow"</code> finds matching issues, notes, and commits in a single query. See <a href="/docs/key-scenarios#multi-source-search">Multi-source search</a>.</li>
     <li><strong>Private repos are supported.</strong> As long as your token has access, private repositories work identically to public ones.</li>
     <li><strong>Deleted issues.</strong> GitHub's API does not surface deleted issues. If an issue is deleted on GitHub, it will remain in your local index until you remove and re-add the collection.</li>
     <li><strong>Token rotation.</strong> If you need to update the token, use <code>fink update my-issues --token ghp_newToken</code>.</li>
   </ul>
 
   <div class="docs-pagination">
-    <span></span>
+    <a href="/docs/publishing" class="docs-pagination-card">
+      <span class="docs-pagination-label">← Previous</span>
+      <span class="docs-pagination-title">Publishing</span>
+    </a>
     <a href="/docs/connectors/obsidian" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">Obsidian Connector</span>

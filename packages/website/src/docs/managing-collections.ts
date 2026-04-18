@@ -14,7 +14,6 @@ export const managingCollectionsPage = renderDocsPage({
     { id: "add-git", title: "Git collection" },
     { id: "add-mantishub", title: "MantisHub collection" },
     { id: "syncing", title: "Syncing" },
-    { id: "daemon", title: "Background daemon" },
     { id: "updating", title: "Updating a collection" },
     { id: "listing-removing", title: "Listing & removing" },
     { id: "config-file", title: "Configuration file" },
@@ -163,28 +162,6 @@ fink generate "*"
 <span class="cmt"># Rebuild just the search index and backlinks</span>
 fink index "*"</code></pre>
 
-  <h2 id="daemon">Background daemon</h2>
-  <p>The Frozen Ink daemon runs as a background process and syncs collections automatically on their configured interval (default: 30 minutes).</p>
-
-  <pre><code><span class="cmt"># Start the daemon (persists across terminal sessions)</span>
-fink daemon start
-
-<span class="cmt"># Check daemon status and last sync times</span>
-fink daemon status
-
-<span class="cmt"># Stop the daemon</span>
-fink daemon stop</code></pre>
-
-  <p>The daemon's PID file and logs are stored in <code>~/.frozenink/daemon/</code>.</p>
-
-  <div class="callout callout-tip">
-    <div class="callout-icon">💡</div>
-    <div class="callout-body">
-      <strong>Daemon on macOS startup</strong>
-      <p>The macOS desktop app starts the daemon automatically and manages it through the system tray. If you're using the CLI only, add <code>fink daemon start</code> to your shell profile to have it start on login.</p>
-    </div>
-  </div>
-
   <h2 id="updating">Updating a collection</h2>
   <p>To change the configuration of an existing collection (for example, to update a GitHub token or change a vault path):</p>
   <pre><code><span class="cmt"># Update a collection's configuration</span>
@@ -248,13 +225,13 @@ fink config set sync.interval 60   <span class="cmt"># minutes</span></code></pr
   </table>
 
   <div class="docs-pagination">
-    <a href="/docs/key-scenarios" class="docs-pagination-card">
+    <a href="/docs" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">Key Scenarios</span>
+      <span class="docs-pagination-title">Getting Started</span>
     </a>
-    <a href="/docs/integrations/claude-code" class="docs-pagination-card next">
+    <a href="/docs/clone-pull" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Claude Code Integration</span>
+      <span class="docs-pagination-title">Clone &amp; Pull</span>
     </a>
   </div>
   `,

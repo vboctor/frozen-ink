@@ -89,7 +89,7 @@ fink status</code></pre>
     <div class="callout-icon">ℹ️</div>
     <div class="callout-body">
       <strong>fink must be on your PATH</strong>
-      <p>Claude Code runs <code>fink mcp serve</code> as a subprocess. Make sure the <code>fink</code> binary is accessible on your system PATH — installing via npm (<code>npm install -g @vboctor/fink</code>) handles this automatically. If you installed a standalone binary, ensure it's in <code>/usr/local/bin/</code> or another PATH directory.</p>
+      <p>Claude Code runs <code>fink mcp serve</code> as a subprocess. Make sure the <code>fink</code> binary is accessible on your system PATH — installing via npm (<code>npm install -g @vboctor/fink</code>) handles this automatically.</p>
     </div>
   </div>
 
@@ -216,7 +216,7 @@ fink mcp list</code></pre>
   <p>The <code>fink</code> binary must be on the PATH that Claude Code uses when spawning processes. Check:</p>
   <pre><code>which fink      <span class="cmt"># should print a path like /usr/local/bin/fink</span>
 fink --version  <span class="cmt"># should print the installed version</span></code></pre>
-  <p>If <code>fink</code> is installed in a path that's in your shell's <code>PATH</code> but not in the system-level <code>PATH</code> (e.g., an NVM-managed Node path), you may need to use the absolute binary path. Re-install with <code>npm install -g @vboctor/fink</code> to a standard location, or use the standalone binary in <code>/usr/local/bin/</code>.</p>
+  <p>If <code>fink</code> is installed in a path that's in your shell's <code>PATH</code> but not in the system-level <code>PATH</code> (e.g., an NVM-managed Node path), you may need to use the absolute binary path. Re-install with <code>npm install -g @vboctor/fink</code> to a standard location.</p>
 
   <h3>Stale data in Claude's responses</h3>
   <p>If Claude is returning information that seems outdated, sync the collection and restart the Claude session:</p>
@@ -224,13 +224,13 @@ fink --version  <span class="cmt"># should print the installed version</span></c
   <p>The MCP server reads from the local SQLite database at query time, so after a sync the next MCP call will reflect the updated data.</p>
 
   <div class="docs-pagination">
-    <a href="/docs/integrations/claude-desktop" class="docs-pagination-card">
+    <a href="/docs/connectors/mantishub" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">Claude Desktop Integration</span>
+      <span class="docs-pagination-title">MantisHub Connector</span>
     </a>
-    <a href="/docs/publishing" class="docs-pagination-card next">
+    <a href="/docs/integrations/cloud-mcp" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Publishing to Cloudflare</span>
+      <span class="docs-pagination-title">Cloud MCP Access</span>
     </a>
   </div>
   `,

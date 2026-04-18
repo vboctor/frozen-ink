@@ -185,7 +185,7 @@ For publish specifically, the core logic is in `publishCollections(options, onPr
 - **Crawler** = code that syncs data from an external source (implements `Crawler` interface)
 - **Theme** (core) = markdown generator that renders entity data into Obsidian-compatible markdown (implements `Theme` interface)
 - **Theme** (UI) = CSS display theme for the web viewer (6 options, selected via ThemeSwitcher)
-- **Website** (when used in task requests) = the marketing website in `packages/website`, deployed to the `frozenink` Cloudflare Worker
+- **Website** (when used in task requests) = the marketing website in `packages/website`, deployed to the `frozenink` Cloudflare Worker. See [packages/website/website.md](packages/website/website.md) for structure, conventions, and guidelines
 - **Worker** (when used in task requests) = a Cloudflare Worker that hosts a collections site using the app UI (published collection deployment)
 
 ### Adding a New Crawler

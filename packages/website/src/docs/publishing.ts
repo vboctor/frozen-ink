@@ -15,7 +15,7 @@ export const publishingPage = renderDocsPage({
     { id: "updating", title: "Updating content" },
     { id: "multiple-deployments", title: "Multiple deployments" },
     { id: "unpublishing", title: "Unpublishing" },
-    { id: "desktop-publish", title: "Publishing from the desktop app" },
+    { id: "what-runs-on-cloudflare", title: "What runs on Cloudflare" },
   ],
   content: `
   <div class="docs-breadcrumb">
@@ -105,7 +105,7 @@ fink publish my-vault \
   </ol>
 
   <h2 id="password-protection">Password protection</h2>
-  <p>Every published deployment is protected by a password you set. Visitors see a login form before any content is visible. The password is stored as a hashed secret in your Cloudflare Worker's environment.</p>
+  <p>Every published deployment is protected by a password you set. The password gates all access — the web UI (login form), the REST API, and the MCP endpoint. No content is accessible without authentication. The password is stored as a hashed secret in your Cloudflare Worker's environment.</p>
 
   <div class="callout callout-important">
     <div class="callout-icon">🔒</div>
@@ -148,25 +148,14 @@ fink publish public-docs <span class="flag">--password</span> public789</code></
   <pre><code>fink unpublish my-vault</code></pre>
   <p>This deletes the Cloudflare Worker, D1 database, and R2 bucket for that collection's deployment. Your local data in <code>~/.frozenink/</code> is not affected.</p>
 
-  <h2 id="desktop-publish">Publishing from the desktop app</h2>
-  <p>The macOS desktop app provides a Publish panel that wraps all of the above into a GUI:</p>
-  <ol>
-    <li>Open the desktop app and navigate to a collection</li>
-    <li>Click <strong>Publish</strong> in the left navigation</li>
-    <li>Enter a deployment name and password</li>
-    <li>Select which collections to include</li>
-    <li>Click <strong>Publish</strong> and watch the progress bar</li>
-  </ol>
-  <p>The desktop app requires Wrangler to be installed and authenticated, just like the CLI.</p>
-
   <div class="docs-pagination">
-    <a href="/docs/integrations/local-mcp" class="docs-pagination-card">
+    <a href="/docs/clone-pull" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">Local MCP Setup</span>
+      <span class="docs-pagination-title">Clone &amp; Pull</span>
     </a>
-    <a href="/docs/integrations/cloud-mcp" class="docs-pagination-card next">
+    <a href="/docs/connectors/github" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Cloud MCP Access</span>
+      <span class="docs-pagination-title">GitHub Connector</span>
     </a>
   </div>
   `,

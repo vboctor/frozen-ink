@@ -15,7 +15,6 @@ import { claudeCoworkPage } from "./docs/claude-cowork";
 import { claudeDesktopPage } from "./docs/claude-desktop";
 import { codexCliPage } from "./docs/codex-cli";
 import { chatgptDesktopPage } from "./docs/chatgpt-desktop";
-import { anythingllmMcpPage } from "./docs/anythingllm-mcp";
 import { publishingPage } from "./docs/publishing";
 import { desktopAppPage } from "./docs/desktop-app";
 import { localMcpPage } from "./docs/local-mcp";
@@ -47,7 +46,6 @@ const DOC_PAGES: Record<string, string> = {
   "/docs/integrations/claude-desktop": claudeDesktopPage,
   "/docs/integrations/codex-cli": codexCliPage,
   "/docs/integrations/chatgpt-desktop": chatgptDesktopPage,
-  "/docs/integrations/anythingllm": anythingllmMcpPage,
   "/docs/reference/cli": cliReferencePage,
   "/docs/reference/configuration": configurationPage,
 };
@@ -101,7 +99,6 @@ export default {
       "/docs/claude-desktop": "/docs/integrations/claude-desktop",
       "/docs/codex-cli": "/docs/integrations/codex-cli",
       "/docs/chatgpt-desktop": "/docs/integrations/chatgpt-desktop",
-      "/docs/anythingllm-mcp": "/docs/integrations/anythingllm",
       "/docs/local-mcp": "/docs/integrations/local-mcp",
       "/docs/cloud-mcp": "/docs/integrations/cloud-mcp",
     };

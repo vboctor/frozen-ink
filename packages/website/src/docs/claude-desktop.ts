@@ -243,7 +243,7 @@ fink mcp add <span class="flag">--tool</span> claude-desktop myapp
 <span class="cmt"># → Restart Claude Desktop</span>
 
 <span class="cmt"># Keep collections fresh</span>
-fink daemon start          <span class="cmt"># auto-sync in background</span>
+fink sync "*"              <span class="cmt"># pull latest changes</span>
 fink sync "*"              <span class="cmt"># manual one-shot sync</span>
 fink status                <span class="cmt"># check last sync times</span>
 

@@ -87,10 +87,7 @@ export const connectorGitPage = renderDocsPage({
 
   <h2 id="sync">Syncing</h2>
   <pre><code><span class="cmt"># Sync after new commits land</span>
-fink sync my-repo
-
-<span class="cmt"># Auto-sync via daemon</span>
-fink daemon start</code></pre>
+fink sync my-repo</code></pre>
 
   <p>Sync is incremental — commits already in the index are not re-processed. New commits (since the last sync) are fetched and indexed on each run.</p>
 
@@ -99,7 +96,6 @@ fink daemon start</code></pre>
     <li><strong>One collection per repo.</strong> Add a separate collection for each repository you want to index.</li>
     <li><strong>Remote not required.</strong> The connector reads from the local <code>.git/</code> directory only. Repos without a remote, or repos where you haven't fetched recently, work fine — you'll just see the local branch state.</li>
     <li><strong>Repo path changes.</strong> If you move the repository, update with <code>fink update my-repo --path /new/path</code>.</li>
-    <li><strong>Toggle diffs later.</strong> You can enable or disable <code>--include-diffs</code> at any time by running <code>fink update my-repo --include-diffs</code> or <code>fink update my-repo --no-include-diffs</code>, then re-syncing.</li>
   </ul>
 
   <div class="docs-pagination">

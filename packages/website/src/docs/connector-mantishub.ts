@@ -77,8 +77,7 @@ export const connectorMantishubPage = renderDocsPage({
   <pre><code><span class="cmt"># Sync the collection</span>
 fink sync my-bugs
 
-<span class="cmt"># Keep in sync automatically</span>
-fink daemon start</code></pre>
+<span class="cmt"># Keep in sync automatically</span></code></pre>
 
   <p>Sync is incremental — only issues updated since the last run are re-fetched. On first sync, all issues in the project are downloaded.</p>
 
@@ -96,9 +95,9 @@ fink daemon start</code></pre>
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Git Connector</span>
     </a>
-    <a href="/docs/collections" class="docs-pagination-card next">
+    <a href="/docs/integrations/local-mcp" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Managing Collections</span>
+      <span class="docs-pagination-title">Local MCP Setup</span>
     </a>
   </div>
   `,

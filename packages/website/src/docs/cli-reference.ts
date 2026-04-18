@@ -24,7 +24,6 @@ export const cliReferencePage = renderDocsPage({
     { id: "cmd-compact", title: "compact", indent: true },
     { id: "serving", title: "Serving & UI" },
     { id: "cmd-serve", title: "serve", indent: true },
-    { id: "cmd-daemon", title: "daemon", indent: true },
     { id: "cmd-tui", title: "tui", indent: true },
     { id: "publishing", title: "Publishing" },
     { id: "cmd-publish", title: "publish", indent: true },
@@ -196,17 +195,6 @@ fink sync "*"</code></pre>
   <p>Start the local web UI and API server. Opens the Frozen Ink browser interface at <a href="http://localhost:3000">http://localhost:3000</a>.</p>
   <pre><code>fink serve</code></pre>
 
-  <h3 id="cmd-daemon"><code>fink daemon &lt;subcommand&gt;</code></h3>
-  <p>Manage the background sync daemon.</p>
-  <table>
-    <thead><tr><th>Subcommand</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>start</code></td><td>Start the daemon (persists across terminal sessions)</td></tr>
-      <tr><td><code>stop</code></td><td>Stop the running daemon</td></tr>
-      <tr><td><code>status</code></td><td>Show daemon status and last sync times</td></tr>
-    </tbody>
-  </table>
-
   <h3 id="cmd-tui"><code>fink tui</code></h3>
   <p>Launch the interactive terminal UI. Provides keyboard-driven access to collections, sync, search, publish, and settings. Also launched by running <code>fink</code> with no arguments.</p>
   <pre><code>fink        <span class="cmt"># launches TUI by default</span>
@@ -282,9 +270,9 @@ fink tui    <span class="cmt"># explicit</span></code></pre>
   <pre><code>fink vscode my-vault</code></pre>
 
   <div class="docs-pagination">
-    <a href="/docs/integrations/anythingllm" class="docs-pagination-card">
+    <a href="/docs/integrations/chatgpt-desktop" class="docs-pagination-card">
       <span class="docs-pagination-label">&larr; Previous</span>
-      <span class="docs-pagination-title">AnythingLLM</span>
+      <span class="docs-pagination-title">ChatGPT Desktop</span>
     </a>
     <a href="/docs/reference/configuration" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next &rarr;</span>
