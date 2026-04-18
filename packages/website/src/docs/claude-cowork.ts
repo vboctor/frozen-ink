@@ -113,15 +113,7 @@ fink status</code></pre>
 fink sync "*"
 
 <span class="cmt"># Auto-sync in the background (recommended)</span>
-fink daemon start</code></pre>
-
-  <div class="callout callout-tip">
-    <div class="callout-icon">💡</div>
-    <div class="callout-body">
-      <strong>Run the daemon for always-fresh data</strong>
-      <p><code>fink daemon start</code> syncs all collections on a configurable interval in the background. With the daemon running, the files in <code>~/.frozenink/collections/</code> stay current automatically — no manual sync needed before each Cowork session.</p>
-    </div>
-  </div>
+fink sync "*"</code></pre>
 
   <h2 id="collection-description">Collection descriptions</h2>
   <p>Each collection folder contains a <code>_collection.md</code> file with metadata about the source — name, type, description, and sync status. Claude reads this automatically when you share the collections folder, which helps it understand what each subfolder contains and route your questions appropriately.</p>

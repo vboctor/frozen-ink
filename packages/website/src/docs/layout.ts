@@ -20,7 +20,7 @@ const NAV_SECTIONS = [
   {
     title: "Overview",
     items: [
-      { label: "What is Frozen Ink", href: "/docs/what-is-frozen-ink" },
+      { label: "What is Frozen Ink?", href: "/docs/what-is-frozen-ink" },
       { label: "Key Scenarios", href: "/docs/key-scenarios" },
     ],
   },
@@ -28,7 +28,14 @@ const NAV_SECTIONS = [
     title: "Getting Started",
     items: [
       { label: "Getting Started", href: "/docs" },
-      { label: "Desktop App", href: "/docs/desktop-app" },
+    ],
+  },
+  {
+    title: "Features",
+    items: [
+      { label: "Managing Collections", href: "/docs/collections" },
+      { label: "Clone & Pull", href: "/docs/clone-pull" },
+      { label: "Publishing", href: "/docs/publishing" },
     ],
   },
   {
@@ -41,14 +48,6 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    title: "Features",
-    items: [
-      { label: "Managing Collections", href: "/docs/collections" },
-      { label: "Clone & Pull", href: "/docs/clone-pull" },
-      { label: "Publishing", href: "/docs/publishing" },
-    ],
-  },
-  {
     title: "AI Integrations",
     items: [
       { label: "Local MCP Setup", href: "/docs/integrations/local-mcp" },
@@ -58,7 +57,6 @@ const NAV_SECTIONS = [
       { label: "Claude Desktop", href: "/docs/integrations/claude-desktop" },
       { label: "Codex CLI", href: "/docs/integrations/codex-cli" },
       { label: "ChatGPT Desktop", href: "/docs/integrations/chatgpt-desktop" },
-      { label: "AnythingLLM", href: "/docs/integrations/anythingllm" },
     ],
   },
   {

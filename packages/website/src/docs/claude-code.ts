@@ -97,7 +97,7 @@ fink status</code></pre>
     <div class="callout-icon">ℹ️</div>
     <div class="callout-body">
       <strong>fink must be on your PATH</strong>
-      <p>Claude Code spawns <code>fink mcp serve</code> as a subprocess. The <code>fink</code> binary must be on the system PATH — installing via npm (<code>npm install -g @vboctor/fink</code>) handles this automatically. If you installed a standalone binary, ensure it's in <code>/usr/local/bin/</code> or another standard PATH directory.</p>
+      <p>Claude Code spawns <code>fink mcp serve</code> as a subprocess. The <code>fink</code> binary must be on the system PATH — installing via npm (<code>npm install -g @vboctor/fink</code>) handles this automatically.</p>
     </div>
   </div>
 
@@ -169,8 +169,7 @@ fink sync "*"
 <span class="cmt"># Start the local web UI (port 3000)</span>
 fink serve</code></pre>
 
-  <p>Open <a href="http://localhost:3000">http://localhost:3000</a> to browse your collections. To keep everything up to date automatically, run the background daemon:</p>
-  <pre><code>fink daemon start</code></pre>
+  <p>Open <a href="http://localhost:3000">http://localhost:3000</a> to browse your collections. Run <code>fink sync "*"</code> periodically to keep everything up to date.</p>
 
   <h2 id="browsing-in-claude">Browsing in Claude Code</h2>
   <p>With <code>fink serve</code> running, the web UI is available in any browser — open it side-by-side with Claude Code in a split window. Features include:</p>
@@ -228,7 +227,7 @@ fink sync "*"
 fink mcp add <span class="flag">--tool</span> claude-code notes myapp
 
 <span class="cmt"># Daily workflow</span>
-fink daemon start              <span class="cmt"># auto-sync in background</span>
+fink sync "*"                  <span class="cmt"># pull latest changes</span>
 fink serve                     <span class="cmt"># start web UI when needed</span>
 fink status                    <span class="cmt"># check last sync times</span>
 
@@ -253,9 +252,9 @@ fink --version</code></pre>
   <pre><code>fink sync my-vault</code></pre>
 
   <div class="docs-pagination">
-    <a href="/docs/collections" class="docs-pagination-card">
+    <a href="/docs/integrations/cloud-mcp" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">Managing Collections</span>
+      <span class="docs-pagination-title">Cloud MCP Access</span>
     </a>
     <a href="/docs/integrations/claude-cowork" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>

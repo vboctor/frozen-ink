@@ -10,7 +10,6 @@ export const keyScenariosPage = renderDocsPage({
   tocLinks: [
     { id: "offline-github", title: "Offline GitHub access" },
     { id: "obsidian-to-cloud", title: "Obsidian notes for cloud AI" },
-    { id: "team-knowledge", title: "Team knowledge sharing" },
     { id: "distribute-and-clone", title: "Distribute & clone knowledge" },
     { id: "local-ai", title: "Local AI assistant context" },
     { id: "consolidate-context", title: "Consolidate AI context" },
@@ -53,15 +52,6 @@ export const keyScenariosPage = renderDocsPage({
     </div>
     <div class="step">
       <div class="step-num">3</div>
-      <div class="step-body">
-        <h4>Schedule automatic syncs</h4>
-        <p>Start the background daemon so your local copy stays fresh automatically:</p>
-        <pre><code>fink daemon start</code></pre>
-        <p>The daemon runs in the background and syncs collections on their configured interval (default: every 30 minutes).</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">4</div>
       <div class="step-body">
         <h4>Browse offline</h4>
         <p>Run <code>fink serve</code> and open <a href="http://localhost:3000">http://localhost:3000</a>. Your issues and PRs are now browsable, searchable, and available even when GitHub is unreachable.</p>
@@ -116,28 +106,6 @@ fink status</code></pre>
       </div>
     </div>
   </div>
-
-  <h2 id="team-knowledge">Team knowledge sharing</h2>
-  <p><strong>Situation:</strong> Your team maintains notes, architecture docs, and internal references in Obsidian or a private GitHub repo. You want to share this with the full team without requiring everyone to install Frozen Ink locally.</p>
-
-  <p>Publish the relevant collections to Cloudflare once. Everyone on the team gets a password-protected URL they can browse in any browser:</p>
-  <pre><code><span class="cmt"># Publish multiple collections to one deployment</span>
-fink publish architecture-notes github-issues internal-docs \
-  <span class="flag">--password</span> team-secret \
-  <span class="flag">--name</span> team-knowledge</code></pre>
-
-  <p>The published site has:</p>
-  <ul>
-    <li>Full-text search across all published collections</li>
-    <li>The same web UI everyone gets locally</li>
-    <li>Password protection — a login form before any content is visible</li>
-    <li>An MCP endpoint so cloud AI agents can query it too</li>
-  </ul>
-
-  <p>To update when content changes, re-sync locally and re-publish with the same <code>--name</code>:</p>
-  <pre><code>fink sync "*"
-fink publish architecture-notes github-issues internal-docs \
-  <span class="flag">--password</span> team-secret <span class="flag">--name</span> team-knowledge</code></pre>
 
   <h2 id="distribute-and-clone">Distribute &amp; clone knowledge</h2>
   <p><strong>Situation:</strong> You've built a curated knowledge base — maybe an Obsidian vault of architecture decisions, or a GitHub issues collection for your open source project. You want teammates (or the public) to have their own local copy they can search and query offline, without needing access to the original source.</p>
@@ -260,22 +228,14 @@ curl -X POST http://localhost:3000/api/export \
     </div>
   </div>
 
-  <div class="callout callout-tip">
-    <div class="callout-icon">📦</div>
-    <div class="callout-body">
-      <strong>The database is portable</strong>
-      <p>The <code>~/.frozenink/collections/my-mantis-archive/db/</code> directory contains the SQLite database files (<code>data.db</code>, WAL, and shared-memory files). Back up the entire <code>db/</code> folder to preserve the complete dataset. The main <code>data.db</code> file can be opened with any SQLite browser for inspection.</p>
-    </div>
-  </div>
-
   <div class="docs-pagination">
     <a href="/docs/what-is-frozen-ink" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">What is Frozen Ink?</span>
     </a>
-    <a href="/docs/collections" class="docs-pagination-card next">
+    <a href="/docs" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Managing Collections</span>
+      <span class="docs-pagination-title">Getting Started</span>
     </a>
   </div>
   `,

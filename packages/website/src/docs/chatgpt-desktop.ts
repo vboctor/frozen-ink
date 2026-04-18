@@ -236,7 +236,7 @@ fink publish my-vault \
     <div class="callout-icon">💡</div>
     <div class="callout-body">
       <strong>Keep content fresh</strong>
-      <p>Run <code>fink daemon start</code> to auto-sync collections in the background, then re-publish on a schedule — or whenever you need the latest data in ChatGPT.</p>
+      <p>Run <code>fink sync "*"</code> to pull the latest data, then re-publish whenever you need the latest content in ChatGPT.</p>
     </div>
   </div>
 
@@ -262,9 +262,9 @@ fink publish my-vault --password your-secret-password --name my-vault-pub</code>
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Codex CLI Integration</span>
     </a>
-    <a href="/docs/integrations/anythingllm" class="docs-pagination-card next">
+    <a href="/docs/reference/cli" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">AnythingLLM Integration</span>
+      <span class="docs-pagination-title">CLI Reference</span>
     </a>
   </div>
   `,

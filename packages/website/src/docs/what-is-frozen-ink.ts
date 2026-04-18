@@ -31,7 +31,7 @@ export const whatIsFrozenInkPage = renderDocsPage({
   <p class="page-lead">Frozen Ink is a local-first knowledge layer for technical work. It crawls data from the services you already use, stores it in a unified local index, and makes everything queryable by humans and AI assistants.</p>
 
   <h2 id="the-problem">The problem</h2>
-  <p>Technical knowledge is scattered across services: GitHub has your issues and pull requests, Obsidian has your notes, Git repositories contain your commit history, and project management tools have your bug tracker. This fragmentation creates five concrete problems:</p>
+  <p>Knowledge and context are scattered across services: GitHub has your issues and pull requests, Obsidian has your notes, Git repositories contain your commit history, and project management tools have your bug tracker. This fragmentation creates five concrete problems:</p>
   <ul>
     <li><strong>No offline access.</strong> If you're on a plane, you can't read your own issues. Your knowledge is only available when the service is.</li>
     <li><strong>Inconsistent search.</strong> Every tool has its own search, so you can never find what you're looking for in one place. From scattered sources to a single query should take seconds, not minutes of tab-switching.</li>
@@ -140,10 +140,7 @@ export const whatIsFrozenInkPage = renderDocsPage({
   </div>
 
   <div class="docs-pagination">
-    <a href="/docs" class="docs-pagination-card">
-      <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">Getting Started</span>
-    </a>
+    <span></span>
     <a href="/docs/key-scenarios" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">Key Scenarios</span>

@@ -81,8 +81,7 @@ export const connectorObsidianPage = renderDocsPage({
   <pre><code><span class="cmt"># Sync after making changes in Obsidian</span>
 fink sync my-vault
 
-<span class="cmt"># Keep in sync automatically</span>
-fink daemon start</code></pre>
+<span class="cmt"># Keep in sync automatically</span></code></pre>
 
   <p>The Obsidian connector reads files directly from disk — no Obsidian app needs to be running. Sync is fast because only files with a newer modification timestamp are re-processed.</p>
 
@@ -99,10 +98,10 @@ fink daemon start</code></pre>
     <li><strong>Publish as a knowledge base.</strong> Turn your vault into a shareable, browsable site with <code>fink publish my-vault --password secret</code>. Teammates can browse it in any browser, search across all your notes, or <a href="/docs/clone-pull">clone it</a> to their own machine for offline access. See <a href="/docs/publishing">Publishing</a> for the full guide.</li>
     <li><strong>Give cloud AI access.</strong> Once published, cloud agents like Claude.ai can query your vault's MCP endpoint — giving them context from your second brain without uploading files manually. See <a href="/docs/integrations/cloud-mcp">Cloud MCP Access</a>.</li>
     <li><strong>Multiple vaults.</strong> Add a separate collection for each vault. They're indexed independently and can be published or shared separately.</li>
-    <li><strong>Excluded files.</strong> Files in the <code>.obsidian/</code> directory are ignored. All other <code>.md</code> files are included.</li>
+    <li><strong>Included files.</strong> Only <code>.md</code> (markdown) files and files referenced by them (images, attachments) are synced. Other file types in the vault are not indexed.</li>
+    <li><strong>Excluded files.</strong> Files in the <code>.obsidian/</code> directory are ignored automatically.</li>
     <li><strong>Large vaults.</strong> Vaults with thousands of notes sync quickly — typically in seconds for incremental runs.</li>
     <li><strong>Vault path changes.</strong> If you move your vault, update the collection with <code>fink update my-vault --path /new/path</code>.</li>
-    <li><strong>Sharing privately.</strong> Use <a href="/docs/integrations/local-mcp">local MCP</a> to give Claude access to your vault without any data leaving your machine. Your secrets don't leave your device unless you explicitly publish.</li>
   </ul>
 
   <div class="docs-pagination">

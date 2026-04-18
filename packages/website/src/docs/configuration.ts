@@ -47,7 +47,7 @@ export const configurationPage = renderDocsPage({
   <p>Created by <code>fink init</code>. Controls app-wide behavior:</p>
   <pre><code><span class="cmt"># ~/.frozenink/frozenink.yml</span>
 sync:
-  interval: 30        <span class="cmt"># minutes between daemon sync cycles</span>
+  interval: 30        <span class="cmt"># minutes between sync cycles</span>
   concurrency: 3      <span class="cmt"># max concurrent sync operations</span>
   retries: 2          <span class="cmt"># retry count for failed syncs</span>
 log:
@@ -185,9 +185,6 @@ credentials: github-work</code></pre>
   <pre><code>~/.frozenink/
   frozenink.yml                     <span class="cmt"># app configuration</span>
   credentials.yml                   <span class="cmt"># named credential sets</span>
-  workspaces.json                   <span class="cmt"># desktop app workspace registry</span>
-  daemon/                           <span class="cmt"># daemon PID and logs</span>
-  sites/                            <span class="cmt"># metadata for published deployments</span>
   collections/
     &lt;name&gt;/
       &lt;name&gt;.yml                    <span class="cmt"># collection config</span>
@@ -199,14 +196,6 @@ credentials: github-work</code></pre>
         images/photo.png</code></pre>
 
   <p>The <code>content/</code> and <code>attachments/</code> directories are regenerable from the database — they can be safely deleted and rebuilt with <code>fink generate</code>. The database (<code>db/data.db</code>) is the source of truth for synced entity data.</p>
-
-  <div class="callout callout-info">
-    <div class="callout-icon">ℹ️</div>
-    <div class="callout-body">
-      <strong>Desktop workspaces</strong>
-      <p>The macOS desktop app can create multiple workspaces at arbitrary paths. Each workspace is a complete Frozen Ink home directory. The CLI defaults to <code>~/.frozenink/</code>, but you can point it at any workspace by setting the <code>FROZENINK_HOME</code> environment variable.</p>
-    </div>
-  </div>
 
   <div class="docs-pagination">
     <a href="/docs/reference/cli" class="docs-pagination-card">

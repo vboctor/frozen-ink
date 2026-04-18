@@ -289,13 +289,13 @@ fink publish github-issues architecture-notes runbooks \
   <p>For most personal workflows, <a href="/docs/integrations/local-mcp">local MCP</a> is simpler and keeps all data on your machine. Cloud MCP shines for team collaboration and cross-device access.</p>
 
   <div class="docs-pagination">
-    <a href="/docs/publishing" class="docs-pagination-card">
+    <a href="/docs/integrations/local-mcp" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">Publishing to Cloudflare</span>
+      <span class="docs-pagination-title">Local MCP Setup</span>
     </a>
-    <a href="/docs/desktop-app" class="docs-pagination-card next">
+    <a href="/docs/integrations/claude-code" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Desktop App</span>
+      <span class="docs-pagination-title">Claude Code Integration</span>
     </a>
   </div>
   `,
