@@ -27,7 +27,7 @@
 
   <!-- Theme color (used by Slack, Discord, Telegram, and some browsers) -->
   <meta name="theme-color" content="#0969da" />
-  <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABjSURBVFhH7c0xDQAgDEXRHwcuwP5dMA0TYKAlYeAO9CX/TndnZmZmZmZmZmZm/6Kq1t0fvN3dT7MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzOzv/E6d2dmZmZmZn/WcQC9fg7gL4VGPAAAAABJRU5ErkJggg==" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg viewBox='0 0 28 28' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='3' y='16' width='22' height='5' rx='1.5' fill='%23e36209'/%3E%3Crect x='4' y='10' width='20' height='5' rx='1.5' fill='%231a9e8f'/%3E%3Crect x='3' y='4' width='22' height='5' rx='1.5' fill='%23cf222e'/%3E%3C/svg%3E" />
   <style>
     /* ===== Reset & Base ===== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -127,6 +127,29 @@
     }
 
     .nav-cta:hover { opacity: 0.85; color: #fff !important; }
+
+    .nav-social {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 4px;
+    }
+
+    .nav-icon-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      color: var(--text-muted);
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .nav-icon-link:hover {
+      color: var(--text);
+      background: var(--border);
+    }
 
 
     /* ===== Hero ===== */
@@ -294,7 +317,7 @@
       .carousel-slide { padding: 28px 24px 12px; }
     }
     /* ===== Section shared ===== */
-    section { padding: 80px 24px; }
+    section { padding: 60px 24px; }
 
     .section-inner {
       max-width: var(--max-width);
@@ -337,59 +360,7 @@
       margin: 0 auto;
     }
 
-    /* ===== Why section ===== */
-    .why { background: #fff; }
-
-    .why-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-    }
-
-    .why-card {
-      padding: 32px 28px;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--bg);
-      transition: box-shadow 0.2s, border-color 0.2s;
-    }
-
-    .why-card:hover {
-      border-color: var(--accent);
-      box-shadow: 0 8px 30px rgba(9, 105, 218, 0.08);
-    }
-
-    .why-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 18px;
-      font-size: 22px;
-    }
-
-    .why-icon.blue { background: #ddf4ff; }
-    .why-icon.purple { background: #ede9fe; }
-    .why-icon.green { background: #dafbe1; }
-    .why-icon.orange { background: #fff1e5; }
-    .why-icon.red { background: #ffebe9; }
-    .why-icon.teal { background: #ccfbf1; }
-
-    .why-card h3 {
-      font-size: 17px;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-
-    .why-card p {
-      font-size: 14px;
-      color: var(--text-secondary);
-      line-height: 1.6;
-    }
-
-    /* ===== How It Works ===== */
+    /* ===== Getting Started ===== */
     .how { background: var(--bg); }
 
     .how-steps {
@@ -434,14 +405,14 @@
     .how-step code {
       display: block;
       margin-top: 14px;
-      background: #fff;
+      background: #f6f8fa;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 12px 16px;
       font-family: var(--font-mono);
-      font-size: 13px;
+      font-size: 12.5px;
       color: var(--text);
-      white-space: nowrap;
+      white-space: pre;
       overflow-x: auto;
     }
 
@@ -496,44 +467,10 @@
       color: var(--accent);
     }
 
-    /* ===== CTA ===== */
-    .cta {
-      background: var(--bg);
-      text-align: center;
-      padding: 100px 24px;
-    }
-
-    .cta-inner {
-      max-width: 640px;
-      margin: 0 auto;
-    }
-
-    .cta h2 {
-      font-size: clamp(28px, 4vw, 40px);
-      font-weight: 800;
-      line-height: 1.15;
-      letter-spacing: -0.02em;
-      margin-bottom: 16px;
-    }
-
-    .cta p {
-      font-size: 17px;
-      color: var(--text-secondary);
-      margin-bottom: 32px;
-      line-height: 1.6;
-    }
-
-    .cta-actions {
-      display: flex;
-      gap: 14px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
     /* ===== Footer ===== */
     footer {
       border-top: 1px solid var(--border);
-      padding: 32px 24px;
+      padding: 28px 24px;
       text-align: center;
       font-size: 13px;
       color: var(--text-muted);
@@ -541,15 +478,33 @@
 
     footer a { color: var(--text-secondary); }
 
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .footer-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+      vertical-align: middle;
+      border: 1.5px solid var(--border);
+    }
+
+    .footer-heart {
+      color: #e53935;
+    }
+
     /* ===== Responsive ===== */
     @media (max-width: 900px) {
-      .why-grid { grid-template-columns: repeat(2, 1fr); }
       .how-steps { grid-template-columns: 1fr; max-width: 480px; }
       .connectors-grid { grid-template-columns: repeat(2, 1fr); }
     }
 
     @media (max-width: 640px) {
-      .why-grid { grid-template-columns: 1fr; }
       .connectors-grid { grid-template-columns: 1fr; }
 
       .nav-links { display: none; }
@@ -609,73 +564,6 @@
       }
     }
 
-    /* ===== Docs callout section ===== */
-    .docs-callout {
-      background: #fff;
-      border-top: 1px solid var(--border);
-    }
-
-    .docs-callout-inner {
-      max-width: var(--max-width);
-      margin: 0 auto;
-      padding: 64px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 40px;
-    }
-
-    .docs-callout-text h2 {
-      font-size: clamp(22px, 3vw, 30px);
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      margin-bottom: 10px;
-    }
-
-    .docs-callout-text p {
-      font-size: 16px;
-      color: var(--text-secondary);
-      max-width: 480px;
-      line-height: 1.6;
-    }
-
-    .docs-callout-links {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      flex-shrink: 0;
-    }
-
-    .docs-callout-link {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 32px;
-      padding: 14px 20px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: var(--bg);
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--text);
-      min-width: 260px;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-
-    .docs-callout-link:hover {
-      border-color: var(--accent);
-      box-shadow: 0 4px 16px rgba(9, 105, 218, 0.07);
-      color: var(--accent);
-    }
-
-    .docs-callout-link svg { opacity: 0.5; flex-shrink: 0; }
-    .docs-callout-link:hover svg { opacity: 1; }
-
-    @media (max-width: 860px) {
-      .docs-callout-inner { flex-direction: column; align-items: flex-start; }
-      .docs-callout-links { width: 100%; }
-      .docs-callout-link { min-width: unset; }
-    }
   </style>
 </head>
 <body>
@@ -692,11 +580,19 @@
       Frozen Ink
     </a>
     <ul class="nav-links">
-      <li><a href="#why">Why</a></li>
-      <li><a href="#how">How it works</a></li>
+      <li><a href="#why">What & Why</a></li>
+      <li><a href="#how">Getting Started</a></li>
       <li><a href="#connectors">Connectors</a></li>
       <li><a href="/docs">Docs</a></li>
       <li><a href="#download" class="nav-cta">Download</a></li>
+      <li class="nav-social">
+        <a href="https://github.com/vboctor/frozenink" target="_blank" rel="noopener" aria-label="GitHub" class="nav-icon-link">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.341-3.369-1.341-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836a9.59 9.59 0 012.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+        </a>
+        <a href="https://x.com/vboctor" target="_blank" rel="noopener" aria-label="X (Twitter)" class="nav-icon-link">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.737-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        </a>
+      </li>
     </ul>
     <button class="nav-mobile-toggle" id="nav-toggle" aria-label="Toggle navigation">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -709,7 +605,7 @@
 </nav>
 
 <!-- Hero -->
-<section class="hero">
+<section class="hero" id="why">
   <h1>Your second brain,<br/><span class="gradient-text">now with full context.</span></h1>
   <p>Built for humans and AI.</p>
   <!-- Quotes carousel -->
@@ -802,77 +698,33 @@
   </div>
 </section>
 
-<!-- Why -->
-<section class="why" id="why">
-  <div class="section-inner">
-    <div class="section-header center">
-      <div class="section-label">Why Frozen Ink</div>
-      <h2 class="section-title">Five key capabilities for modern knowledge workflows.</h2>
-      <p class="section-subtitle">From offline access to AI-ready context, Frozen Ink is built to move knowledge across boundaries without losing fidelity.</p>
-    </div>
-    <div class="why-grid">
-      <div class="why-card">
-        <div class="why-icon blue">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0969da" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>
-        </div>
-        <h3>Online to Offline</h3>
-        <p>Keep offline access to online systems like GitHub and MantisHub by syncing them into a local knowledge base.</p>
-      </div>
-      <div class="why-card">
-        <div class="why-icon purple">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 12 15 16 10"/></svg>
-        </div>
-        <h3>Offline to Online</h3>
-        <p>Make local knowledge, including Obsidian notes, available to cloud agents through MCP-powered deployments.</p>
-      </div>
-      <div class="why-card">
-        <div class="why-icon green">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1a7f37" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        </div>
-        <h3>Optimized for AI</h3>
-        <p>Frozen Ink is built for LLM workflows with markdown-native output, free-text search, and MCP access out of the box.</p>
-      </div>
-      <div class="why-card">
-        <div class="why-icon orange">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d4730f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 7l-5 5-5-5"/><path d="M17 17l-5-5-5 5"/></svg>
-        </div>
-        <h3>Break the Silos</h3>
-        <p>Efficiently gather knowledge across many services into one unified workspace you can browse, search, and query.</p>
-      </div>
-      <div class="why-card">
-        <div class="why-icon red">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#cf222e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
-        </div>
-        <h3>Archival</h3>
-        <p>Create durable snapshots of your knowledge for long-term archival, compliance, and historical reference.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- How it works -->
+<!-- Getting Started -->
 <section class="how" id="how">
   <div class="section-inner">
     <div class="section-header center">
-      <div class="section-label">How it works</div>
+      <div class="section-label">Getting Started</div>
       <h2 class="section-title">Three steps to unified knowledge</h2>
-      <p class="section-subtitle">Get up and running in minutes. No configuration files, no cloud accounts required.</p>
     </div>
     <div class="how-steps">
       <div class="how-step">
         <h3>Add your sources</h3>
-        <p>Point Frozen Ink at your GitHub repos, Obsidian vaults, Git repositories, or MantisHub instances.</p>
-        <code>fink add obsidian --name my-vault --path ~/Vault</code>
+        <p>Point Frozen Ink at your GitHub repos, Git repositories, Obsidian vaults, or MantisHub instances.</p>
+        <code>fink add github \
+  --name my-repo \
+  --owner acme \
+  --repo backend</code>
       </div>
       <div class="how-step">
-        <h3>Sync &amp; search</h3>
+        <h3>Sync &amp; serve</h3>
         <p>Frozen Ink crawls your sources, indexes everything with full-text search, and renders clean markdown.</p>
-        <code>fink sync "*" && fink serve</code>
+        <code>fink sync my-repo \
+  && fink serve</code>
       </div>
       <div class="how-step">
         <h3>Use everywhere</h3>
         <p>Browse in the web UI, query from AI assistants via MCP, or publish to Cloudflare for team access.</p>
-        <code>fink publish my-vault --name team-docs</code>
+        <code>fink publish my-repo \
+  --name team-docs</code>
       </div>
     </div>
   </div>
@@ -923,59 +775,13 @@
   </div>
 </section>
 
-<!-- Download CTA -->
-<section class="cta" id="download">
-  <div class="cta-inner">
-    <h2>Start building your<br/>knowledge layer today</h2>
-    <p>Free to use. Download the desktop app for macOS to get started in minutes.</p>
-    <div class="cta-actions">
-      <a href="#download" class="btn btn-primary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download for macOS
-      </a>
-      <a href="https://demo.frozenink.dev" class="btn btn-secondary" target="_blank">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
-        View live demo
-      </a>
-    </div>
-  </div>
-</section>
-
-<!-- Docs callout -->
-<section class="docs-callout">
-  <div class="docs-callout-inner">
-    <div class="docs-callout-text">
-      <h2>Everything you need to get started</h2>
-      <p>Step-by-step guides for installation, managing collections, connecting MCP clients, and publishing your knowledge to the web.</p>
-      <a href="/docs" class="btn btn-primary" style="margin-top:24px; display:inline-flex;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
-        Browse the documentation
-      </a>
-    </div>
-    <div class="docs-callout-links">
-      <a href="/docs" class="docs-callout-link">
-        <span>Getting Started</span>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </a>
-      <a href="/docs/claude-code" class="docs-callout-link">
-        <span>Claude Code Integration</span>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </a>
-      <a href="/docs/local-mcp" class="docs-callout-link">
-        <span>Local MCP Setup</span>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </a>
-      <a href="/docs/publishing" class="docs-callout-link">
-        <span>Publishing to Cloudflare</span>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </a>
-    </div>
-  </div>
-</section>
-
 <!-- Footer -->
 <footer>
-  <p>Frozen Ink &mdash; local-first knowledge layer for technical work.</p>
+  <div class="footer-inner">
+    Built with <span class="footer-heart">♥</span> by
+    <img src="/vboctor.jpg" alt="Victor Boctor" class="footer-avatar"/>
+    Victor Boctor
+  </div>
 </footer>
 
 <script>
@@ -1007,8 +813,13 @@ document.addEventListener('DOMContentLoaded', function() {
   var total = slides.length;
   var current = 0;
   var timerId = null;
+  var transitioning = false;
 
-  // Build dots
+  // Append a clone of the first slide so last→first wraps naturally
+  var clone = slides[0].cloneNode(true);
+  track.appendChild(clone);
+
+  // Build dots (only for real slides)
   var dots = [];
   for (var i = 0; i < total; i++) {
     var dot = document.createElement('button');
@@ -1019,11 +830,54 @@ document.addEventListener('DOMContentLoaded', function() {
     dots.push(dot);
   }
 
+  function setDot(index) {
+    dots.forEach(function(d) { d.classList.remove('active'); });
+    dots[index].classList.add('active');
+  }
+
+  function moveTo(index, animate) {
+    if (animate === false) {
+      track.style.transition = 'none';
+    } else {
+      track.style.transition = '';
+    }
+    track.style.transform = 'translateX(-' + (index * 100) + '%)';
+  }
+
   function goTo(index) {
-    dots[current].classList.remove('active');
-    current = ((index % total) + total) % total;
-    track.style.transform = 'translateX(-' + (current * 100) + '%)';
-    dots[current].classList.add('active');
+    if (transitioning) return;
+    var target = ((index % (total + 1)) + (total + 1)) % (total + 1);
+
+    // Going backwards past 0: jump to real last slide instantly, then animate to total-1
+    if (index < 0) {
+      transitioning = true;
+      moveTo(total, false);
+      // Force reflow so the instant jump takes effect before re-enabling transition
+      track.offsetHeight;
+      target = total - 1;
+      current = target;
+      setDot(current);
+      moveTo(target, true);
+      track.addEventListener('transitionend', function done() {
+        track.removeEventListener('transitionend', done);
+        transitioning = false;
+      });
+      return;
+    }
+
+    current = target < total ? target : 0;
+    setDot(current);
+    moveTo(target, true);
+
+    // After animating to the clone (position `total`), snap silently to position 0
+    if (target === total) {
+      transitioning = true;
+      track.addEventListener('transitionend', function done() {
+        track.removeEventListener('transitionend', done);
+        moveTo(0, false);
+        transitioning = false;
+      });
+    }
   }
 
   function scheduleNext() {
