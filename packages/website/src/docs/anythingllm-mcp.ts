@@ -4,7 +4,9 @@ export const anythingllmMcpPage = renderDocsPage({
   title: "AnythingLLM MCP Setup",
   description:
     "Connect Frozen Ink collections to AnythingLLM via the Model Context Protocol so local models can search and read your knowledge base.",
-  activePath: "/docs/anythingllm-mcp",
+  activePath: "/docs/integrations/anythingllm",
+  canonicalPath: "/docs/integrations/anythingllm",
+  section: "AI Integrations",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "how-it-works", title: "How it works" },
@@ -19,7 +21,9 @@ export const anythingllmMcpPage = renderDocsPage({
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    <span>AnythingLLM MCP Setup</span>
+    <span>AI Integrations</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>AnythingLLM</span>
   </div>
 
   <h1 class="page-title">AnythingLLM MCP Setup</h1>
@@ -186,7 +190,7 @@ fink --version</code></pre>
   <pre><code>fink sync my-vault</code></pre>
 
   <div class="docs-pagination">
-    <a href="/docs/chatgpt-desktop" class="docs-pagination-card">
+    <a href="/docs/integrations/chatgpt-desktop" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">ChatGPT Desktop Integration</span>
     </a>

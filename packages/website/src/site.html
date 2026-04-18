@@ -70,20 +70,22 @@
       left: 0;
       right: 0;
       z-index: 100;
-      background: rgba(250, 251, 252, 0.85);
+      background: rgba(250, 251, 252, 0.92);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
+      height: 60px;
     }
 
     .nav-inner {
       max-width: var(--max-width);
       margin: 0 auto;
       padding: 0 24px;
-      height: 60px;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 24px;
     }
 
     .nav-brand {
@@ -93,6 +95,8 @@
       font-weight: 700;
       font-size: 18px;
       color: var(--text);
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .nav-brand svg {
@@ -103,7 +107,7 @@
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 32px;
+      gap: 28px;
       list-style: none;
     }
 
@@ -131,24 +135,19 @@
     .nav-social {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 12px;
       margin-left: 4px;
     }
 
     .nav-icon-link {
       display: flex;
       align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
       color: var(--text-muted);
-      transition: color 0.15s, background 0.15s;
+      transition: color 0.15s;
     }
 
     .nav-icon-link:hover {
       color: var(--text);
-      background: var(--border);
     }
 
 
@@ -583,7 +582,7 @@
       <li><a href="#why">What & Why</a></li>
       <li><a href="#how">Getting Started</a></li>
       <li><a href="#connectors">Connectors</a></li>
-      <li><a href="/docs">Docs</a></li>
+      <li><a href="/docs/what-is-frozen-ink">Docs</a></li>
       <li><a href="#download" class="nav-cta">Download</a></li>
       <li class="nav-social">
         <a href="https://github.com/vboctor/frozenink" target="_blank" rel="noopener" aria-label="GitHub" class="nav-icon-link">
@@ -691,7 +690,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
       View live demo
     </a>
-    <a href="/docs" class="btn btn-secondary">
+    <a href="/docs/what-is-frozen-ink" class="btn btn-secondary">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
       Read the docs
     </a>

@@ -5,6 +5,8 @@ export const publishingPage = renderDocsPage({
   description:
     "Deploy Frozen Ink collections as a password-protected website on Cloudflare Workers with remote MCP access.",
   activePath: "/docs/publishing",
+  canonicalPath: "/docs/publishing",
+  section: "Features",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "prerequisites", title: "Prerequisites" },
@@ -13,14 +15,15 @@ export const publishingPage = renderDocsPage({
     { id: "updating", title: "Updating content" },
     { id: "multiple-deployments", title: "Multiple deployments" },
     { id: "unpublishing", title: "Unpublishing" },
-    { id: "what-runs-on-cloudflare", title: "What runs on Cloudflare" },
     { id: "desktop-publish", title: "Publishing from the desktop app" },
   ],
   content: `
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    <span>Publishing to Cloudflare</span>
+    <span>Features</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>Publishing</span>
   </div>
 
   <h1 class="page-title">Publishing to Cloudflare</h1>
@@ -90,7 +93,7 @@ fink publish my-vault \
   <span class="flag">--password</span> your-secret-password</code></pre>
 
   <p>The collection name becomes the Cloudflare Worker name and part of your deployment URL:</p>
-  <pre><code>https://my-vault.your-account.workers.dev</code></pre>
+  <pre><code>https://my-vault.my-account.workers.dev</code></pre>
 
   <p>The publish command:</p>
   <ol>
@@ -100,14 +103,6 @@ fink publish my-vault \
     <li>Deploys the Frozen Ink Worker to Cloudflare's edge</li>
     <li>Saves publish state in the collection's config file for future updates</li>
   </ol>
-
-  <div class="callout callout-tip">
-    <div class="callout-icon">⏱️</div>
-    <div class="callout-body">
-      <strong>First publish takes longer</strong>
-      <p>The first publish creates all the Cloudflare resources and uploads all data. This can take 1–5 minutes depending on collection size. Subsequent publishes are incremental and much faster.</p>
-    </div>
-  </div>
 
   <h2 id="password-protection">Password protection</h2>
   <p>Every published deployment is protected by a password you set. Visitors see a login form before any content is visible. The password is stored as a hashed secret in your Cloudflare Worker's environment.</p>
@@ -153,17 +148,6 @@ fink publish public-docs <span class="flag">--password</span> public789</code></
   <pre><code>fink unpublish my-vault</code></pre>
   <p>This deletes the Cloudflare Worker, D1 database, and R2 bucket for that collection's deployment. Your local data in <code>~/.frozenink/</code> is not affected.</p>
 
-  <h2 id="what-runs-on-cloudflare">What runs on Cloudflare</h2>
-  <p>The published deployment is a self-contained Cloudflare Worker that:</p>
-  <ul>
-    <li>Serves the same React web UI you use locally</li>
-    <li>Provides the same browse API (<code>/api/collections</code>, <code>/api/search</code>, etc.)</li>
-    <li>Exposes an MCP endpoint for cloud AI access (see <a href="/docs/cloud-mcp">Cloud MCP Access</a>)</li>
-    <li>Enforces password authentication on every request</li>
-    <li>Runs at Cloudflare's edge — fast from anywhere in the world</li>
-  </ul>
-  <p>Published deployments are <strong>read-only</strong> — they serve your synced data but don't pull new data from source systems. To update content, sync locally and re-publish.</p>
-
   <h2 id="desktop-publish">Publishing from the desktop app</h2>
   <p>The macOS desktop app provides a Publish panel that wraps all of the above into a GUI:</p>
   <ol>
@@ -176,11 +160,11 @@ fink publish public-docs <span class="flag">--password</span> public789</code></
   <p>The desktop app requires Wrangler to be installed and authenticated, just like the CLI.</p>
 
   <div class="docs-pagination">
-    <a href="/docs/local-mcp" class="docs-pagination-card">
+    <a href="/docs/integrations/local-mcp" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Local MCP Setup</span>
     </a>
-    <a href="/docs/cloud-mcp" class="docs-pagination-card next">
+    <a href="/docs/integrations/cloud-mcp" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">Cloud MCP Access</span>
     </a>

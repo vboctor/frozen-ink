@@ -5,6 +5,8 @@ export const connectorGithubPage = renderDocsPage({
   description:
     "Sync GitHub issues and pull requests into Frozen Ink for offline access, full-text search, and AI queries.",
   activePath: "/docs/connectors/github",
+  canonicalPath: "/docs/connectors/github",
+  section: "Connectors",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "prerequisites", title: "Prerequisites" },
@@ -59,20 +61,27 @@ export const connectorGithubPage = renderDocsPage({
 
   <h2 id="add">Adding a GitHub collection</h2>
   <pre><code>fink add github \
-  <span class="flag">--name</span>  my-issues \
+  <span class="flag">--name</span> my-issues \
   <span class="flag">--token</span> ghp_yourPersonalAccessToken \
   <span class="flag">--owner</span> your-org-or-username \
-  <span class="flag">--repo</span>  your-repository-name</code></pre>
+  <span class="flag">--repo</span> your-repository-name</code></pre>
 
   <table>
     <thead><tr><th>Flag</th><th>Required</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>--name</code></td><td>Yes</td><td>Your name for this collection, used in all subsequent commands</td></tr>
-      <tr><td><code>--token</code></td><td>Yes</td><td>GitHub personal access token</td></tr>
+      <tr><td><code>--token</code></td><td>Yes*</td><td>GitHub personal access token</td></tr>
       <tr><td><code>--owner</code></td><td>Yes</td><td>Repository owner — an organisation name or GitHub username</td></tr>
       <tr><td><code>--repo</code></td><td>Yes</td><td>Repository name (without the owner prefix)</td></tr>
+      <tr><td><code>--credentials</code></td><td>No</td><td>Use a named credential set from <code>credentials.yml</code> instead of <code>--token</code></td></tr>
+      <tr><td><code>--max</code></td><td>No</td><td>Maximum entities per type (applies to both issues and PRs independently)</td></tr>
+      <tr><td><code>--max-issues</code></td><td>No</td><td>Maximum issues to sync</td></tr>
+      <tr><td><code>--max-prs</code></td><td>No</td><td>Maximum pull requests to sync</td></tr>
+      <tr><td><code>--open-only</code></td><td>No</td><td>Only sync open issues and PRs; closed items are deleted from the local index</td></tr>
     </tbody>
   </table>
+
+  <p>* Either <code>--token</code> or <code>--credentials</code> is required. See <a href="/docs/reference/configuration#credentials">Named credentials</a> for details on credential sets.</p>
 
   <h2 id="what-syncs">What gets synced</h2>
   <p>Each issue and pull request becomes an <em>entity</em> in Frozen Ink. The rendered markdown for each entity includes:</p>
@@ -112,6 +121,7 @@ fink daemon start</code></pre>
   <h2 id="tips">Tips &amp; notes</h2>
   <ul>
     <li><strong>One collection per repo.</strong> The GitHub connector connects to a single repository. To index multiple repos, add a separate collection for each.</li>
+    <li><strong>From scattered sources to a single index.</strong> Combine GitHub issues with your Obsidian notes and Git commit history into one searchable index. Once synced, <code>fink search "payment flow"</code> finds matching issues, notes, and commits in a single query. See <a href="/docs/key-scenarios#multi-source-search">Multi-source search</a>.</li>
     <li><strong>Private repos are supported.</strong> As long as your token has access, private repositories work identically to public ones.</li>
     <li><strong>Deleted issues.</strong> GitHub's API does not surface deleted issues. If an issue is deleted on GitHub, it will remain in your local index until you remove and re-add the collection.</li>
     <li><strong>Token rotation.</strong> If you need to update the token, use <code>fink update my-issues --token ghp_newToken</code>.</li>

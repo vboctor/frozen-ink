@@ -10,6 +10,10 @@ export interface DocsPageOptions {
   activePath: string;
   content: string;
   tocLinks?: TocLink[];
+  canonicalPath?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  section?: string;
 }
 
 const NAV_SECTIONS = [
@@ -21,7 +25,7 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    title: "Setup",
+    title: "Getting Started",
     items: [
       { label: "Getting Started", href: "/docs" },
       { label: "Desktop App", href: "/docs/desktop-app" },
@@ -37,28 +41,31 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    title: "Collections",
+    title: "Features",
     items: [
-      { label: "Managing Collections", href: "/docs/managing-collections" },
+      { label: "Managing Collections", href: "/docs/collections" },
+      { label: "Clone & Pull", href: "/docs/clone-pull" },
+      { label: "Publishing", href: "/docs/publishing" },
     ],
   },
   {
-    title: "Integrations",
+    title: "AI Integrations",
     items: [
-      { label: "Claude Code", href: "/docs/claude-code" },
-      { label: "Claude Cowork", href: "/docs/claude-cowork" },
-      { label: "Claude Desktop", href: "/docs/claude-desktop" },
-      { label: "Codex CLI", href: "/docs/codex-cli" },
-      { label: "ChatGPT Desktop", href: "/docs/chatgpt-desktop" },
-      { label: "AnythingLLM", href: "/docs/anythingllm-mcp" },
-      { label: "Publishing to Cloudflare", href: "/docs/publishing" },
+      { label: "Local MCP Setup", href: "/docs/integrations/local-mcp" },
+      { label: "Cloud MCP Access", href: "/docs/integrations/cloud-mcp" },
+      { label: "Claude Code", href: "/docs/integrations/claude-code" },
+      { label: "Claude Cowork", href: "/docs/integrations/claude-cowork" },
+      { label: "Claude Desktop", href: "/docs/integrations/claude-desktop" },
+      { label: "Codex CLI", href: "/docs/integrations/codex-cli" },
+      { label: "ChatGPT Desktop", href: "/docs/integrations/chatgpt-desktop" },
+      { label: "AnythingLLM", href: "/docs/integrations/anythingllm" },
     ],
   },
   {
-    title: "MCP",
+    title: "Reference",
     items: [
-      { label: "Local MCP Setup", href: "/docs/local-mcp" },
-      { label: "Cloud MCP Access", href: "/docs/cloud-mcp" },
+      { label: "CLI Reference", href: "/docs/reference/cli" },
+      { label: "Configuration", href: "/docs/reference/configuration" },
     ],
   },
 ];
@@ -92,10 +99,53 @@ function buildToc(links: TocLink[]): string {
   </div>`;
 }
 
+const SITE_URL = "https://frozenink.com";
+
 export function renderDocsPage(opts: DocsPageOptions): string {
-  const { title, description, activePath, content, tocLinks = [] } = opts;
+  const {
+    title,
+    description,
+    activePath,
+    content,
+    tocLinks = [],
+    canonicalPath,
+    ogTitle,
+    ogDescription,
+    section,
+  } = opts;
   const sidebarNav = buildSidebarNav(activePath);
   const toc = buildToc(tocLinks);
+  const canonical = canonicalPath || activePath;
+  const fullCanonical = `${SITE_URL}${canonical}`;
+  const effectiveOgTitle = ogTitle || `${title} — Frozen Ink Docs`;
+  const effectiveOgDescription = ogDescription || description;
+  const sectionName = section || "Documentation";
+
+  const seoMeta = `
+  <link rel="canonical" href="${fullCanonical}" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="${effectiveOgTitle}" />
+  <meta property="og:description" content="${effectiveOgDescription}" />
+  <meta property="og:url" content="${fullCanonical}" />
+  <meta property="og:image" content="${SITE_URL}/og.png" />
+  <meta property="og:site_name" content="Frozen Ink" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${effectiveOgTitle}" />
+  <meta name="twitter:description" content="${effectiveOgDescription}" />
+  <meta name="twitter:image" content="${SITE_URL}/og.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": "${title}",
+    "description": "${description}",
+    "url": "${fullCanonical}",
+    "image": "${SITE_URL}/og.png",
+    "author": { "@type": "Organization", "name": "Frozen Ink" },
+    "publisher": { "@type": "Organization", "name": "Frozen Ink" },
+    "articleSection": "${sectionName}"
+  }
+  </script>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -105,6 +155,7 @@ export function renderDocsPage(opts: DocsPageOptions): string {
   <title>${title} — Frozen Ink Docs</title>
   <meta name="description" content="${description}" />
   <meta name="theme-color" content="#0969da" />
+  ${seoMeta}
   <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABjSURBVFhH7c0xDQAgDEXRHwcuwP5dMA0TYKAlYeAO9CX/TndnZmZmZmZmZmZm/6Kq1t0fvN3dT7MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzOzv/E6d2dmZmZmZn/WcQC9fg7gL4VGPAAAAABJRU5ErkJggg==" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -203,6 +254,22 @@ export function renderDocsPage(opts: DocsPageOptions): string {
     }
 
     .nav-cta:hover { opacity: 0.85; color: #fff !important; }
+
+    .nav-social {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-left: 4px;
+    }
+
+    .nav-icon-link {
+      display: flex;
+      align-items: center;
+      color: var(--text-muted) !important;
+      transition: color 0.15s;
+    }
+
+    .nav-icon-link:hover { color: var(--text) !important; }
 
     /* ===== Mobile nav toggle ===== */
     .nav-mobile-toggle {
@@ -716,11 +783,19 @@ export function renderDocsPage(opts: DocsPageOptions): string {
       Frozen Ink
     </a>
     <ul class="nav-links">
-      <li><a href="/#why">Why</a></li>
-      <li><a href="/#how">How it works</a></li>
+      <li><a href="/#why">What &amp; Why</a></li>
+      <li><a href="/#how">Getting Started</a></li>
       <li><a href="/#connectors">Connectors</a></li>
-      <li><a href="/docs" class="active">Docs</a></li>
+      <li><a href="/docs/what-is-frozen-ink" class="active">Docs</a></li>
       <li><a href="/#download" class="nav-cta">Download</a></li>
+      <li class="nav-social">
+        <a href="https://github.com/vboctor/frozenink" target="_blank" rel="noopener" aria-label="GitHub" class="nav-icon-link">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.341-3.369-1.341-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836a9.59 9.59 0 012.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+        </a>
+        <a href="https://x.com/vboctor" target="_blank" rel="noopener" aria-label="X (Twitter)" class="nav-icon-link">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.737-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        </a>
+      </li>
     </ul>
     <button class="nav-mobile-toggle" id="nav-toggle" aria-label="Toggle navigation">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

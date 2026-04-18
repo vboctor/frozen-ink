@@ -4,7 +4,9 @@ export const claudeCodePage = renderDocsPage({
   title: "Claude Code Integration",
   description:
     "Connect Frozen Ink collections to Claude Code via local stdio MCP or a published cloud MCP endpoint, and browse your knowledge base from the built-in web UI.",
-  activePath: "/docs/claude-code",
+  activePath: "/docs/integrations/claude-code",
+  canonicalPath: "/docs/integrations/claude-code",
+  section: "AI Integrations",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "local-mcp", title: "Local MCP setup" },
@@ -24,7 +26,9 @@ export const claudeCodePage = renderDocsPage({
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    <span>Claude Code Integration</span>
+    <span>AI Integrations</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>Claude Code</span>
   </div>
 
   <h1 class="page-title">Claude Code Integration</h1>
@@ -198,9 +202,9 @@ fink serve</code></pre>
   <p>A collection description tells Claude what the collection contains and when to consult it. It's included in the MCP server instructions Claude receives, making it much more effective at routing questions to the right source.</p>
 
   <pre><code>fink add github \
-  <span class="flag">--name</span>        backend-issues \
-  <span class="flag">--repo</span>        acme/backend \
-  <span class="flag">--token</span>       ghp_... \
+  <span class="flag">--name</span> backend-issues \
+  <span class="flag">--repo</span> acme/backend \
+  <span class="flag">--token</span> ghp_... \
   <span class="flag">--description</span> "GitHub issues and PRs for the acme/backend repo. Search here for bug reports, feature requests, and code review history."</code></pre>
 
   <p>Update an existing collection's description at any time:</p>
@@ -249,11 +253,11 @@ fink --version</code></pre>
   <pre><code>fink sync my-vault</code></pre>
 
   <div class="docs-pagination">
-    <a href="/docs/managing-collections" class="docs-pagination-card">
+    <a href="/docs/collections" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Managing Collections</span>
     </a>
-    <a href="/docs/claude-cowork" class="docs-pagination-card next">
+    <a href="/docs/integrations/claude-cowork" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">Claude Cowork Integration</span>
     </a>

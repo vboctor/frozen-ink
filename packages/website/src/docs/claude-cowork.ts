@@ -4,7 +4,9 @@ export const claudeCoworkPage = renderDocsPage({
   title: "Claude Cowork Integration",
   description:
     "Give Claude Cowork access to your Frozen Ink knowledge base by sharing your local collections folder as a workspace folder.",
-  activePath: "/docs/claude-cowork",
+  activePath: "/docs/integrations/claude-cowork",
+  canonicalPath: "/docs/integrations/claude-cowork",
+  section: "AI Integrations",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "how-it-works", title: "How it works" },
@@ -17,7 +19,9 @@ export const claudeCoworkPage = renderDocsPage({
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    <span>Claude Cowork Integration</span>
+    <span>AI Integrations</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>Claude Cowork</span>
   </div>
 
   <h1 class="page-title">Claude Cowork Integration</h1>
@@ -124,8 +128,8 @@ fink daemon start</code></pre>
 
   <p>Set a meaningful description when you create a collection so Claude knows what to look for:</p>
   <pre><code>fink add obsidian \
-  <span class="flag">--name</span>        my-vault \
-  <span class="flag">--path</span>        ~/Documents/MyVault \
+  <span class="flag">--name</span> my-vault \
+  <span class="flag">--path</span> ~/Documents/MyVault \
   <span class="flag">--description</span> "Personal engineering notes: architecture decisions, meeting notes, and reference docs."</code></pre>
 
   <p>Or update an existing collection:</p>
@@ -133,11 +137,11 @@ fink daemon start</code></pre>
   <span class="flag">--description</span> "Personal engineering notes: architecture decisions, meeting notes, and reference docs."</code></pre>
 
   <div class="docs-pagination">
-    <a href="/docs/claude-code" class="docs-pagination-card">
+    <a href="/docs/integrations/claude-code" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Claude Code Integration</span>
     </a>
-    <a href="/docs/claude-desktop" class="docs-pagination-card next">
+    <a href="/docs/integrations/claude-desktop" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">Claude Desktop Integration</span>
     </a>

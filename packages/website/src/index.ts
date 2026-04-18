@@ -24,26 +24,32 @@ import { connectorGithubPage } from "./docs/connector-github";
 import { connectorObsidianPage } from "./docs/connector-obsidian";
 import { connectorGitPage } from "./docs/connector-git";
 import { connectorMantishubPage } from "./docs/connector-mantishub";
+import { clonePullPage } from "./docs/clone-pull";
+import { cliReferencePage } from "./docs/cli-reference";
+import { configurationPage } from "./docs/configuration";
 
 const DOC_PAGES: Record<string, string> = {
   "/docs": gettingStartedPage,
   "/docs/what-is-frozen-ink": whatIsFrozenInkPage,
   "/docs/key-scenarios": keyScenariosPage,
-  "/docs/managing-collections": managingCollectionsPage,
-  "/docs/claude-code": claudeCodePage,
-  "/docs/claude-cowork": claudeCoworkPage,
-  "/docs/claude-desktop": claudeDesktopPage,
-  "/docs/codex-cli": codexCliPage,
-  "/docs/chatgpt-desktop": chatgptDesktopPage,
-  "/docs/anythingllm-mcp": anythingllmMcpPage,
+  "/docs/collections": managingCollectionsPage,
+  "/docs/clone-pull": clonePullPage,
   "/docs/publishing": publishingPage,
   "/docs/desktop-app": desktopAppPage,
-  "/docs/local-mcp": localMcpPage,
-  "/docs/cloud-mcp": cloudMcpPage,
   "/docs/connectors/github": connectorGithubPage,
   "/docs/connectors/obsidian": connectorObsidianPage,
   "/docs/connectors/git": connectorGitPage,
   "/docs/connectors/mantishub": connectorMantishubPage,
+  "/docs/integrations/local-mcp": localMcpPage,
+  "/docs/integrations/cloud-mcp": cloudMcpPage,
+  "/docs/integrations/claude-code": claudeCodePage,
+  "/docs/integrations/claude-cowork": claudeCoworkPage,
+  "/docs/integrations/claude-desktop": claudeDesktopPage,
+  "/docs/integrations/codex-cli": codexCliPage,
+  "/docs/integrations/chatgpt-desktop": chatgptDesktopPage,
+  "/docs/integrations/anythingllm": anythingllmMcpPage,
+  "/docs/reference/cli": cliReferencePage,
+  "/docs/reference/configuration": configurationPage,
 };
 
 export default {
@@ -85,6 +91,27 @@ export default {
           "cache-control": "public, max-age=86400",
         },
       });
+    }
+
+    // Redirects from old URLs to new locations
+    const REDIRECTS: Record<string, string> = {
+      "/docs/managing-collections": "/docs/collections",
+      "/docs/claude-code": "/docs/integrations/claude-code",
+      "/docs/claude-cowork": "/docs/integrations/claude-cowork",
+      "/docs/claude-desktop": "/docs/integrations/claude-desktop",
+      "/docs/codex-cli": "/docs/integrations/codex-cli",
+      "/docs/chatgpt-desktop": "/docs/integrations/chatgpt-desktop",
+      "/docs/anythingllm-mcp": "/docs/integrations/anythingllm",
+      "/docs/local-mcp": "/docs/integrations/local-mcp",
+      "/docs/cloud-mcp": "/docs/integrations/cloud-mcp",
+    };
+
+    const redirect = REDIRECTS[path];
+    if (redirect) {
+      return Response.redirect(
+        new URL(redirect, request.url).toString(),
+        301
+      );
     }
 
     const docPage = DOC_PAGES[path];
