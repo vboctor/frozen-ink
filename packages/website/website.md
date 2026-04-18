@@ -47,12 +47,11 @@ packages/website/src/
 
 The sidebar nav is defined in `NAV_SECTIONS` in `layout.ts`. The canonical page order is:
 
-1. **Overview**: What is Frozen Ink?, Key Scenarios
-2. **Getting Started**: Getting Started
-3. **Features**: Managing Collections, Clone & Pull, Publishing
-4. **Connectors**: GitHub, Obsidian, Git, MantisHub
-5. **AI Integrations**: Local MCP Setup, Cloud MCP Access, Claude Code, Claude Cowork, Claude Desktop, Codex CLI, ChatGPT Desktop
-6. **Reference**: CLI Reference, Configuration
+1. **Overview**: What is Frozen Ink?, Key Scenarios, Getting Started
+2. **Features**: Managing Collections, Clone & Pull, Publishing
+3. **Connectors**: GitHub, Obsidian, Git, MantisHub
+4. **AI Integrations**: Local MCP Setup, Cloud MCP Access, Claude Code, Claude Cowork, Claude Desktop, Codex CLI, ChatGPT Desktop
+5. **Reference**: CLI Reference, Configuration
 
 ### Pagination links
 
