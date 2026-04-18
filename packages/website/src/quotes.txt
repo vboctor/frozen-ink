@@ -1,0 +1,38 @@
+All your knowledge, offline and instant.
+No rate limiting. No latency. Lightning speed.
+---
+Give cloud agents access to your Obsidian vault.
+Empower your cloud agents with context from your second brain.
+---
+Publish your Obsidian vault as a searchable knowledge base.
+Turn your notes into a shareable, browsable site — on your terms.
+---
+Share knowledge. Clone it. Keep it in sync.
+Distribute curated knowledge bases to teammates or the world, without lock-in.
+---
+Read-only AI access to your entire data ecosystem.
+Let your model see everything it needs — safely, without write risk.
+---
+Reduce tool bloat and keep your token cost under control.
+Stop bloating your AI context, Frozen Ink is all you need to access knowledge.
+---
+Capture your SaaS data before you cancel.
+Export, freeze, and own your data from any service before you walk away.
+---
+Like Dash, but for live data — not just docs.
+Instant offline search across dynamic, real-time sources — not just static documentation.
+---
+Get your agent to build an LLM wiki from your second brain.
+Empower your agent with the full context and let it build its own wiki.
+---
+Your secrets don't leave your device.
+Sync on your computer. Keep proprietary knowledge local, fast, and private.
+---
+From scattered sources to a single index — in minutes.
+Unify your GitHub, wikis, and docs into one searchable, AI-accessible layer.
+---
+Work with any AI model, grounded in your actual data.
+Context that's always accurate because it comes from your live sources.
+---
+Stop re-explaining yourself to every AI tool.
+One unified index means your models always have the full context.
