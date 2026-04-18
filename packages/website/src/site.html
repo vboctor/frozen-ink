@@ -131,19 +131,8 @@
 
     /* ===== Hero ===== */
     .hero {
-      padding: 140px 24px 80px;
+      padding: 100px 24px 80px;
       text-align: center;
-    }
-
-    .hero-badge {
-      display: inline-block;
-      padding: 6px 16px;
-      background: var(--accent-light);
-      color: var(--accent);
-      font-size: 13px;
-      font-weight: 600;
-      border-radius: 100px;
-      margin-bottom: 24px;
     }
 
     .hero h1 {
@@ -162,7 +151,7 @@
       background-clip: text;
     }
 
-    .hero p {
+    .hero > p {
       font-size: clamp(17px, 2.2vw, 20px);
       color: var(--text-secondary);
       max-width: 600px;
@@ -207,128 +196,103 @@
 
     .btn svg { width: 18px; height: 18px; }
 
-    .hero-visual {
-      max-width: 900px;
-      margin: 60px auto 0;
-      border-radius: var(--radius-lg);
+    /* ===== Carousel ===== */
+    .hero-carousel {
+      max-width: 860px;
+      margin: 48px auto;
+      position: relative;
       overflow: hidden;
+      border-radius: var(--radius-lg);
       border: 1px solid var(--border);
-      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.07), 0 4px 16px rgba(0, 0, 0, 0.04);
+      background: var(--bg-card);
     }
 
-    .hero-visual .window-chrome {
+    .carousel-track {
       display: flex;
+      transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .carousel-slide {
+      min-width: 100%;
+      padding: 32px 80px 12px;
+      display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 8px;
-      padding: 14px 18px;
-      background: #f6f8fa;
-      border-bottom: 1px solid var(--border);
+      text-align: center;
     }
 
-    .window-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
+    .carousel-quote-icon {
+      font-size: 32px;
+      line-height: 1;
+      background: var(--gradient-hero);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+      opacity: 0.45;
+      font-family: Georgia, "Times New Roman", serif;
     }
 
-    .window-dot.red { background: #ff5f57; }
-    .window-dot.yellow { background: #febc2e; }
-    .window-dot.green { background: #28c840; }
-
-    .hero-visual .window-body {
-      background: #fff;
-      padding: 0;
-      display: flex;
-      min-height: 360px;
-    }
-
-    .mock-sidebar {
-      width: 220px;
-      background: #f6f8fa;
-      border-right: 1px solid var(--border);
-      padding: 16px 0;
-      flex-shrink: 0;
-    }
-
-    .mock-sidebar-item {
-      padding: 7px 18px;
-      font-size: 13px;
-      color: var(--text-secondary);
-      font-family: var(--font);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .mock-sidebar-item.active {
-      background: var(--accent-light);
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .mock-sidebar-item .icon { opacity: 0.5; font-size: 14px; }
-    .mock-sidebar-item.active .icon { opacity: 1; }
-
-    .mock-sidebar-section {
-      padding: 10px 18px 6px;
-      font-size: 11px;
+    .carousel-headline {
+      font-size: clamp(22px, 3vw, 28px);
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-    }
-
-    .mock-content {
-      flex: 1;
-      padding: 28px 32px;
-    }
-
-    .mock-content h3 {
-      font-size: 22px;
-      font-weight: 700;
-      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+      line-height: 1.25;
       color: var(--text);
+      max-width: 640px;
+      margin: 0 0 4px;
     }
 
-    .mock-content .mock-line {
-      height: 10px;
-      background: #f0f2f5;
-      border-radius: 4px;
-      margin-bottom: 10px;
+    .carousel-subline {
+      font-size: clamp(14px, 1.6vw, 16px);
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin: 0;
+      max-width: 560px;
     }
 
-    .mock-content .mock-line:nth-child(2) { width: 95%; }
-    .mock-content .mock-line:nth-child(3) { width: 80%; }
-    .mock-content .mock-line:nth-child(4) { width: 88%; }
-    .mock-content .mock-line:nth-child(5) { width: 72%; }
-    .mock-content .mock-line:nth-child(6) { width: 60%; margin-bottom: 20px; }
-
-    .mock-callout {
-      background: #ddf4ff;
-      border-left: 3px solid var(--accent);
-      padding: 12px 16px;
-      border-radius: 0 6px 6px 0;
-      margin-bottom: 16px;
+    .carousel-click-zone {
+      position: absolute;
+      top: 0;
+      bottom: 40px;
+      width: 35%;
+      cursor: pointer;
+      z-index: 2;
     }
 
-    .mock-callout .mock-line { background: #b6dcfe; height: 8px; margin-bottom: 8px; }
-    .mock-callout .mock-line:last-child { width: 50%; margin-bottom: 0; }
+    .carousel-click-left { left: 0; }
+    .carousel-click-right { right: 0; }
 
-    .mock-code {
-      background: #f6f8fa;
-      border-radius: 8px;
-      padding: 14px 16px;
-      font-family: var(--font-mono);
-      font-size: 12px;
-      color: var(--text-secondary);
-      line-height: 1.8;
+    .carousel-dots {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 4px 0 20px;
+      position: relative;
+      z-index: 3;
     }
 
-    .mock-code .kw { color: #d73a49; }
-    .mock-code .fn { color: #6f42c1; }
-    .mock-code .str { color: #032f62; }
-    .mock-code .cmt { color: #6a737d; }
+    .carousel-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--border);
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      transition: background 0.25s, transform 0.25s;
+    }
 
+    .carousel-dot.active {
+      background: var(--accent);
+      transform: scale(1.5);
+    }
+
+    @media (max-width: 640px) {
+      .carousel-slide { padding: 28px 24px 12px; }
+    }
     /* ===== Section shared ===== */
     section { padding: 80px 24px; }
 
@@ -582,7 +546,6 @@
       .why-grid { grid-template-columns: repeat(2, 1fr); }
       .how-steps { grid-template-columns: 1fr; max-width: 480px; }
       .connectors-grid { grid-template-columns: repeat(2, 1fr); }
-      .mock-sidebar { display: none; }
     }
 
     @media (max-width: 640px) {
@@ -747,9 +710,82 @@
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-badge">Local-first &middot; Offline-ready &middot; AI-accessible</div>
-  <h1>Your knowledge,<br/><span class="gradient-text">unified and accessible</span></h1>
-  <p>Bring online data offline, publish offline notes online for cloud agents, and query everything through markdown, free-text search, and MCP.</p>
+  <h1>Your second brain,<br/><span class="gradient-text">now with full context.</span></h1>
+  <p>Built for humans and AI.</p>
+  <!-- Quotes carousel -->
+  <div class="hero-carousel" id="heroCarousel" aria-label="Feature highlights">
+    <div class="carousel-click-zone carousel-click-left" id="carouselClickLeft"></div>
+    <div class="carousel-click-zone carousel-click-right" id="carouselClickRight"></div>
+    <div class="carousel-track" id="carouselTrack">
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">All your knowledge, offline and instant.</p>
+        <p class="carousel-subline">No rate limiting. No latency. Lightning speed.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Give cloud agents access to your Obsidian vault.</p>
+        <p class="carousel-subline">Empower your cloud agents with context from your second brain.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Publish your Obsidian vault as a searchable knowledge base.</p>
+        <p class="carousel-subline">Turn your notes into a shareable, browsable site — on your terms.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Share knowledge. Clone it. Keep it in sync.</p>
+        <p class="carousel-subline">Distribute curated knowledge bases to teammates or the world, without lock-in.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Read-only AI access to your entire data ecosystem.</p>
+        <p class="carousel-subline">Let your model see everything it needs — safely, without write risk.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Reduce tool bloat and keep your token cost under control.</p>
+        <p class="carousel-subline">Stop bloating your AI context, Frozen Ink is all you need to access knowledge.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Capture your SaaS data before you cancel.</p>
+        <p class="carousel-subline">Export, freeze, and own your data from any service before you walk away.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Like Dash, but for live data — not just docs.</p>
+        <p class="carousel-subline">Instant offline search across dynamic, real-time sources — not just static documentation.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Get your agent to build an LLM wiki from your second brain.</p>
+        <p class="carousel-subline">Empower your agent with the full context and let it build its own wiki.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Your secrets don&rsquo;t leave your device.</p>
+        <p class="carousel-subline">Sync on your computer. Keep proprietary knowledge local, fast, and private.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">From scattered sources to a single index — in minutes.</p>
+        <p class="carousel-subline">Unify your GitHub, wikis, and docs into one searchable, AI-accessible layer.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Work with any AI model, grounded in your actual data.</p>
+        <p class="carousel-subline">Context that&rsquo;s always accurate because it comes from your live sources.</p>
+      </div>
+      <div class="carousel-slide">
+        <div class="carousel-quote-icon">&ldquo;</div>
+        <p class="carousel-headline">Stop re-explaining yourself to every AI tool.</p>
+        <p class="carousel-subline">One unified index means your models always have the full context.</p>
+      </div>
+    </div>
+    <div class="carousel-dots" id="carouselDots"></div>
+  </div>
+
   <div class="hero-actions">
     <a href="#download" class="btn btn-primary">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -763,46 +799,6 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
       Read the docs
     </a>
-  </div>
-
-  <!-- App mockup -->
-  <div class="hero-visual">
-    <div class="window-chrome">
-      <span class="window-dot red"></span>
-      <span class="window-dot yellow"></span>
-      <span class="window-dot green"></span>
-    </div>
-    <div class="window-body">
-      <div class="mock-sidebar">
-        <div class="mock-sidebar-section">Collections</div>
-        <div class="mock-sidebar-item active"><span class="icon">&#9679;</span> my-obsidian-vault</div>
-        <div class="mock-sidebar-item"><span class="icon">&#9679;</span> github-issues</div>
-        <div class="mock-sidebar-item"><span class="icon">&#9679;</span> project-repo</div>
-        <div class="mock-sidebar-section">Files</div>
-        <div class="mock-sidebar-item"><span class="icon">&#9656;</span> architecture.md</div>
-        <div class="mock-sidebar-item active"><span class="icon">&#9656;</span> api-design.md</div>
-        <div class="mock-sidebar-item"><span class="icon">&#9656;</span> deployment.md</div>
-        <div class="mock-sidebar-item"><span class="icon">&#9656;</span> onboarding.md</div>
-      </div>
-      <div class="mock-content">
-        <h3>API Design Guidelines</h3>
-        <div class="mock-line" style="width:95%"></div>
-        <div class="mock-line" style="width:80%"></div>
-        <div class="mock-line" style="width:88%"></div>
-        <div class="mock-line" style="width:72%"></div>
-        <div class="mock-line" style="width:60%"></div>
-        <div class="mock-callout">
-          <div class="mock-line" style="width:90%"></div>
-          <div class="mock-line" style="width:50%"></div>
-        </div>
-        <div class="mock-code">
-          <span class="cmt">// All endpoints follow RESTful conventions</span><br/>
-          <span class="kw">const</span> router = <span class="fn">createRouter</span>()<br/>
-          router.<span class="fn">get</span>(<span class="str">"/api/collections"</span>, listHandler)<br/>
-          router.<span class="fn">get</span>(<span class="str">"/api/entities/:id"</span>, getHandler)
-        </div>
-      </div>
-    </div>
   </div>
 </section>
 
@@ -998,6 +994,71 @@
     });
   }
 })();
+
+// Carousel
+document.addEventListener('DOMContentLoaded', function() {
+  var track = document.getElementById('carouselTrack');
+  var dotsContainer = document.getElementById('carouselDots');
+  var clickLeft = document.getElementById('carouselClickLeft');
+  var clickRight = document.getElementById('carouselClickRight');
+  if (!track || !dotsContainer) return;
+
+  var slides = track.querySelectorAll('.carousel-slide');
+  var total = slides.length;
+  var current = 0;
+  var timerId = null;
+
+  // Build dots
+  var dots = [];
+  for (var i = 0; i < total; i++) {
+    var dot = document.createElement('button');
+    dot.className = 'carousel-dot' + (i === 0 ? ' active' : '');
+    dot.setAttribute('aria-label', 'Go to slide ' + (i + 1));
+    dot.dataset.index = String(i);
+    dotsContainer.appendChild(dot);
+    dots.push(dot);
+  }
+
+  function goTo(index) {
+    dots[current].classList.remove('active');
+    current = ((index % total) + total) % total;
+    track.style.transform = 'translateX(-' + (current * 100) + '%)';
+    dots[current].classList.add('active');
+  }
+
+  function scheduleNext() {
+    if (timerId !== null) clearTimeout(timerId);
+    timerId = setTimeout(function tick() {
+      goTo(current + 1);
+      timerId = setTimeout(tick, 5000);
+    }, 5000);
+  }
+
+  // Dot clicks
+  dotsContainer.addEventListener('click', function(e) {
+    var btn = e.target.closest('.carousel-dot');
+    if (btn) {
+      goTo(parseInt(btn.dataset.index, 10));
+      scheduleNext();
+    }
+  });
+
+  // Left/right click zones
+  if (clickLeft) clickLeft.addEventListener('click', function() { goTo(current - 1); scheduleNext(); });
+  if (clickRight) clickRight.addEventListener('click', function() { goTo(current + 1); scheduleNext(); });
+
+  // Pause on hover, resume on leave
+  var carousel = document.getElementById('heroCarousel');
+  if (carousel) {
+    carousel.addEventListener('mouseenter', function() {
+      if (timerId !== null) { clearTimeout(timerId); timerId = null; }
+    });
+    carousel.addEventListener('mouseleave', function() { scheduleNext(); });
+  }
+
+  // Start auto-advance
+  scheduleNext();
+});
 </script>
 </body>
 </html>
