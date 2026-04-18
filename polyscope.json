@@ -1,0 +1,13 @@
+{
+  "scripts": {
+    "setup": [
+      "bun install",
+      "cd packages/cli && bun link",
+      "herd proxy {{folder}} http://localhost:3000 --secure"
+    ],
+    "archive": "herd unproxy {{folder}}"
+  },
+  "preview": {
+    "url": "https://{{folder}}.test"
+  }
+}
