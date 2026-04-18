@@ -4,7 +4,9 @@ export const codexCliPage = renderDocsPage({
   title: "Codex CLI Integration",
   description:
     "Connect Frozen Ink collections to OpenAI Codex CLI via MCP so it can search and read your knowledge base during coding sessions.",
-  activePath: "/docs/codex-cli",
+  activePath: "/docs/integrations/codex-cli",
+  canonicalPath: "/docs/integrations/codex-cli",
+  section: "AI Integrations",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "prerequisites", title: "Prerequisites" },
@@ -18,7 +20,9 @@ export const codexCliPage = renderDocsPage({
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    <span>Codex CLI Integration</span>
+    <span>AI Integrations</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>Codex CLI</span>
   </div>
 
   <h1 class="page-title">Codex CLI Integration</h1>
@@ -50,7 +54,7 @@ export const codexCliPage = renderDocsPage({
     <li><strong>Frozen Ink CLI installed</strong> — verify with <code>fink --version</code>. Install via <code>npm install -g @vboctor/fink</code>.</li>
     <li><strong>fink on your PATH</strong> — Codex spawns <code>fink mcp serve</code> as a subprocess. Confirm: <code>which fink</code></li>
     <li><strong>Codex CLI installed</strong> — verify with <code>codex --version</code>. The <code>codex mcp</code> subcommand with <code>add</code>, <code>remove</code>, and <code>list</code> must be available.</li>
-    <li><strong>At least one collection synced</strong> — check with <code>fink status</code>. If you haven't added a collection yet, see <a href="/docs/managing-collections">Managing Collections</a>.</li>
+    <li><strong>At least one collection synced</strong> — check with <code>fink status</code>. If you haven't added a collection yet, see <a href="/docs/collections">Managing Collections</a>.</li>
   </ul>
 
   <h2 id="link-collections">Link collections</h2>
@@ -178,11 +182,11 @@ fink --version</code></pre>
   <pre><code>fink sync my-vault</code></pre>
 
   <div class="docs-pagination">
-    <a href="/docs/claude-desktop" class="docs-pagination-card">
+    <a href="/docs/integrations/claude-desktop" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Claude Desktop Integration</span>
     </a>
-    <a href="/docs/chatgpt-desktop" class="docs-pagination-card next">
+    <a href="/docs/integrations/chatgpt-desktop" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">ChatGPT Desktop Integration</span>
     </a>

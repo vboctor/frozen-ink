@@ -5,6 +5,8 @@ export const connectorGitPage = renderDocsPage({
   description:
     "Sync a local Git repository's commit history, branches, and tags into Frozen Ink for search and AI queries.",
   activePath: "/docs/connectors/git",
+  canonicalPath: "/docs/connectors/git",
+  section: "Connectors",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "prerequisites", title: "Prerequisites" },
@@ -39,8 +41,8 @@ export const connectorGitPage = renderDocsPage({
 
   <p>To include the full diff of each commit in the rendered output:</p>
   <pre><code>fink add git \
-  <span class="flag">--name</span>           my-repo \
-  <span class="flag">--path</span>           ~/projects/my-project \
+  <span class="flag">--name</span> my-repo \
+  <span class="flag">--path</span> ~/projects/my-project \
   <span class="flag">--include-diffs</span></code></pre>
 
   <table>

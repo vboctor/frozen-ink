@@ -5,6 +5,8 @@ export const connectorMantishubPage = renderDocsPage({
   description:
     "Sync MantisHub and MantisHub issues and attachments into Frozen Ink for offline access, search, and AI queries.",
   activePath: "/docs/connectors/mantishub",
+  canonicalPath: "/docs/connectors/mantishub",
+  section: "Connectors",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "prerequisites", title: "Prerequisites" },
@@ -23,24 +25,24 @@ export const connectorMantishubPage = renderDocsPage({
   </div>
 
   <h1 class="page-title">MantisHub Connector</h1>
-  <p class="page-lead">The MantisHub connector syncs issues and attachments from a MantisHub or MantisHub instance via the REST API. Use it for offline access, full-text search, AI queries, or to create a permanent archive before migrating away.</p>
+  <p class="page-lead">The MantisHub connector syncs issues and attachments from a MantisHub instance via the REST API. Use it for offline access, full-text search, AI queries, or to create a permanent archive before migrating away.</p>
 
   <h2 id="overview">Overview</h2>
-  <p>Each MantisHub collection maps to one project within a MantisHub or MantisHub instance. Issues are synced with all their fields, notes, and attachments. The connector works with both self-hosted MantisHub and cloud-hosted MantisHub.</p>
+  <p>Each MantisHub collection maps to one or more projects within a MantisHub instance. Issues are synced with all their fields, notes, and attachments.</p>
 
   <h2 id="prerequisites">Prerequisites</h2>
 
   <h3>API token</h3>
-  <p>Create an API token in MantisHub under <strong>My Account → API Tokens</strong>. The token must belong to a user with <em>viewer</em> access (or higher) to the project you want to sync.</p>
+  <p><a href="https://support.mantishub.com/api/rest_api#creating-api-tokens" target="_blank">Create an API token in MantisHub</a>. The token must belong to a user with <em>viewer</em> access (or higher) to the project you want to sync.</p>
 
-  <h3>Project ID</h3>
-  <p>The project ID is visible in the URL when you navigate to a project in the MantisHub web interface. For example, in <code>https://your-instance.com/set_project.php?project_id=3</code>, the project ID is <code>3</code>.</p>
+  <h3>Project(s)</h3>
+  <p>Use the project name(s) or id(s) to specify which projects to sync.</p>
 
   <h2 id="add">Adding a MantisHub collection</h2>
   <pre><code>fink add mantishub \
-  <span class="flag">--name</span>       my-bugs \
-  <span class="flag">--url</span>        https://your-mantis-instance.com \
-  <span class="flag">--token</span>      your-api-token \
+  <span class="flag">--name</span> my-bugs \
+  <span class="flag">--url</span> https://your-mantis-instance.com \
+  <span class="flag">--token</span> your-api-token \
   <span class="flag">--project-id</span> 3</code></pre>
 
   <table>
@@ -48,18 +50,15 @@ export const connectorMantishubPage = renderDocsPage({
     <tbody>
       <tr><td><code>--name</code></td><td>Yes</td><td>Your name for this collection</td></tr>
       <tr><td><code>--url</code></td><td>Yes</td><td>Base URL of the MantisHub instance (no trailing slash)</td></tr>
-      <tr><td><code>--token</code></td><td>Yes</td><td>API token for authentication</td></tr>
-      <tr><td><code>--project-id</code></td><td>Yes</td><td>Numeric ID of the project to sync</td></tr>
+      <tr><td><code>--token</code></td><td>Yes*</td><td>API token for authentication</td></tr>
+      <tr><td><code>--project-name</code></td><td>No</td><td>Project name to sync</td></tr>
+      <tr><td><code>--credentials</code></td><td>No</td><td>Use a named credential set from <code>credentials.yml</code> instead of <code>--token</code></td></tr>
+      <tr><td><code>--max</code></td><td>No</td><td>Maximum entities to sync</td></tr>
+      <tr><td><code>--sync-entities</code></td><td>No</td><td>Comma-separated entity types to sync: <code>issues,pages,users</code> (MantisHub) or <code>issues,users</code> (self-hosted)</td></tr>
     </tbody>
   </table>
 
-  <div class="callout callout-info">
-    <div class="callout-icon">ℹ️</div>
-    <div class="callout-body">
-      <strong>MantisHub (cloud)</strong>
-      <p>For MantisHub, the base URL is your MantisHub subdomain, e.g. <code>https://yourcompany.mantishub.com</code>. API token generation is in the same location: <strong>My Account → API Tokens</strong>.</p>
-    </div>
-  </div>
+  <p>* Either <code>--token</code> or <code>--credentials</code> is required. See <a href="/docs/reference/configuration#credentials">Named credentials</a> for details.</p>
 
   <h2 id="what-syncs">What gets synced</h2>
   <p>Each issue becomes an entity. The rendered markdown includes:</p>
@@ -86,7 +85,8 @@ fink daemon start</code></pre>
   <h2 id="tips">Tips &amp; notes</h2>
   <ul>
     <li><strong>One collection per project.</strong> To sync multiple MantisHub projects, add a separate collection for each project ID.</li>
-    <li><strong>Archiving before migration.</strong> If you're moving away from MantisHub, do a final sync and then export to static files via the Export panel (desktop app) or the export API. The resulting files need no server to read. See <a href="/docs/key-scenarios#archival">Historical archival</a> for the full workflow.</li>
+    <li><strong>Capture your data before you cancel.</strong> If you're migrating away from MantisHub or cancelling a subscription, sync everything first: <code>fink sync my-bugs</code>. Your entire issue history — every bug, note, and attachment — is preserved locally in a standard SQLite database. Export to static files, publish to Cloudflare for permanent access, or simply keep the local copy. See <a href="/docs/key-scenarios#archival">Historical archival</a> for the full workflow.</li>
+    <li><strong>Create a collection for a project.</strong> An outsourcing firm that can share a collection that captures client projects during or at the end of such projects.</li>
     <li><strong>Token rotation.</strong> Update the token with <code>fink update my-bugs --token new-token</code>.</li>
     <li><strong>Firewall / VPN.</strong> For self-hosted MantisHub behind a VPN, ensure the machine running Frozen Ink can reach the instance URL before syncing.</li>
   </ul>
@@ -96,7 +96,7 @@ fink daemon start</code></pre>
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Git Connector</span>
     </a>
-    <a href="/docs/managing-collections" class="docs-pagination-card next">
+    <a href="/docs/collections" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">Managing Collections</span>
     </a>

@@ -4,7 +4,9 @@ export const chatgptDesktopPage = renderDocsPage({
   title: "ChatGPT Desktop Integration",
   description:
     "Connect Frozen Ink to ChatGPT Desktop via a published cloud MCP endpoint so ChatGPT can search and read your knowledge base.",
-  activePath: "/docs/chatgpt-desktop",
+  activePath: "/docs/integrations/chatgpt-desktop",
+  canonicalPath: "/docs/integrations/chatgpt-desktop",
+  section: "AI Integrations",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "how-it-works", title: "How it works" },
@@ -21,7 +23,9 @@ export const chatgptDesktopPage = renderDocsPage({
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    <span>ChatGPT Desktop Integration</span>
+    <span>AI Integrations</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>ChatGPT Desktop</span>
   </div>
 
   <h1 class="page-title">ChatGPT Desktop Integration</h1>
@@ -72,7 +76,7 @@ export const chatgptDesktopPage = renderDocsPage({
     <li><strong>Frozen Ink CLI installed</strong> — verify with <code>fink --version</code>. Install via <code>npm install -g @vboctor/fink</code>.</li>
     <li><strong>Cloudflare account</strong> — free tier is sufficient. Sign up at <a href="https://cloudflare.com">cloudflare.com</a>.</li>
     <li><strong>Wrangler authenticated</strong> — run <code>wrangler login</code> to authenticate with your Cloudflare account.</li>
-    <li><strong>At least one collection synced</strong> — check with <code>fink status</code>. See <a href="/docs/managing-collections">Managing Collections</a> if you haven't set one up yet.</li>
+    <li><strong>At least one collection synced</strong> — check with <code>fink status</code>. See <a href="/docs/collections">Managing Collections</a> if you haven't set one up yet.</li>
     <li><strong>ChatGPT Desktop installed</strong> — with a plan that supports MCP connectors (check your plan's settings for a Connectors or Plugins section).</li>
   </ul>
 
@@ -94,7 +98,7 @@ fink status</code></pre>
         <h4>Publish to Cloudflare</h4>
         <pre><code>fink publish my-vault \
   <span class="flag">--password</span> your-secret-password \
-  <span class="flag">--name</span>     my-vault-pub</code></pre>
+  <span class="flag">--name</span> my-vault-pub</code></pre>
         <p>Choose a strong password — it's required to authenticate every MCP request. The <code>--name</code> becomes part of the deployment URL.</p>
       </div>
     </div>
@@ -103,9 +107,9 @@ fink status</code></pre>
       <div class="step-body">
         <h4>Note your deployment URL</h4>
         <p>After publishing, you'll see output like:</p>
-        <pre><code>Deployed: https://my-vault-pub.your-account.workers.dev</code></pre>
+        <pre><code>Deployed: https://my-vault-pub.my-account.workers.dev</code></pre>
         <p>Your MCP endpoint is:</p>
-        <pre><code>https://my-vault-pub.your-account.workers.dev/mcp</code></pre>
+        <pre><code>https://my-vault-pub.my-account.workers.dev/mcp</code></pre>
       </div>
     </div>
   </div>
@@ -130,7 +134,7 @@ fink status</code></pre>
         <p>Click <strong>Add</strong> or <strong>Connect new server</strong> and enter:</p>
         <ul>
           <li><strong>Name:</strong> Frozen Ink — My Vault (or any descriptive label)</li>
-          <li><strong>URL:</strong> <code>https://my-vault-pub.your-account.workers.dev/mcp</code></li>
+          <li><strong>URL:</strong> <code>https://my-vault-pub.my-account.workers.dev/mcp</code></li>
           <li><strong>Authentication:</strong> Bearer token — enter your deployment password</li>
         </ul>
       </div>
@@ -160,7 +164,7 @@ fink status</code></pre>
 
   <h3>Query parameter</h3>
   <p>If your ChatGPT configuration doesn't support custom headers, append the password as a query parameter:</p>
-  <pre><code>https://my-vault-pub.your-account.workers.dev/mcp?token=your-deployment-password</code></pre>
+  <pre><code>https://my-vault-pub.my-account.workers.dev/mcp?token=your-deployment-password</code></pre>
 
   <div class="callout callout-warning">
     <div class="callout-icon">⚠️</div>
@@ -205,9 +209,9 @@ fink status</code></pre>
   <p>You can publish multiple collections into a single deployment. ChatGPT's <code>entity_search</code> will search across all of them:</p>
   <pre><code>fink publish my-vault my-project-issues architecture-notes \
   <span class="flag">--password</span> your-secret-password \
-  <span class="flag">--name</span>     team-kb</code></pre>
+  <span class="flag">--name</span> team-kb</code></pre>
 
-  <p>The single MCP endpoint <code>https://team-kb.your-account.workers.dev/mcp</code> then covers all three collections.</p>
+  <p>The single MCP endpoint <code>https://team-kb.my-account.workers.dev/mcp</code> then covers all three collections.</p>
 
   <p>Alternatively, create separate deployments with separate passwords for different audiences:</p>
   <pre><code><span class="cmt"># Personal notes — private</span>
@@ -224,7 +228,7 @@ fink sync my-vault
 <span class="cmt"># Re-publish (same command as initial publish)</span>
 fink publish my-vault \
   <span class="flag">--password</span> your-secret-password \
-  <span class="flag">--name</span>     my-vault-pub</code></pre>
+  <span class="flag">--name</span> my-vault-pub</code></pre>
 
   <p>After re-publishing, the next ChatGPT tool call will return the updated content. No changes to the ChatGPT connector configuration are needed.</p>
 
@@ -254,11 +258,11 @@ fink publish my-vault --password your-secret-password --name my-vault-pub</code>
   <p>MCP connector support in ChatGPT Desktop may require a specific plan tier. Check your OpenAI account's feature availability. The Frozen Ink MCP endpoint is fully compatible with any ChatGPT plan that supports remote MCP connectors.</p>
 
   <div class="docs-pagination">
-    <a href="/docs/codex-cli" class="docs-pagination-card">
+    <a href="/docs/integrations/codex-cli" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Codex CLI Integration</span>
     </a>
-    <a href="/docs/anythingllm-mcp" class="docs-pagination-card next">
+    <a href="/docs/integrations/anythingllm" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">AnythingLLM Integration</span>
     </a>

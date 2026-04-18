@@ -4,7 +4,9 @@ export const claudeDesktopPage = renderDocsPage({
   title: "Claude Desktop Integration",
   description:
     "Connect Frozen Ink collections to Claude Desktop via MCP so Claude can search and read your knowledge base directly in conversations.",
-  activePath: "/docs/claude-desktop",
+  activePath: "/docs/integrations/claude-desktop",
+  canonicalPath: "/docs/integrations/claude-desktop",
+  section: "AI Integrations",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "prerequisites", title: "Prerequisites" },
@@ -22,7 +24,9 @@ export const claudeDesktopPage = renderDocsPage({
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    <span>Claude Desktop Integration</span>
+    <span>AI Integrations</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>Claude Desktop</span>
   </div>
 
   <h1 class="page-title">Claude Desktop Integration</h1>
@@ -53,7 +57,7 @@ export const claudeDesktopPage = renderDocsPage({
   <ul>
     <li><strong>Frozen Ink CLI installed</strong> — verify with <code>fink --version</code>. Install via <code>npm install -g @vboctor/fink</code>.</li>
     <li><strong>fink on your PATH</strong> — Claude Desktop spawns <code>fink mcp serve</code> as a subprocess. Confirm: <code>which fink</code></li>
-    <li><strong>At least one collection synced</strong> — check with <code>fink status</code>. If you haven't added a collection yet, see <a href="/docs/managing-collections">Managing Collections</a>.</li>
+    <li><strong>At least one collection synced</strong> — check with <code>fink status</code>. If you haven't added a collection yet, see <a href="/docs/collections">Managing Collections</a>.</li>
     <li><strong>Claude Desktop installed</strong> — download from <a href="https://claude.ai/download">claude.ai/download</a>. Launch it at least once so its config directory is created.</li>
   </ul>
 
@@ -201,15 +205,15 @@ fink mcp list</code></pre>
   }
 }</code></pre>
 
-  <p>See <a href="/docs/cloud-mcp">Cloud MCP Access</a> for the full guide, including how to find your deployment URL and password.</p>
+  <p>See <a href="/docs/integrations/cloud-mcp">Cloud MCP Access</a> for the full guide, including how to find your deployment URL and password.</p>
 
   <h2 id="collection-description">Collection descriptions</h2>
   <p>A collection description tells Claude what the collection contains and when to consult it. It's included in the MCP server instructions Claude receives, making Claude much more effective at routing questions to the right source.</p>
 
   <p>Set a description when adding a collection:</p>
   <pre><code>fink add obsidian \
-  <span class="flag">--name</span>        my-vault \
-  <span class="flag">--path</span>        ~/Documents/MyVault \
+  <span class="flag">--name</span> my-vault \
+  <span class="flag">--path</span> ~/Documents/MyVault \
   <span class="flag">--description</span> "Personal engineering notes: architecture decisions, meeting notes, and reference docs. Consult for design rationale and background context."</code></pre>
 
   <p>Or update an existing collection:</p>
@@ -268,11 +272,11 @@ fink --version</code></pre>
   <pre><code>fink sync my-vault</code></pre>
 
   <div class="docs-pagination">
-    <a href="/docs/claude-cowork" class="docs-pagination-card">
+    <a href="/docs/integrations/claude-cowork" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Claude Cowork Integration</span>
     </a>
-    <a href="/docs/codex-cli" class="docs-pagination-card next">
+    <a href="/docs/integrations/codex-cli" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">Codex CLI Integration</span>
     </a>

@@ -5,6 +5,8 @@ export const whatIsFrozenInkPage = renderDocsPage({
   description:
     "Understand the core concepts behind Frozen Ink: local-first knowledge, collections, MCP access, and publishing.",
   activePath: "/docs/what-is-frozen-ink",
+  canonicalPath: "/docs/what-is-frozen-ink",
+  section: "Overview",
   tocLinks: [
     { id: "the-problem", title: "The problem" },
     { id: "the-solution", title: "The solution" },
@@ -22,30 +24,33 @@ export const whatIsFrozenInkPage = renderDocsPage({
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    <span>What is Frozen Ink</span>
+    <span>What is Frozen Ink?</span>
   </div>
 
-  <h1 class="page-title">What is Frozen Ink</h1>
+  <h1 class="page-title">What is Frozen Ink?</h1>
   <p class="page-lead">Frozen Ink is a local-first knowledge layer for technical work. It crawls data from the services you already use, stores it in a unified local index, and makes everything queryable by humans and AI assistants.</p>
 
   <h2 id="the-problem">The problem</h2>
-  <p>Technical knowledge is scattered across services: GitHub has your issues and pull requests, Obsidian has your notes, Git repositories contain your commit history, and project management tools have your bug tracker. This fragmentation creates four concrete problems:</p>
+  <p>Technical knowledge is scattered across services: GitHub has your issues and pull requests, Obsidian has your notes, Git repositories contain your commit history, and project management tools have your bug tracker. This fragmentation creates five concrete problems:</p>
   <ul>
-    <li><strong>No offline access.</strong> If GitHub is down or you're on a plane, you can't read your own issues.</li>
-    <li><strong>Inconsistent search.</strong> Every tool has its own search, so you can never find what you're looking for in one place.</li>
-    <li><strong>AI context limits.</strong> Cloud AI assistants can't access your private GitHub repos or local Obsidian vault without complex integrations.</li>
-    <li><strong>Loss on service shutdown.</strong> If a SaaS tool shuts down, your data disappears with it.</li>
+    <li><strong>No offline access.</strong> If you're on a plane, you can't read your own issues. Your knowledge is only available when the service is.</li>
+    <li><strong>Inconsistent search.</strong> Every tool has its own search, so you can never find what you're looking for in one place. From scattered sources to a single query should take seconds, not minutes of tab-switching.</li>
+    <li><strong>AI context limits.</strong> Cloud AI assistants can't access your private GitHub repos or local Obsidian vault without complex integrations. You end up re-explaining yourself to every AI tool.</li>
+    <li><strong>Tool bloat for AI.</strong> Connecting each data source to each AI tool individually means duplicate configs, redundant context, and wasted tokens. You need one shared knowledge layer, not N separate integrations.</li>
+    <li><strong>Limiting AI to read-only access.</strong> In many scenarios you want to grant AI access to the information or a subset of the information without ability to take other actions. Not all services enable fine grained scoping.</li>
+    <li><strong>Loss on service shutdown.</strong> If a SaaS tool shuts down or you cancel a subscription, your data disappears with it. You should be able to capture and own your data before you walk away.</li>
   </ul>
 
   <h2 id="the-solution">The solution</h2>
-  <p>Frozen Ink solves these problems with a simple architecture: crawl your data sources into a local SQLite database, render everything as markdown, and expose that knowledge through multiple access channels — a web UI, a terminal UI, an MCP server for AI tools, and a Cloudflare deployment for remote access.</p>
-  <p>The key insight is that <strong>once your data is local and markdown-native, it works everywhere</strong> — offline, in any editor, in AI assistants, and on the web.</p>
+  <p>Frozen Ink solves these problems with a simple architecture: crawl your data sources into a local SQLite database, enable free text search on top of such information, render everything as markdown on disk, and expose that knowledge through multiple access channels — markdown files on disk, a web UI, a terminal UI, an MCP server for AI tools, and a published collections.</p>
+  <p>The key insight is that <strong>once your data is local and markdown-native, it works everywhere</strong> — offline, in any editor, in AI assistants, and on the web. One unified index feeds every tool you use, so your models always have the full context without you re-explaining anything.</p>
+  <p>Published collections can be <strong>cloned</strong> by teammates to their own machines, creating fully independent local copies that stay in sync with incremental pulls — no source credentials required. Your secrets don't leave your device unless you explicitly choose to share them.</p>
 
   <div class="callout callout-info">
     <div class="callout-icon">🧊</div>
     <div class="callout-body">
       <strong>Why "Frozen Ink"?</strong>
-      <p>The name reflects the product's purpose: taking ephemeral online knowledge and preserving it as a durable, readable local artifact — like ink frozen on a page. Your data doesn't disappear when a service goes down.</p>
+      <p>The name reflects the product's purpose: taking ephemeral online knowledge and preserving it as a durable, readable local artifact — like ink frozen on a page. You are in control of your data, when to trigger syncs and it remains accessible even when the original service is not.</p>
     </div>
   </div>
 
@@ -53,29 +58,32 @@ export const whatIsFrozenInkPage = renderDocsPage({
 
   <h3 id="collections">Collections</h3>
   <p>A <strong>collection</strong> is a named, configured connection to one data source. Each collection has a type (github, obsidian, git, mantishub), a name you choose, and type-specific configuration (like a repository name, a vault path, or an API token).</p>
-  <p>Each collection is stored as a subdirectory under <code>~/.frozenink/collections/&lt;name&gt;/</code>, containing its config file, SQLite database, rendered markdown, and attachments. Collections are isolated — syncing or removing one has no effect on the others.</p>
+  <p>Each collection is stored as a directory under <code>~/.frozenink/collections/&lt;name&gt;/</code>, containing its config file, SQLite database, rendered markdown, and attachments. Collections are isolated — syncing or removing one has no effect on the others.</p>
+  <p>Collections are the main unit of organization in Frozen Ink. You can have as many as you want, and they can be synced, served, or published independently.</p>
+  <p>Your AI harness can be given access to the collections folder to get access to all collections or a a specific collection folder to get access to just the single collection.</p>
 
   <h3 id="entities">Entities</h3>
   <p>An <strong>entity</strong> is an individual record within a collection — a GitHub issue, an Obsidian note, a Git commit, a MantisHub bug, and so on. Each entity has:</p>
   <ul>
     <li><strong>External ID</strong> — the identifier in the source system (e.g., issue number, note filename)</li>
     <li><strong>Structured data</strong> — the raw fields as stored in the source (title, body, author, timestamps, labels, etc.)</li>
-    <li><strong>Rendered markdown</strong> — a clean, human-readable markdown representation generated by the crawler</li>
+    <li><strong>Attachments</strong> — files associated with the entity (images, PDFs, etc.) stored in the collection's assets folder.</li>
+    <li><strong>Rendered markdown</strong> — a clean, human-readable markdown representation generated by the crawler and persisted on disk for each access.</li>
+    <li><strong>Rendered HTML</strong> — the rendered HTML for the markdown, used in the web UI. The HTML rendering is never persisted.</li>
     <li><strong>Full-text index entry</strong> — enables fast search across all content</li>
   </ul>
 
   <h3 id="local-index">Local index</h3>
   <p>Frozen Ink stores everything in a <strong>local SQLite database</strong> using WAL mode for performance and FTS5 for full-text search. This means:</p>
   <ul>
-    <li>All queries are local — no network calls needed after the initial sync</li>
-    <li>Full-text search works across thousands of documents in milliseconds</li>
-    <li>The database is a single portable file per collection</li>
-    <li>Backlinks (notes that link to each other) are indexed automatically</li>
+    <li><strong>All queries are local</strong> — no network calls needed after the initial sync</li>
+    <li><strong>Full-text search</strong> — works across thousands of documents in milliseconds</li>
+    <li><strong>Links and Backlinks</strong> — notes that link to each other are indexed automatically</li>
   </ul>
   <p>The index is rebuilt incrementally on each sync — only changed entities are processed. You can also force a rebuild with <code>fink index "*"</code>.</p>
 
   <h3 id="mcp-server">MCP server</h3>
-  <p>The <strong>Model Context Protocol (MCP)</strong> server lets AI assistants like Claude query your Frozen Ink collections. When you run <code>fink serve</code> or link a collection with <code>fink mcp add</code>, Claude (or any MCP-compatible tool) gets access to these capabilities:</p>
+  <p>The <strong>Model Context Protocol (MCP)</strong> server lets AI assistants like Claude query your Frozen Ink collections. When you link a collection with <code>fink mcp add</code>, Claude (or any MCP-compatible harness) gets access to these tools:</p>
 
   <table>
     <thead>
@@ -91,7 +99,7 @@ export const whatIsFrozenInkPage = renderDocsPage({
   </table>
 
   <h3 id="publishing">Publishing</h3>
-  <p>Collections can be <strong>published to Cloudflare</strong> as a password-protected website. Published deployments use Cloudflare Workers + D1 (managed SQLite) + R2 (object storage) to serve the same web UI and MCP server to anyone with the password — from a browser or from a cloud AI agent.</p>
+  <p>Collections can be <strong>published to Cloudflare</strong> website and optionallys secured with a password. Published deployments use Cloudflare Workers + D1 (managed SQLite) + R2 (object storage) to serve the same web UI and MCP server to anyone with the password — from a browser or from a cloud AI agent.</p>
   <p>Publishing is a one-command operation: your data is uploaded to Cloudflare's edge, and you get a URL you can share with teammates or configure in AI tools.</p>
 
   <h3 id="themes">Themes</h3>
@@ -105,26 +113,6 @@ export const whatIsFrozenInkPage = renderDocsPage({
     <li><strong>Dracula Dark</strong> — vivid dark theme with high contrast accents</li>
   </ul>
   <p>Theme preference is saved automatically and restored on next visit — locally and in published deployments.</p>
-
-  <h2 id="architecture">Architecture</h2>
-  <p>Frozen Ink is a TypeScript monorepo with seven packages that layer cleanly on top of each other:</p>
-
-  <table>
-    <thead>
-      <tr><th>Package</th><th>Role</th></tr>
-    </thead>
-    <tbody>
-      <tr><td><strong>core</strong></td><td>Shared types, Drizzle ORM schemas, SQLite sync engine, FTS5 search, config loader, runtime compatibility layer</td></tr>
-      <tr><td><strong>crawlers</strong></td><td>Source-specific crawlers that fetch data and render it as markdown</td></tr>
-      <tr><td><strong>mcp</strong></td><td>MCP server exposing tools and resources for AI assistants</td></tr>
-      <tr><td><strong>cli</strong></td><td>The <code>fink</code> command: init, add, sync, serve, publish, mcp, daemon</td></tr>
-      <tr><td><strong>ui</strong></td><td>Vite + React web UI (browse mode + manage mode) shared across all deployment contexts</td></tr>
-      <tr><td><strong>worker</strong></td><td>Cloudflare Worker serving the UI and MCP for published deployments</td></tr>
-      <tr><td><strong>desktop</strong></td><td>Electron app wrapping the UI and API server with workspace management and system tray</td></tr>
-    </tbody>
-  </table>
-
-  <p>The same React UI is used in all contexts — local server, Cloudflare Worker, and Electron desktop. The UI detects its context via the <code>GET /api/app-info</code> endpoint and renders the appropriate controls.</p>
 
   <h2 id="design-principles">Design principles</h2>
 

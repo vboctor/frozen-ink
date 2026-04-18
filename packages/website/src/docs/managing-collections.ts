@@ -4,7 +4,9 @@ export const managingCollectionsPage = renderDocsPage({
   title: "Managing Collections",
   description:
     "Add, configure, sync, update, and remove Frozen Ink collections across GitHub, Obsidian, Git, and MantisHub sources.",
-  activePath: "/docs/managing-collections",
+  activePath: "/docs/collections",
+  canonicalPath: "/docs/collections",
+  section: "Features",
   tocLinks: [
     { id: "what-is-a-collection", title: "What is a collection" },
     { id: "add-github", title: "GitHub collection" },
@@ -22,6 +24,8 @@ export const managingCollectionsPage = renderDocsPage({
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>Features</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
     <span>Managing Collections</span>
   </div>
 
@@ -37,7 +41,7 @@ export const managingCollectionsPage = renderDocsPage({
     <li>A <strong>directory</strong> at <code>~/.frozenink/collections/&lt;name&gt;/</code> containing:
       <ul>
         <li><code>&lt;name&gt;.yml</code> — collection config and crawler credentials</li>
-        <li><code>db/data.db</code> — SQLite database with all synced entities</li>
+        <li><code>db/</code> — SQLite database with all synced entities</li>
         <li><code>markdown/</code> — rendered markdown files</li>
         <li><code>attachments/</code> — binary assets (images, PDFs, etc.)</li>
       </ul>
@@ -53,10 +57,10 @@ export const managingCollectionsPage = renderDocsPage({
 
   <h3>Add the collection</h3>
   <pre><code>fink add github \
-  <span class="flag">--name</span>  my-issues \
+  <span class="flag">--name</span> my-issues \
   <span class="flag">--token</span> ghp_yourPersonalAccessToken \
   <span class="flag">--owner</span> your-org-or-username \
-  <span class="flag">--repo</span>  your-repository-name</code></pre>
+  <span class="flag">--repo</span> your-repository-name</code></pre>
 
   <p><strong>What gets synced:</strong></p>
   <ul>
@@ -107,8 +111,8 @@ export const managingCollectionsPage = renderDocsPage({
 
   <p>To include the full diff of each commit in the rendered markdown (useful for code review history):</p>
   <pre><code>fink add git \
-  <span class="flag">--name</span>           my-repo \
-  <span class="flag">--path</span>           ~/projects/my-project \
+  <span class="flag">--name</span> my-repo \
+  <span class="flag">--path</span> ~/projects/my-project \
   <span class="flag">--include-diffs</span></code></pre>
 
   <p><strong>What gets synced:</strong></p>
@@ -131,9 +135,9 @@ export const managingCollectionsPage = renderDocsPage({
   <p>A MantisHub collection syncs <strong>issues and attachments</strong> from a MantisHub or MantisHub instance via the REST API.</p>
 
   <pre><code>fink add mantishub \
-  <span class="flag">--name</span>       my-bugs \
-  <span class="flag">--url</span>        https://your-mantis-instance.com \
-  <span class="flag">--token</span>      your-api-token \
+  <span class="flag">--name</span> my-bugs \
+  <span class="flag">--url</span> https://your-mantis-instance.com \
+  <span class="flag">--token</span> your-api-token \
   <span class="flag">--project-id</span> 1</code></pre>
 
   <p>Find your API token in MantisHub under <strong>My Account → API Tokens</strong>. The project ID is visible in the URL when you navigate to the project in the MantisHub web interface.</p>
@@ -248,7 +252,7 @@ fink config set sync.interval 60   <span class="cmt"># minutes</span></code></pr
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Key Scenarios</span>
     </a>
-    <a href="/docs/claude-code" class="docs-pagination-card next">
+    <a href="/docs/integrations/claude-code" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">Claude Code Integration</span>
     </a>

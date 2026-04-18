@@ -5,6 +5,8 @@ export const gettingStartedPage = renderDocsPage({
   description:
     "Install Frozen Ink, add your first collection, and start browsing your knowledge base in minutes.",
   activePath: "/docs",
+  canonicalPath: "/docs",
+  section: "Getting Started",
   tocLinks: [
     { id: "prerequisites", title: "Prerequisites" },
     { id: "install", title: "Installation" },
@@ -83,19 +85,19 @@ fink add git --name my-repo --path ~/projects/my-project <span class="flag">--in
   <pre><code>fink add github <span class="flag">--name</span> my-issues \
   <span class="flag">--token</span> ghp_yourPersonalAccessToken \
   <span class="flag">--owner</span> your-username \
-  <span class="flag">--repo</span>  your-repo-name</code></pre>
+  <span class="flag">--repo</span> your-repo-name</code></pre>
 
-  <h3>MantisHub / MantisHub</h3>
-  <p>Syncs issues and attachments from a MantisHub or MantisHub instance:</p>
+  <h3>MantisHub</h3>
+  <p>Syncs issues and attachments from a <a href="https://www.mantishub.com/" target="_blank">MantisHub</a> instance:</p>
   <pre><code>fink add mantishub <span class="flag">--name</span> my-bugs \
-  <span class="flag">--url</span>   https://your-mantis-instance.com \
+  <span class="flag">--url</span> https://your-mantis-instance.mantishub.io \
   <span class="flag">--token</span> your-api-token \
   <span class="flag">--project-id</span> 1</code></pre>
 
   <h2 id="sync">Sync &amp; browse</h2>
 
   <h3>Sync your collection</h3>
-  <p>Pull the latest data from your source into the local index:</p>
+  <p>Sync the latest data from your source into the local index:</p>
   <pre><code><span class="cmt"># Sync one collection by name</span>
 fink sync my-vault
 
@@ -121,15 +123,23 @@ fink sync "*"</code></pre>
   <p>Use <kbd>Cmd+P</kbd> or <kbd>Cmd+K</kbd> in the web UI to open the quick switcher and search across all your collections at once. Or search from the terminal:</p>
   <pre><code>fink search "authentication flow"</code></pre>
 
+  <div class="callout callout-info">
+    <div class="callout-icon">ℹ️</div>
+    <div class="callout-body">
+      <strong>Alternative: clone a published collection</strong>
+      <p>If someone has already published a Frozen Ink collection, you can skip <code>fink add</code> and <code>fink sync</code> entirely. Just clone it directly: <code>fink clone https://their-site.workers.dev --password secret</code>. See <a href="/docs/clone-pull">Clone &amp; Pull</a> for details.</p>
+    </div>
+  </div>
+
   <h2 id="next-steps">Next steps</h2>
 
   <div class="feature-grid">
-    <a href="/docs/managing-collections" class="feature-card" style="text-decoration:none;">
+    <a href="/docs/collections" class="feature-card" style="text-decoration:none;">
       <div class="feature-card-icon">📂</div>
       <h4>Manage Collections</h4>
       <p>Learn how to update, disable, rename, and remove collections, and how to automate syncing with the daemon.</p>
     </a>
-    <a href="/docs/local-mcp" class="feature-card" style="text-decoration:none;">
+    <a href="/docs/integrations/local-mcp" class="feature-card" style="text-decoration:none;">
       <div class="feature-card-icon">🤖</div>
       <h4>Connect MCP Clients</h4>
       <p>Link collections to Claude Code, Codex CLI, or other local MCP clients, and set up ChatGPT Desktop via published MCP endpoints.</p>
@@ -138,11 +148,6 @@ fink sync "*"</code></pre>
       <div class="feature-card-icon">🌐</div>
       <h4>Publish to the Web</h4>
       <p>Deploy a password-protected site to Cloudflare in one command — readable by teammates and cloud AI agents.</p>
-    </a>
-    <a href="/docs/key-scenarios" class="feature-card" style="text-decoration:none;">
-      <div class="feature-card-icon">💡</div>
-      <h4>Key Scenarios</h4>
-      <p>Explore common workflows: offline GitHub access, sharing Obsidian notes with your team, and more.</p>
     </a>
     <a href="/docs/desktop-app" class="feature-card" style="text-decoration:none;">
       <div class="feature-card-icon">🖥️</div>
@@ -155,7 +160,7 @@ fink sync "*"</code></pre>
     <span></span>
     <a href="/docs/what-is-frozen-ink" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">What is Frozen Ink</span>
+      <span class="docs-pagination-title">What is Frozen Ink?</span>
     </a>
   </div>
   `,

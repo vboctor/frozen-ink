@@ -5,6 +5,8 @@ export const desktopAppPage = renderDocsPage({
   description:
     "Use the Frozen Ink macOS desktop app to manage collections, sync data, publish, and export — all from a GUI without the terminal.",
   activePath: "/docs/desktop-app",
+  canonicalPath: "/docs/desktop-app",
+  section: "Getting Started",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "getting-started", title: "Getting started" },
@@ -27,10 +29,10 @@ export const desktopAppPage = renderDocsPage({
   </div>
 
   <h1 class="page-title">Desktop App</h1>
-  <p class="page-lead">The Frozen Ink desktop app for macOS wraps everything into a native application — no terminal required. You get the full web UI for browsing, plus a management interface for adding collections, triggering syncs, publishing to Cloudflare, and exporting data.</p>
+  <p class="page-lead">The Frozen Ink desktop app for macOS wraps everything into a GUI based application — no terminal required. You get the full web UI for browsing, plus a management interface for adding collections, triggering syncs, publishing to Cloudflare, and exporting data.</p>
 
   <h2 id="overview">Overview</h2>
-  <p>The desktop app bundles the Frozen Ink server, web UI, and a management layer into a single native macOS application. It runs as a menu bar app with a system tray icon so it stays out of your way while keeping your collections in sync.</p>
+  <p>The desktop app bundles the Frozen Ink server, web UI, and a management layer into a single GUI application.</p>
 
   <div class="feature-grid">
     <div class="feature-card">
@@ -200,7 +202,7 @@ export const desktopAppPage = renderDocsPage({
   </table>
 
   <div class="docs-pagination">
-    <a href="/docs/cloud-mcp" class="docs-pagination-card">
+    <a href="/docs/integrations/cloud-mcp" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Cloud MCP Access</span>
     </a>

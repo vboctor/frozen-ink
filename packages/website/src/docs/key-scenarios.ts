@@ -5,11 +5,15 @@ export const keyScenariosPage = renderDocsPage({
   description:
     "Explore the most common Frozen Ink workflows: offline GitHub access, AI-ready context, team knowledge sharing, and more.",
   activePath: "/docs/key-scenarios",
+  canonicalPath: "/docs/key-scenarios",
+  section: "Overview",
   tocLinks: [
     { id: "offline-github", title: "Offline GitHub access" },
     { id: "obsidian-to-cloud", title: "Obsidian notes for cloud AI" },
     { id: "team-knowledge", title: "Team knowledge sharing" },
+    { id: "distribute-and-clone", title: "Distribute & clone knowledge" },
     { id: "local-ai", title: "Local AI assistant context" },
+    { id: "consolidate-context", title: "Consolidate AI context" },
     { id: "multi-source-search", title: "Multi-source search" },
     { id: "archival", title: "Historical archival" },
   ],
@@ -36,7 +40,7 @@ export const keyScenariosPage = renderDocsPage({
         <pre><code>fink add github <span class="flag">--name</span> my-project-issues \
   <span class="flag">--token</span> ghp_yourToken \
   <span class="flag">--owner</span> your-org \
-  <span class="flag">--repo</span>  your-repo</code></pre>
+  <span class="flag">--repo</span> your-repo</code></pre>
       </div>
     </div>
     <div class="step">
@@ -99,7 +103,7 @@ fink status</code></pre>
         <h4>Option A — Local MCP (private, zero-upload)</h4>
         <p>Link the collection to a local MCP client (for example Claude Code or Codex CLI) so it can query your notes locally, with no data leaving your machine:</p>
         <pre><code>fink mcp add --tool claude-code my-vault</code></pre>
-        <p>See <a href="/docs/local-mcp">Local MCP Setup</a> for the full configuration guide.</p>
+        <p>See <a href="/docs/integrations/local-mcp">Local MCP Setup</a> for the full configuration guide.</p>
       </div>
     </div>
     <div class="step">
@@ -108,7 +112,7 @@ fink status</code></pre>
         <h4>Option B — Publish for cloud AI access</h4>
         <p>Publish the vault to Cloudflare so any AI agent with your password can query it remotely:</p>
         <pre><code>fink publish my-vault <span class="flag">--password</span> secret123 <span class="flag">--name</span> my-vault-pub</code></pre>
-        <p>See <a href="/docs/cloud-mcp">Cloud MCP Access</a> for how to wire this up in Claude.</p>
+        <p>See <a href="/docs/integrations/cloud-mcp">Cloud MCP Access</a> for how to wire this up in Claude.</p>
       </div>
     </div>
   </div>
@@ -120,7 +124,7 @@ fink status</code></pre>
   <pre><code><span class="cmt"># Publish multiple collections to one deployment</span>
 fink publish architecture-notes github-issues internal-docs \
   <span class="flag">--password</span> team-secret \
-  <span class="flag">--name</span>     team-knowledge</code></pre>
+  <span class="flag">--name</span> team-knowledge</code></pre>
 
   <p>The published site has:</p>
   <ul>
@@ -134,6 +138,40 @@ fink publish architecture-notes github-issues internal-docs \
   <pre><code>fink sync "*"
 fink publish architecture-notes github-issues internal-docs \
   <span class="flag">--password</span> team-secret <span class="flag">--name</span> team-knowledge</code></pre>
+
+  <h2 id="distribute-and-clone">Distribute &amp; clone knowledge</h2>
+  <p><strong>Situation:</strong> You've built a curated knowledge base — maybe an Obsidian vault of architecture decisions, or a GitHub issues collection for your open source project. You want teammates (or the public) to have their own local copy they can search and query offline, without needing access to the original source.</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h4>Publish the collection and share the URL and secret</h4>
+        <p>Sync your collection and publish it to Cloudflare:</p>
+        <pre><code>fink sync my-vault
+fink publish my-vault <span class="flag">--password</span> secure-secret</code></pre>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h4>Users clone your collection</h4>
+        <p>Anyone can now clone the published collection to their own machine:</p>
+        <pre><code>fink clone https://my-vault.example.workers.dev \
+  <span class="flag">--password</span> secure-secret</code></pre>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h4>Users can keep their clones in sync</h4>
+        <p>When you re-sync and re-publish, everyone pulls the latest changes incrementally:</p>
+        <pre><code>fink pull my-vault</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <p>Cloned collections are fully functional — searchable, browsable, and available to MCP clients. No source credentials needed. See <a href="/docs/clone-pull">Clone &amp; Pull</a> for the full guide.</p>
 
   <h2 id="local-ai">Local AI assistant context</h2>
   <p><strong>Situation:</strong> You use an MCP-enabled coding assistant (for example Claude Code or Codex CLI). When working on a feature, you want instant access to your project's GitHub issues, git history, and design notes — without manually pasting content into every conversation.</p>
@@ -156,6 +194,23 @@ fink publish architecture-notes github-issues internal-docs \
       <p>Claude Code launches the MCP server automatically via stdio when it needs to query a collection. You don't need to run <code>fink serve</code> beforehand — the MCP link handles everything.</p>
     </div>
   </div>
+
+  <h2 id="consolidate-context">Consolidate AI context</h2>
+  <p><strong>Situation:</strong> You use multiple AI tools — Claude Code for development, Claude Desktop for research, ChatGPT for brainstorming. Each one needs access to the same knowledge: your GitHub issues, Obsidian notes, and project history. Without a shared layer, you end up re-explaining context to every tool, bloating prompts with copy-pasted content, and burning tokens on redundant context.</p>
+
+  <p>Frozen Ink acts as that shared layer. One unified index feeds every AI tool through MCP:</p>
+  <pre><code><span class="cmt"># Link to multiple AI tools at once</span>
+fink mcp add <span class="flag">--tool</span> claude-code my-issues my-vault my-repo
+fink mcp add <span class="flag">--tool</span> claude-desktop my-issues my-vault my-repo</code></pre>
+
+  <p>Now every tool has the same complete, searchable context. Benefits:</p>
+  <ul>
+    <li><strong>No re-explaining.</strong> Every AI session starts with full context — your models always know what you're working on.</li>
+    <li><strong>Lower token usage.</strong> Instead of pasting large blocks of context into prompts, the model queries only what it needs via MCP tools. A targeted <code>entity_search</code> call returns relevant results in a fraction of the tokens.</li>
+    <li><strong>One source of truth.</strong> Sync once, and every tool sees the same up-to-date data. No drift between what Claude Code knows and what ChatGPT was told yesterday.</li>
+  </ul>
+
+  <p>For cloud-based tools that don't support local MCP (like ChatGPT Desktop), <a href="/docs/publishing">publish</a> and connect via the remote MCP endpoint — same index, same tools, accessed over HTTP.</p>
 
   <h2 id="multi-source-search">Multi-source search</h2>
   <p><strong>Situation:</strong> You're debugging a production issue. The relevant context is spread across GitHub (the related PR), your Obsidian vault (a runbook you wrote last year), and your Git log (the commits that introduced the change). You want to search all of these in one query.</p>
@@ -208,17 +263,17 @@ curl -X POST http://localhost:3000/api/export \
   <div class="callout callout-tip">
     <div class="callout-icon">📦</div>
     <div class="callout-body">
-      <strong>The SQLite file is self-contained</strong>
-      <p>The database at <code>~/.frozenink/collections/my-mantis-archive/db/data.db</code> is a standard SQLite file. Back it up like any file. It can be opened with any SQLite browser and contains the complete dataset indefinitely.</p>
+      <strong>The database is portable</strong>
+      <p>The <code>~/.frozenink/collections/my-mantis-archive/db/</code> directory contains the SQLite database files (<code>data.db</code>, WAL, and shared-memory files). Back up the entire <code>db/</code> folder to preserve the complete dataset. The main <code>data.db</code> file can be opened with any SQLite browser for inspection.</p>
     </div>
   </div>
 
   <div class="docs-pagination">
     <a href="/docs/what-is-frozen-ink" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
-      <span class="docs-pagination-title">What is Frozen Ink</span>
+      <span class="docs-pagination-title">What is Frozen Ink?</span>
     </a>
-    <a href="/docs/managing-collections" class="docs-pagination-card next">
+    <a href="/docs/collections" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
       <span class="docs-pagination-title">Managing Collections</span>
     </a>

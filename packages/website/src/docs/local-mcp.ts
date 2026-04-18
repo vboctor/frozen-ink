@@ -3,8 +3,10 @@ import { renderDocsPage } from "./layout";
 export const localMcpPage = renderDocsPage({
   title: "Local MCP Setup",
   description:
-    "Link Frozen Ink collections to Claude Code, Codex CLI, and other MCP clients, plus set up ChatGPT Desktop via remote MCP endpoints.",
-  activePath: "/docs/local-mcp",
+    "Link Frozen Ink collections to Claude Code, Claude Desktop, Codex CLI, and other local MCP clients via stdio transport.",
+  activePath: "/docs/integrations/local-mcp",
+  canonicalPath: "/docs/integrations/local-mcp",
+  section: "AI Integrations",
   tocLinks: [
     { id: "what-is-mcp", title: "What is MCP" },
     { id: "how-it-works", title: "How it works in Frozen Ink" },
@@ -12,7 +14,6 @@ export const localMcpPage = renderDocsPage({
     { id: "link-to-claude-desktop", title: "Link to Claude Desktop" },
     { id: "link-to-codex-cli", title: "Link to Codex CLI" },
     { id: "link-to-chatgpt-desktop", title: "Link to ChatGPT Desktop" },
-    { id: "remote-endpoint", title: "Adding a remote endpoint" },
     { id: "available-tools", title: "Available MCP tools" },
     { id: "available-resources", title: "Available MCP resources" },
     { id: "multiple-collections", title: "Multiple collections" },
@@ -23,6 +24,8 @@ export const localMcpPage = renderDocsPage({
   content: `
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>AI Integrations</span>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
     <span>Local MCP Setup</span>
   </div>
@@ -112,20 +115,7 @@ fink status</code></pre>
   <p><code>codex</code> is treated as an alias for <code>codex-cli</code>.</p>
 
   <h2 id="link-to-chatgpt-desktop">Link to ChatGPT Desktop</h2>
-  <p>ChatGPT Desktop uses a remote MCP connector flow rather than local per-collection stdio registration.</p>
-  <p>Publish your collection(s), then add the published MCP URL in ChatGPT:</p>
-  <pre><code>fink publish my-vault <span class="flag">--password</span> secret123 <span class="flag">--name</span> my-vault-pub
-
-<span class="cmt"># ChatGPT connector endpoint</span>
-https://my-vault-pub.workers.dev/mcp
-<span class="cmt"># Header</span>
-Authorization: Bearer secret123</code></pre>
-  <p>Running <code>fink mcp add --tool chatgpt-desktop ...</code> returns setup guidance because ChatGPT Desktop does not currently expose a stable local config file for automatic stdio link registration.</p>
-
-  <h2 id="remote-endpoint">Adding a remote endpoint</h2>
-  <p>Once a collection is <a href="/docs/publishing">published</a> to Cloudflare, you can register the remote HTTP MCP endpoint instead of the local stdio transport:</p>
-  <pre><code>fink mcp add <span class="flag">--http</span> <span class="flag">--tool</span> claude-code my-vault</code></pre>
-  <p>The password saved during <code>fink publish</code> is reused automatically. Use <code>--password &lt;value&gt;</code> to override it. See <a href="/docs/cloud-mcp">Cloud MCP Access</a> for the full remote flow.</p>
+  <p>ChatGPT Desktop uses a remote HTTP connector rather than local stdio, so it requires a <strong>published</strong> collection instead of a local MCP link. See the <a href="/docs/integrations/chatgpt-desktop">ChatGPT Desktop Integration</a> guide and <a href="/docs/integrations/cloud-mcp">Cloud MCP Access</a> for the full setup.</p>
 
   <h2 id="available-tools">Available MCP tools</h2>
   <p>Each Frozen Ink MCP connection exposes the following tools to your MCP client:</p>
@@ -234,7 +224,7 @@ fink --version  <span class="cmt"># should print the installed version</span></c
   <p>The MCP server reads from the local SQLite database at query time, so after a sync the next MCP call will reflect the updated data.</p>
 
   <div class="docs-pagination">
-    <a href="/docs/claude-desktop" class="docs-pagination-card">
+    <a href="/docs/integrations/claude-desktop" class="docs-pagination-card">
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Claude Desktop Integration</span>
     </a>

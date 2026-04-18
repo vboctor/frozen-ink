@@ -4,7 +4,9 @@ export const cloudMcpPage = renderDocsPage({
   title: "Cloud MCP Access",
   description:
     "Use a published Frozen Ink site as a remote MCP endpoint so cloud AI agents can query your knowledge base from anywhere.",
-  activePath: "/docs/cloud-mcp",
+  activePath: "/docs/integrations/cloud-mcp",
+  canonicalPath: "/docs/integrations/cloud-mcp",
+  section: "AI Integrations",
   tocLinks: [
     { id: "overview", title: "Overview" },
     { id: "prerequisites", title: "Prerequisites" },
@@ -21,6 +23,8 @@ export const cloudMcpPage = renderDocsPage({
   content: `
   <div class="docs-breadcrumb">
     <a href="/docs">Docs</a>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    <span>AI Integrations</span>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
     <span>Cloud MCP Access</span>
   </div>
@@ -64,13 +68,13 @@ export const cloudMcpPage = renderDocsPage({
   <p>You need a published Frozen Ink deployment. If you haven't published yet, follow the <a href="/docs/publishing">Publishing to Cloudflare</a> guide first.</p>
   <p>After publishing, you'll have:</p>
   <ul>
-    <li>A deployment URL like <code>https://my-deployment.your-account.workers.dev</code></li>
+    <li>A deployment URL like <code>https://my-deployment.my-account.workers.dev</code></li>
     <li>The password you set with <code>--password</code></li>
   </ul>
 
   <h2 id="the-mcp-endpoint">The MCP endpoint URL</h2>
   <p>The MCP endpoint is always at <code>/mcp</code> on your deployment URL:</p>
-  <pre><code>https://my-deployment.your-account.workers.dev/mcp</code></pre>
+  <pre><code>https://my-deployment.my-account.workers.dev/mcp</code></pre>
 
   <p>This endpoint supports the <strong>HTTP + SSE transport</strong> protocol used by Claude.ai and other remote MCP clients. You'll need both the endpoint URL and your deployment password to connect.</p>
 
@@ -92,7 +96,7 @@ export const cloudMcpPage = renderDocsPage({
         <p>Click <strong>Add MCP Server</strong> (or similar) and enter:</p>
         <ul>
           <li><strong>Name:</strong> Frozen Ink — My Vault (or any descriptive name)</li>
-          <li><strong>URL:</strong> <code>https://my-deployment.your-account.workers.dev/mcp</code></li>
+          <li><strong>URL:</strong> <code>https://my-deployment.my-account.workers.dev/mcp</code></li>
           <li><strong>Authentication:</strong> Select <em>Bearer token</em> and enter your deployment password</li>
         </ul>
       </div>
@@ -137,7 +141,7 @@ fink mcp add <span class="flag">--http</span> <span class="flag">--tool</span> c
   "mcpServers": {
     "fink-my-vault": {
       "transport": "http",
-      "url": "https://my-deployment.your-account.workers.dev/mcp",
+      "url": "https://my-deployment.my-account.workers.dev/mcp",
       "headers": {
         "Authorization": "Bearer your-deployment-password"
       }
@@ -164,7 +168,7 @@ fink mcp add <span class="flag">--http</span> <span class="flag">--tool</span> c
 
   <h3>Query parameter</h3>
   <p>For tools that don't support custom headers, append the password as a query parameter:</p>
-  <pre><code>https://my-deployment.your-account.workers.dev/mcp?token=your-deployment-password</code></pre>
+  <pre><code>https://my-deployment.my-account.workers.dev/mcp?token=your-deployment-password</code></pre>
 
   <div class="callout callout-warning">
     <div class="callout-icon">⚠️</div>
@@ -223,7 +227,7 @@ fink mcp add <span class="flag">--http</span> <span class="flag">--tool</span> c
 fink sync "*"
 fink publish github-issues architecture-notes runbooks \
   <span class="flag">--password</span> team-secret \
-  <span class="flag">--name</span>     acme-team-kb
+  <span class="flag">--name</span> acme-team-kb
 
 <span class="cmt"># Share this URL + password with the team:</span>
 <span class="cmt"># https://acme-team-kb.teamlead.workers.dev/mcp</span></code></pre>
@@ -282,7 +286,7 @@ fink publish github-issues architecture-notes runbooks \
     </tbody>
   </table>
 
-  <p>For most personal workflows, <a href="/docs/local-mcp">local MCP</a> is simpler and keeps all data on your machine. Cloud MCP shines for team collaboration and cross-device access.</p>
+  <p>For most personal workflows, <a href="/docs/integrations/local-mcp">local MCP</a> is simpler and keeps all data on your machine. Cloud MCP shines for team collaboration and cross-device access.</p>
 
   <div class="docs-pagination">
     <a href="/docs/publishing" class="docs-pagination-card">
