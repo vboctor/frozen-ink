@@ -14,8 +14,8 @@ type = "Text"
 globs = ["**/*.html", "**/*.svg"]
 fallthrough = false
 
-# Bundle PNG as binary data module
+# Bundle PNG/JPG as binary data modules
 [[rules]]
 type = "Data"
-globs = ["**/*.png"]
+globs = ["**/*.png", "**/*.jpg"]
 fallthrough = false

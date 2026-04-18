@@ -4,6 +4,7 @@ import ogImageSvg from "./og-image.svg";
 // Base64-encode the PNG at build time isn't possible with text modules,
 // so we import the PNG as a binary module via a separate rule.
 import ogImagePng from "./og-image.png";
+import vboctorJpg from "./vboctor.jpg";
 
 import { gettingStartedPage } from "./docs/getting-started";
 import { whatIsFrozenInkPage } from "./docs/what-is-frozen-ink";
@@ -63,6 +64,15 @@ export default {
       return new Response(ogImagePng, {
         headers: {
           "content-type": "image/png",
+          "cache-control": "public, max-age=86400",
+        },
+      });
+    }
+
+    if (path === "/vboctor.jpg") {
+      return new Response(vboctorJpg, {
+        headers: {
+          "content-type": "image/jpeg",
           "cache-control": "public, max-age=86400",
         },
       });
