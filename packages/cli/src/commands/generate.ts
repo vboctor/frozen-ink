@@ -30,18 +30,37 @@ async function writeFolderConfigFiles(
   basePath: string,
 ): Promise<void> {
   const configs = themeEngine.getFolderConfigs(crawlerType);
-  if (Object.keys(configs).length === 0) return;
 
-  // Use listDirs so empty directories (e.g. assets/ with no files yet) are also covered
   const allDirs = await storage.listDirs!(basePath);
+
+  // Collect dirs that contain at least one markdown file (directly or via subdirs).
+  const allFiles = await storage.list(basePath);
+  const dirsWithMarkdown = new Set<string>();
+  for (const filePath of allFiles) {
+    if (!filePath.endsWith(".md")) continue;
+    const parts = filePath.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      dirsWithMarkdown.add(parts.slice(0, i).join("/"));
+    }
+  }
 
   for (const dirPath of allDirs) {
     const folderName = dirPath.split("/").pop()!;
-    if (!(folderName in configs)) continue;
+    // Remove stale yml files from dirs that no longer contain any markdown files.
+    if (!dirsWithMarkdown.has(dirPath)) {
+      try {
+        await storage.delete(`${dirPath}/${folderName}.yml`);
+      } catch {
+        // yml may not exist — fine
+      }
+      continue;
+    }
+    if (Object.keys(configs).length === 0 || !(folderName in configs)) continue;
     const config = configs[folderName];
     const lines: string[] = [];
     if (config.visible === false) lines.push("visible: false");
     if (config.sort === "DESC") lines.push("sort: DESC");
+    if (lines.length === 0) continue;
     await storage.write(`${dirPath}/${folderName}.yml`, lines.join("\n") + "\n");
   }
 }

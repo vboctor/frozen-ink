@@ -1,4 +1,4 @@
-import type { Theme, ThemeRenderContext } from "@frozenink/core/theme";
+import type { FolderConfig, Theme, ThemeRenderContext } from "@frozenink/core/theme";
 import { frontmatter } from "@frozenink/core/theme";
 
 interface AssetRef {
@@ -12,13 +12,6 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 80);
-}
-
-function safeFilenameTitle(value: string): string {
-  return value
-    .replace(/[\\/:*?"<>|]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function dateParts(value: string | undefined): { year: string; stamp: string } {
@@ -48,6 +41,32 @@ function decodeEntities(text: string): string {
     .replace(/&#39;/g, "'");
 }
 
+function imgTagToMarkdown(tag: string): string {
+  const src = tag.match(/src="([^"]*)"/i)?.[1] ?? "";
+  const alt = tag.match(/alt="([^"]*)"/i)?.[1] ?? "";
+  return src ? `\n\n![${alt}](${src})\n\n` : "";
+}
+
+/** Replace CDN image src URLs in HTML with local attachment paths where available. */
+function substituteLocalAssets(html: string, assets: AssetRef[]): string {
+  if (assets.length === 0) return html;
+  const byFilename = new Map<string, string>();
+  for (const asset of assets) {
+    const name = (asset.filename ?? "").toLowerCase();
+    byFilename.set(name, toMarkdownAttachmentRef(asset.storagePath));
+    // Also index without common size prefixes (medium_, large_, thumb_, xlarge_)
+    byFilename.set(name.replace(/^(medium|large|thumb|xlarge|orig)_/, ""), toMarkdownAttachmentRef(asset.storagePath));
+  }
+  return html.replace(/<img([^>]*)>/gi, (match, attrs: string) => {
+    const srcMatch = attrs.match(/src="([^"]*)"/i);
+    if (!srcMatch) return match;
+    const urlFilename = srcMatch[1].split("/").pop()?.split("?")[0]?.toLowerCase() ?? "";
+    const localPath = byFilename.get(urlFilename)
+      ?? byFilename.get(urlFilename.replace(/^(medium|large|thumb|xlarge|orig)_/, ""));
+    return localPath ? match.replace(srcMatch[0], `src="${localPath}"`) : match;
+  });
+}
+
 function htmlToReadableMarkdown(html: string): string {
   const sanitized = stripUnsafeHtml(html);
   const withStructure = sanitized
@@ -58,15 +77,11 @@ function htmlToReadableMarkdown(html: string): string {
     .replace(/<li[^>]*>/gi, "\n- ")
     .replace(/<\/li>/gi, "")
     .replace(/<\/h[1-6]>/gi, "\n\n")
-    .replace(/<h[1-6][^>]*>/gi, "\n\n## ");
+    .replace(/<h[1-6][^>]*>/gi, "\n\n## ")
+    .replace(/<img[^>]*\/?>/gi, imgTagToMarkdown);
   return decodeEntities(withStructure.replace(/<[^>]+>/g, ""))
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function toAttachmentApiUrl(collectionName: string, storagePath: string): string {
-  const filePath = storagePath.replace(/^attachments\//, "");
-  return `/api/attachments/${encodeURIComponent(collectionName)}/${filePath}`;
 }
 
 function toMarkdownAttachmentRef(storagePath: string): string {
@@ -99,24 +114,25 @@ export class RssTheme implements Theme {
 
     const meta = joinIf([
       typeof d.publishedAt === "string" ? `Published: ${d.publishedAt}` : undefined,
-      typeof d.updatedAt === "string" ? `Updated: ${d.updatedAt}` : undefined,
       typeof d.author === "string" ? `Author: ${d.author}` : undefined,
     ]);
     if (meta) sections.push(meta);
 
-    const body = typeof d.contentHtml === "string" && d.contentHtml.trim()
-      ? htmlToReadableMarkdown(d.contentHtml)
-      : (typeof d.contentText === "string" ? d.contentText.trim() : "");
-    if (body) sections.push(body);
-
     const assets = ((d.assets as AssetRef[] | undefined) ?? []).filter(
       (a) => typeof a.storagePath === "string" && a.storagePath.startsWith("attachments/"),
     );
-    if (assets.length > 0) {
-      sections.push("## Images");
-      for (const asset of assets) {
-        const alt = (asset.filename || "image").replace(/\.[^.]+$/, "");
-        sections.push(`![${alt}](${toMarkdownAttachmentRef(asset.storagePath)})`);
+    const rawHtml = typeof d.contentHtml === "string" ? d.contentHtml.trim() : "";
+    const body = rawHtml
+      ? htmlToReadableMarkdown(substituteLocalAssets(rawHtml, assets))
+      : (typeof d.contentText === "string" ? d.contentText.trim() : "");
+    if (body) sections.push(body);
+
+    // Append any assets not already present inline in the body
+    for (const asset of assets) {
+      const localRef = toMarkdownAttachmentRef(asset.storagePath);
+      if (!body.includes(localRef)) {
+        const alt = (asset.filename ?? "image").replace(/\.[^.]+$/, "");
+        sections.push(`![${alt}](${localRef})`);
       }
     }
 
@@ -129,27 +145,17 @@ export class RssTheme implements Theme {
       ? stripUnsafeHtml(d.contentHtml)
       : `<p>${(typeof d.contentText === "string" ? d.contentText : "").replace(/</g, "&lt;")}</p>`;
 
-    const assets = ((d.assets as AssetRef[] | undefined) ?? []).filter(
-      (a) => typeof a.storagePath === "string" && a.storagePath.startsWith("attachments/"),
-    );
-    const gallery = assets.length === 0
-      ? ""
-      : `
-        <div class="rss-medium-gallery">
-          ${assets
-            .map((a) => {
-              const alt = (a.filename || "image").replace(/\.[^.]+$/, "");
-              const src = toAttachmentApiUrl(context.collectionName, a.storagePath);
-              return `<figure><img src="${src}" alt="${alt}" /><figcaption>${alt}</figcaption></figure>`;
-            })
-            .join("")}
-        </div>
-      `;
-
+    const publishedDate = typeof d.publishedAt === "string" ? d.publishedAt : null;
+    const sourceUrl = context.entity.url;
+    const linkIcon = sourceUrl
+      ? ` <a href="${sourceUrl}" target="_blank" rel="noopener noreferrer" class="rss-source-link" title="Open source article">` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>` +
+        `</a>`
+      : "";
     const subline = joinIf([
-      typeof d.publishedAt === "string" ? `Published ${d.publishedAt}` : undefined,
+      publishedDate ? `Published <time class="rss-date" data-iso="${publishedDate}">${publishedDate}</time>` : undefined,
       typeof d.author === "string" ? `By ${d.author}` : undefined,
-    ]);
+    ]) + linkIcon;
 
     return `
       <style>
@@ -170,6 +176,18 @@ export class RssTheme implements Theme {
           color: var(--text-secondary);
           margin: 0 0 26px;
           font-size: 0.95rem;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .rss-medium .rss-source-link {
+          color: var(--text-secondary);
+          opacity: 0.6;
+          display: inline-flex;
+          align-items: center;
+        }
+        .rss-medium .rss-source-link:hover {
+          opacity: 1;
         }
         .rss-medium .body {
           font-family: Georgia, "Times New Roman", serif;
@@ -188,23 +206,11 @@ export class RssTheme implements Theme {
           margin: 1.2em auto;
           border-radius: 6px;
         }
-        .rss-medium-gallery {
-          margin-top: 2.5rem;
-          display: grid;
-          gap: 1.4rem;
-        }
-        .rss-medium-gallery figure { margin: 0; }
-        .rss-medium-gallery figcaption {
-          margin-top: 0.45rem;
-          color: var(--text-secondary);
-          font-size: 0.9rem;
-        }
       </style>
       <article class="rss-medium">
         <h1>${context.entity.title}</h1>
         ${subline ? `<div class="subline">${subline}</div>` : ""}
         <div class="body">${bodyHtml}</div>
-        ${gallery}
       </article>
     `;
   }
@@ -212,19 +218,24 @@ export class RssTheme implements Theme {
   getFilePath(context: ThemeRenderContext): string {
     const d = context.entity.data;
     const dt = dateParts((d.publishedAt as string | undefined) ?? (d.updatedAt as string | undefined));
-    const title = safeFilenameTitle(context.entity.title) || slugify(context.entity.externalId) || "post";
-    return `posts/${dt.year}/${dt.stamp} ${title}.md`;
+    // Slugified filename keeps URLs clean (no spaces / unsafe chars). The
+    // display title lives on the entity row, not in the path.
+    const slug = slugify(context.entity.title) || slugify(context.entity.externalId) || "post";
+    return `${dt.year}/${dt.stamp}-${slug}.md`;
   }
 
-  folderConfigs() {
-    const configs: Record<string, { sort?: "ASC" | "DESC"; visible?: boolean }> = {
-      posts: { sort: "DESC" },
+  folderConfigs(): Record<string, FolderConfig> {
+    const configs: Record<string, FolderConfig> = {
       assets: { visible: false },
     };
     for (let year = 1970; year <= 2100; year++) {
-      configs[String(year)] = { sort: "DESC" };
+      configs[String(year)] = { sort: "DESC", expanded: false, created_at_prefix: true };
     }
     return configs;
+  }
+
+  rootConfig(): FolderConfig {
+    return { sort: "DESC", expandFirstN: 3 };
   }
 
   agentsMarkdown(options: { title: string; description?: string }): string {
@@ -236,8 +247,9 @@ export class RssTheme implements Theme {
       "",
       "## Entity Types",
       "",
-      "### Posts (`posts/YYYY/`)",
+      "### Posts (`YYYY/`)",
       "Each file uses `YYYYMMDD <title>.md` naming for chronological scanning.",
+      "Years are sorted newest to oldest; the most recent year is expanded by default.",
       "",
       "### Images (`attachments/rss/YYYY/`)",
       "Downloaded image assets referenced by feed posts.",

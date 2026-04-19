@@ -33,7 +33,7 @@ function containsPath(node: TreeNode, selectedFile: string | null): boolean {
 }
 
 const TreeItem = memo(function TreeItem({ node, selectedFile, onSelect, depth, defaultExpanded = false }: TreeItemProps) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(node.expanded !== false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   // When a file outside the currently-paginated slice is selected (e.g. via

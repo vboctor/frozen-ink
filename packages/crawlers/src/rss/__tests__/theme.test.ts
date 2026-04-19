@@ -47,7 +47,7 @@ describe("RssTheme", () => {
 
   it("builds deterministic dated file paths", () => {
     const path = theme.getFilePath(makeContext());
-    expect(path).toBe("posts/2025/20250114 My Post.md");
+    expect(path).toBe("2025/20250114-my-post.md");
   });
 
   it("preserves paragraph breaks from HTML content", () => {

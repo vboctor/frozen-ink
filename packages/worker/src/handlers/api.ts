@@ -18,13 +18,14 @@ import { searchEntities } from "../db/search";
 import { getR2Object, getMimeType } from "../storage/r2";
 import { ThemeEngine } from "@frozenink/core/theme";
 import type { ThemeRenderContext, FolderConfig } from "@frozenink/core/theme";
-import { GitHubTheme, ObsidianTheme, GitTheme, MantisHubTheme } from "@frozenink/crawlers/themes";
+import { GitHubTheme, ObsidianTheme, GitTheme, MantisHubTheme, RssTheme } from "@frozenink/crawlers/themes";
 
 const themeEngine = new ThemeEngine();
 themeEngine.register(new GitHubTheme());
 themeEngine.register(new ObsidianTheme());
 themeEngine.register(new GitTheme());
 themeEngine.register(new MantisHubTheme());
+themeEngine.register(new RssTheme());
 
 export function buildRenderContext(
   collectionName: string,
@@ -128,12 +129,14 @@ api.get("/api/collections/:name/tree", async (c) => {
     .filter((p) => p.endsWith(".md"));
 
   // Derive folder configs from the theme instead of R2-stored yml files
-  const folderConfigs = new Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean }>();
-  const rootConfig: { hide?: string[] } = {};
+  const folderConfigs = new Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean; expandFirstN?: number; expanded?: boolean; created_at_prefix?: boolean }>();
+  const rootConfig: { hide?: string[]; sort?: "ASC" | "DESC"; expandFirstN?: number } = {};
   if (col?.crawler) {
     const themeFolderConfigs = themeEngine.getFolderConfigs(col.crawler);
     const themeRootConfig = themeEngine.getRootConfig(col.crawler);
     if (themeRootConfig.hide) rootConfig.hide = themeRootConfig.hide;
+    if (themeRootConfig.sort) rootConfig.sort = themeRootConfig.sort;
+    if (themeRootConfig.expandFirstN) rootConfig.expandFirstN = themeRootConfig.expandFirstN;
 
     // Map folder-name-based configs to actual folder paths found in the entity paths
     const folderPaths = new Set<string>();
@@ -150,6 +153,9 @@ api.get("/api/collections/:name/tree", async (c) => {
       }
     }
   }
+
+  // Store root config at "" key so sortTree can apply it at the root level
+  folderConfigs.set("", rootConfig);
 
   // Apply root-level hide patterns to files at the root (no subdirectory)
   const rootHideCompiled = compileHidePatterns(rootConfig.hide ?? []);
@@ -569,7 +575,7 @@ function pickFirstTreeFile(
 function buildTreeFromPaths(
   paths: string[],
   titleByPath: Map<string, string> = new Map(),
-  folderConfigs: Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean }> = new Map(),
+  folderConfigs: Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean; expandFirstN?: number; expanded?: boolean; created_at_prefix?: boolean }> = new Map(),
 ): object[] {
   interface TreeNode {
     name: string;
@@ -577,6 +583,7 @@ function buildTreeFromPaths(
     type: "directory" | "file";
     title?: string;
     count?: number;
+    expanded?: boolean;
     children?: TreeNode[];
   }
 
@@ -623,7 +630,7 @@ function buildTreeFromPaths(
   }
 
   function sortTree(nodes: TreeNode[], parentPath: string = ""): TreeNode[] {
-    const config = parentPath ? folderConfigs.get(parentPath) : undefined;
+    const config = folderConfigs.get(parentPath);
     const sortOrder = config?.sort ?? "ASC";
     const folderHideCompiled = compileHidePatterns(config?.hide ?? []);
 
@@ -632,8 +639,25 @@ function buildTreeFromPaths(
       .filter((n) => {
         const childPath = parentPath ? `${parentPath}/${n.name}` : n.name;
         return folderConfigs.get(childPath)?.visible !== false;
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      });
+    if (sortOrder === "DESC") {
+      dirs.sort((a, b) => b.name.localeCompare(a.name));
+    } else {
+      dirs.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    for (const dir of dirs) {
+      const childPath = parentPath ? `${parentPath}/${dir.name}` : dir.name;
+      if (folderConfigs.get(childPath)?.expanded === false) {
+        dir.expanded = false;
+      }
+    }
+    if (config?.expandFirstN && config.expandFirstN > 0) {
+      // Mark first N expanded, rest explicitly collapsed. The UI falls back to
+      // "expanded" when the flag is absent, so both sides must be set.
+      for (let i = 0; i < dirs.length; i++) {
+        dirs[i].expanded = i < config.expandFirstN;
+      }
+    }
 
     const files = nodes
       .filter((n) => n.type === "file")
@@ -642,6 +666,13 @@ function buildTreeFromPaths(
       files.sort((a, b) => b.name.localeCompare(a.name));
     } else {
       files.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    if (config?.created_at_prefix) {
+      for (const file of files) {
+        const datePrefix = file.name.slice(0, 8);
+        const stored = titleByPath.get(file.path);
+        file.title = stored ? `${datePrefix} ${stored}` : file.name.replace(/\.md$/, "");
+      }
     }
 
     for (const dir of dirs) {

@@ -214,7 +214,10 @@ export class RssCrawler implements Crawler {
     if (!watermark) return true;
     const t = post.updatedAt ?? post.publishedAt;
     if (!t) return !seenIds.has(post.id);
-    return new Date(t).getTime() >= new Date(watermark).getTime() || !seenIds.has(post.id);
+    // Strict `>` so a post whose timestamp equals the stored watermark (i.e.
+    // the last sync's newest post) doesn't get reprocessed every run — that
+    // was re-downloading its image attachments on every sync.
+    return new Date(t).getTime() > new Date(watermark).getTime() || !seenIds.has(post.id);
   }
 
   private async fetchFeedPosts(): Promise<ParsedFeedPost[]> {
