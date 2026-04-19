@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { formatTimestamp, type Collection, type PublishProgress } from "../../types";
 
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}m ${sec}s`;
+}
+
 export default function PublishPanel() {
   const [collections, setCollections] = useState<Collection[]>([]);
 
@@ -18,6 +26,12 @@ export default function PublishPanel() {
   const [progress, setProgress] = useState<PublishProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!publishing) return;
+    const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [publishing]);
 
   useEffect(() => {
     fetch("/api/collections").then((r) => r.json()).then(setCollections).catch(() => {});
@@ -135,6 +149,9 @@ export default function PublishPanel() {
             <span className={`status-badge status-${progress.active ? "running" : progress.error ? "failed" : "completed"}`}>
               {progress.active ? "Publishing" : progress.error ? "Failed" : "Done"}
             </span>
+            {progress.startedAt != null && (
+              <span className="sync-progress-elapsed">{formatElapsed(now - progress.startedAt)}</span>
+            )}
           </div>
           <div className="sync-progress-status">{progress.detail || progress.step}</div>
           {progress.error && <div className="form-error">{progress.error}</div>}

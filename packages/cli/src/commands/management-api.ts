@@ -57,6 +57,8 @@ export interface PublishProgress {
   step: string;
   detail: string;
   error: string | null;
+  /** Unix timestamp in ms when the publish run started, for elapsed-time display. */
+  startedAt: number | null;
 }
 
 export interface ExportProgress {
@@ -82,6 +84,7 @@ let publishProgress: PublishProgress = {
   step: "idle",
   detail: "",
   error: null,
+  startedAt: null,
 };
 
 let exportProgress: ExportProgress = {
@@ -596,7 +599,7 @@ export function handleManagementRequest(req: Request): Response | null {
     return handleAsync(async () => {
       const name = decodeURIComponent(publishColMatch[1]);
       const body = await readBody(req);
-      publishProgress = { active: true, step: "starting", detail: "", error: null };
+      publishProgress = { active: true, step: "starting", detail: "", error: null, startedAt: Date.now() };
       // Fire and forget — the UI polls /api/publish/status
       triggerPublish({ ...body, collectionName: name }).catch(() => {});
       return jsonResponse({ ok: true });
@@ -756,7 +759,8 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
 // --- Publish logic ---
 
 async function triggerPublish(opts: Record<string, unknown>): Promise<void> {
-  publishProgress = { active: true, step: "starting", detail: "Starting publish...", error: null };
+  const startedAt = publishProgress.startedAt ?? Date.now();
+  publishProgress = { active: true, step: "starting", detail: "Starting publish...", error: null, startedAt };
   try {
     const publishCollections = publishCollectionsOverride
       ?? (await import("./publish")).publishCollections;
@@ -773,8 +777,8 @@ async function triggerPublish(opts: Record<string, unknown>): Promise<void> {
       },
     );
 
-    publishProgress = { active: false, step: "done", detail: "Publish completed", error: null };
+    publishProgress = { active: false, step: "done", detail: "Publish completed", error: null, startedAt };
   } catch (err) {
-    publishProgress = { active: false, step: "failed", detail: "", error: String(err) };
+    publishProgress = { active: false, step: "failed", detail: "", error: String(err), startedAt };
   }
 }

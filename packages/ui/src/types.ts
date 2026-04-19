@@ -120,6 +120,7 @@ export interface PublishProgress {
   step: string;
   detail: string;
   error: string | null;
+  startedAt: number | null;
 }
 
 export type UIMode = "browse" | "manage";
