@@ -71,6 +71,14 @@ function formatSize(bytes: number): string {
   return `${mb % 1 < 0.05 ? mb.toFixed(0) : mb.toFixed(1)} MB`;
 }
 
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}m ${sec}s`;
+}
+
 function formatCount(n: number): string {
   return n.toLocaleString();
 }
@@ -91,6 +99,12 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
   const [removePassword, setRemovePassword] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const publishPollRef = useRef<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!publishing) return;
+    const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [publishing]);
 
   // MCP state
   const [mcpStatuses, setMcpStatuses] = useState<McpLinkStatus[]>([]);
@@ -432,6 +446,11 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
               <span className={`status-badge status-${publishProgress.active ? "running" : publishProgress.error ? "failed" : "completed"}`}>
                 {publishProgress.active ? "Publishing" : publishProgress.error ? "Failed" : "Done"}
               </span>
+              {publishProgress.startedAt != null && (
+                <span className="sync-progress-elapsed">
+                  {formatElapsed(now - publishProgress.startedAt)}
+                </span>
+              )}
             </div>
             <div className="sync-progress-status">{publishProgress.detail || publishProgress.step}</div>
           </div>

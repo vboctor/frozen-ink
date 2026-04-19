@@ -119,6 +119,16 @@ export async function getCredentials(): Promise<CfCredentials> {
   return cachedCredentials;
 }
 
+/**
+ * Force re-read of credentials on the next getCredentials() call.
+ * Useful when an API call returns 401 — typically because wrangler's OAuth
+ * token on disk was refreshed while we held a stale cached copy in memory
+ * (common in long-running processes like the desktop app).
+ */
+export function invalidateCredentials(): void {
+  cachedCredentials = null;
+}
+
 export async function checkWranglerAuth(): Promise<void> {
   try {
     await getCredentials();
@@ -191,16 +201,17 @@ export async function executeD1File(dbName: string, sqlFilePath: string): Promis
  * a wrangler subprocess per batch (saves ~500ms-1s per call).
  */
 export async function executeD1Query(databaseId: string, sql: string): Promise<void> {
-  const { apiToken, accountId } = await getCredentials();
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
-  const res = await fetchWithRetry(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      "Content-Type": "application/json",
+  const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`,
+    init: {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ sql }),
     },
-    body: JSON.stringify({ sql }),
-  });
+  }));
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`D1 query failed: ${res.status} ${text.slice(0, 500)}`);
@@ -248,6 +259,25 @@ async function fetchWithRetry(
   return fetch(url, init);
 }
 
+/**
+ * Make an authenticated Cloudflare API request. On 401, invalidates the
+ * cached OAuth token and retries once with fresh credentials — long-running
+ * processes (desktop app) can hold a stale cached token after wrangler
+ * refreshes it on disk.
+ */
+async function fetchCloudflareApi(
+  build: (creds: CfCredentials) => { url: string; init: RequestInit },
+): Promise<Response> {
+  const { url, init } = build(await getCredentials());
+  let res = await fetchWithRetry(url, init);
+  if (res.status === 401) {
+    invalidateCredentials();
+    const fresh = build(await getCredentials());
+    res = await fetchWithRetry(fresh.url, fresh.init);
+  }
+  return res;
+}
+
 // --- R2 operations (bucket via wrangler CLI, objects via HTTP for speed) ---
 
 export async function createR2Bucket(name: string): Promise<void> {
@@ -267,20 +297,24 @@ export async function putR2Object(
   filePath: string,
   contentType?: string,
 ): Promise<void> {
-  const { apiToken, accountId } = await getCredentials();
   const body = readFileSync(filePath);
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  const res = await fetchWithRetry(url, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      ...(contentType ? { "Content-Type": contentType } : {}),
+  const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`,
+    init: {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        ...(contentType ? { "Content-Type": contentType } : {}),
+      },
+      body,
     },
-    body,
-  });
+  }));
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`R2 upload failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
+    const hint = res.status === 401
+      ? " — the Cloudflare OAuth token looks expired. Run `wrangler login` again, or restart the desktop app to refresh the cached credentials."
+      : "";
+    throw new Error(`R2 upload failed for ${key}: ${res.status} ${text.slice(0, 200)}${hint}`);
   }
 }
 
@@ -290,13 +324,14 @@ export async function putR2String(
   content: string,
   contentType: string = "text/plain",
 ): Promise<void> {
-  const { apiToken, accountId } = await getCredentials();
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  const res = await fetchWithRetry(url, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": contentType },
-    body: content,
-  });
+  const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`,
+    init: {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": contentType },
+      body: content,
+    },
+  }));
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`R2 upload failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
@@ -304,24 +339,26 @@ export async function putR2String(
 }
 
 export async function getR2String(bucket: string, key: string): Promise<string | null> {
-  const { apiToken, accountId } = await getCredentials();
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  const res = await fetchWithRetry(url, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${apiToken}` },
-  });
+  const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`,
+    init: {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiToken}` },
+    },
+  }));
   if (res.status === 404) return null;
   if (!res.ok) return null;
   return res.text();
 }
 
 export async function deleteR2Object(bucket: string, key: string): Promise<void> {
-  const { apiToken, accountId } = await getCredentials();
-  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`;
-  const res = await fetchWithRetry(url, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${apiToken}` },
-  });
+  const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`,
+    init: {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${apiToken}` },
+    },
+  }));
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`R2 delete failed for ${key}: ${res.status} ${text.slice(0, 200)}`);
@@ -346,17 +383,21 @@ export async function deleteR2Bucket(name: string): Promise<void> {
 }
 
 export async function listR2Objects(bucket: string, prefix?: string): Promise<Array<{ key: string; size: number }>> {
-  const { apiToken, accountId } = await getCredentials();
   const objects: Array<{ key: string; size: number }> = [];
   let cursor: string | undefined;
   for (;;) {
-    const params = new URLSearchParams({ per_page: "1000" });
-    if (prefix) params.set("prefix", prefix);
-    if (cursor) params.set("cursor", cursor);
-    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects?${params}`;
-    const res = await fetchWithRetry(url, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiToken}` },
+    const pageCursor = cursor;
+    const res = await fetchCloudflareApi(({ apiToken, accountId }) => {
+      const params = new URLSearchParams({ per_page: "1000" });
+      if (prefix) params.set("prefix", prefix);
+      if (pageCursor) params.set("cursor", pageCursor);
+      return {
+        url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects?${params}`,
+        init: {
+          method: "GET",
+          headers: { Authorization: `Bearer ${apiToken}` },
+        },
+      };
     });
     if (!res.ok) break;
     const data = await res.json() as { result: Array<{ key: string; size: number }>; result_info?: { cursor?: string } };
