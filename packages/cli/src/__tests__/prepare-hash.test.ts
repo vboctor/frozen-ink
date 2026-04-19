@@ -88,7 +88,7 @@ afterEach(() => {
 });
 
 describe("prepareCollection — content hash verification", () => {
-  it("detects a stale content_hash and triggers regenerate", async () => {
+  it("detects a stale content_hash and warns without auto-regenerating", async () => {
     const { themeEngine } = await seedCollection();
 
     const dbPath = getCollectionDbPath("prep-test");
@@ -109,14 +109,18 @@ describe("prepareCollection — content hash verification", () => {
     };
     await prepareCollection(col as any, getFrozenInkHome(), themeEngine, (m) => logs.push(m));
 
-    // Prepare logged the hash mismatch reason
-    const regenLog = logs.find((l) => l.includes("outdated"));
-    expect(regenLog).toBeDefined();
-    expect(regenLog).toContain("hash");
+    // Prepare logged the hash mismatch reason and the suggested command
+    const warnLog = logs.find((l) => l.includes("outdated"));
+    expect(warnLog).toBeDefined();
+    expect(warnLog).toContain("hash");
+    expect(warnLog).toContain("fink generate");
 
-    // After regenerate, every row has a correct hash
+    // Prepare must NOT auto-fix hashes — the user runs `fink generate` explicitly.
+    // Every row should still have the corrupted hash we wrote above.
     const rows = colDb.select().from(entities).all();
     for (const row of rows) {
+      expect(row.contentHash).toBe("deadbeef");
+      // Sanity: the expected hash is different, confirming we did detect staleness.
       const expected = computeEntityHash({
         entityType: row.entityType,
         title: row.title,
@@ -124,7 +128,7 @@ describe("prepareCollection — content hash verification", () => {
         slug: row.slug ?? null,
         data: row.data as EntityData,
       });
-      expect(row.contentHash).toBe(expected);
+      expect(expected).not.toBe("deadbeef");
     }
   });
 
