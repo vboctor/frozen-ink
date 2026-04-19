@@ -131,11 +131,24 @@ export async function getEntitiesByExternalIds(
 export async function getFullManifest(
   db: D1Database,
 ): Promise<Array<{ externalId: string; hash: string }>> {
-  const { results } = await db
-    .prepare("SELECT external_id, content_hash FROM entities")
-    .all<{ external_id: string; content_hash: string | null }>();
-  return (results ?? []).map((r) => ({
-    externalId: r.external_id,
-    hash: r.content_hash ?? "",
-  }));
+  // D1's worker binding silently returns no rows when .all() is called on a
+  // bare SELECT against a large table (observed: ~24K-row entities table
+  // returns []). Page explicitly with LIMIT/OFFSET to dodge that limit.
+  // ORDER BY id keeps pages stable across calls.
+  const PAGE_SIZE = 5000;
+  const out: Array<{ externalId: string; hash: string }> = [];
+  let offset = 0;
+  for (;;) {
+    const { results } = await db
+      .prepare("SELECT external_id, content_hash FROM entities ORDER BY id LIMIT ? OFFSET ?")
+      .bind(PAGE_SIZE, offset)
+      .all<{ external_id: string; content_hash: string | null }>();
+    const rows = results ?? [];
+    for (const r of rows) {
+      out.push({ externalId: r.external_id, hash: r.content_hash ?? "" });
+    }
+    if (rows.length < PAGE_SIZE) break;
+    offset += rows.length;
+  }
+  return out;
 }
