@@ -812,6 +812,7 @@ async function triggerPublish(opts: Record<string, unknown>): Promise<void> {
       { collectionName, toolDescription, password, removePassword, forcePublic },
       (step, detail) => {
         publishProgress = { ...publishProgress, step, detail };
+        console.log(`[publish:${collectionName}] ${step}: ${detail}`);
       },
     );
 
