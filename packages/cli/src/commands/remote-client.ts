@@ -11,6 +11,23 @@ export interface ManifestResponse {
   entities: string;
 }
 
+export interface CollectionInfo {
+  version: number;
+  name: string;
+  title: string;
+  description: string | null;
+  crawlerType: string;
+  entityCount: number;
+  entityTypes: Record<string, number>;
+  totalDataBytes: number;
+  lastUpdatedAt: string | null;
+  manifestVersion: number;
+  manifestHash: string;
+  capabilities: string[];
+  workerBuildId: string;
+  generatedAt: string;
+}
+
 export class RemoteClient {
   private baseUrl: string;
   private password: string | undefined;
@@ -96,6 +113,26 @@ export class RemoteClient {
     }
 
     return { manifest, entries: parseManifestEntities(manifest.entities) };
+  }
+
+  async getInfo(): Promise<CollectionInfo> {
+    // Resolve the collection name the same way getManifest does, so callers
+    // can call getInfo() standalone without a prior manifest fetch.
+    if (!this.collectionName) {
+      try {
+        const info = await this.fetchJson<CollectionInfo>("/api/collections/_default/info");
+        if (info.name) this.collectionName = info.name;
+        return info;
+      } catch (err) {
+        if (!(err instanceof Error) || !err.message.startsWith("HTTP 404 ")) throw err;
+      }
+      const collections = await this.fetchJson<Array<{ name: string }>>("/api/collections");
+      if (collections.length === 0) throw new Error("No collections found on remote site.");
+      this.collectionName = collections[0].name;
+    }
+    return this.fetchJson<CollectionInfo>(
+      `/api/collections/${encodeURIComponent(this.collectionName)}/info`,
+    );
   }
 
   async getEntitiesBulk(externalIds: string[]): Promise<RemoteEntityData[]> {
