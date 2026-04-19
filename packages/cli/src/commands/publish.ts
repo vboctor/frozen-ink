@@ -464,15 +464,22 @@ export async function publishCollections(
       contentHash: entity.contentHash ?? null,
     }));
     const plan = computeSyncPlan(localForPlan, remoteManifest);
-    const changedExtIds = [
-      ...plan.entities.add.map((e) => e.externalId),
+    // Invert pull semantics into push semantics: computeSyncPlan returns
+    //   add    = remote-only (pull would download these)
+    //   update = both, hash differs
+    //   delete = local-only (pull would remove these locally)
+    // For publish we instead need:
+    //   push:   local-only + hash-differs   → INSERT OR REPLACE on remote
+    //   prune:  remote-only                 → DELETE on remote
+    const pushExtIds = [
+      ...plan.entities.delete,
       ...plan.entities.update.map((e) => e.externalId),
     ];
-    const deletedExtIds = plan.entities.delete;
+    const pruneExtIds = plan.entities.add.map((e) => e.externalId);
 
     onProgress(
       "d1-build",
-      `Incremental plan: +${plan.entities.add.length} ~${plan.entities.update.length} -${deletedExtIds.length}`,
+      `Incremental plan: +${plan.entities.delete.length} ~${plan.entities.update.length} -${pruneExtIds.length}`,
     );
 
     // Build delta SQL.
@@ -481,27 +488,30 @@ export async function publishCollections(
     // Chunk IN(...) lists so each DELETE statement stays under MAX_BATCH_BYTES.
     const DELETE_CHUNK = 200;
 
-    // Deletes: drop FTS rows first (no cascade), then entities rows.
-    for (let i = 0; i < deletedExtIds.length; i += DELETE_CHUNK) {
-      const chunk = deletedExtIds.slice(i, i + DELETE_CHUNK);
+    // Prune entries that exist remotely but not locally — drop FTS rows
+    // first (no cascade), then entities rows.
+    for (let i = 0; i < pruneExtIds.length; i += DELETE_CHUNK) {
+      const chunk = pruneExtIds.slice(i, i + DELETE_CHUNK);
       const inList = chunk.map((id) => `'${escapeSQL(id)}'`).join(",");
       deltaSql.push(`DELETE FROM entities_fts WHERE external_id IN (${inList});`);
       deltaSql.push(`DELETE FROM entities WHERE external_id IN (${inList});`);
     }
 
-    if (changedExtIds.length > 0) {
-      // Pre-delete FTS rows for changed entities. FTS5 has no UNIQUE constraint
-      // on external_id, so INSERT OR REPLACE wouldn't dedupe — explicit DELETE
-      // is required before the INSERT below.
-      for (let i = 0; i < changedExtIds.length; i += DELETE_CHUNK) {
-        const chunk = changedExtIds.slice(i, i + DELETE_CHUNK);
+    if (pushExtIds.length > 0) {
+      // Pre-delete FTS and entity rows for pushed entities. Neither table has
+      // a UNIQUE constraint on external_id (entities.id is the only PK), so
+      // INSERT OR REPLACE wouldn't dedupe — explicit DELETE is required
+      // before the INSERTs below to avoid leaving stale duplicates.
+      for (let i = 0; i < pushExtIds.length; i += DELETE_CHUNK) {
+        const chunk = pushExtIds.slice(i, i + DELETE_CHUNK);
         const inList = chunk.map((id) => `'${escapeSQL(id)}'`).join(",");
         deltaSql.push(`DELETE FROM entities_fts WHERE external_id IN (${inList});`);
+        deltaSql.push(`DELETE FROM entities WHERE external_id IN (${inList});`);
       }
 
-      const changedSet = new Set(changedExtIds);
+      const pushSet = new Set(pushExtIds);
       for (const { entity, colName, colCrawler } of localRows) {
-        if (!changedSet.has(entity.externalId)) continue;
+        if (!pushSet.has(entity.externalId)) continue;
 
         const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
         if (Buffer.byteLength(data, "utf8") > MAX_ENTITY_DATA_BYTES) {
