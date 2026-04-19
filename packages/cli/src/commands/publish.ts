@@ -288,6 +288,12 @@ export async function publishCollections(
   } finally {
     cleanupTempFile(tomlFile);
   }
+  // Wrangler doesn't always echo the URL on re-deploys — fall back to the
+  // previously-saved URL (or the default workers.dev hostname) so downstream
+  // requests like the manifest fetch in Phase 3 always have a real base URL.
+  if (!workerUrl) {
+    workerUrl = existingPublish?.url || `https://${workerName}.workers.dev`;
+  }
 
   // --- Phase 2: R2 uploads (before D1 rebuild so the site stays live on old data) ---
 
@@ -579,9 +585,6 @@ export async function publishCollections(
     }
   }
 
-  if (!workerUrl) {
-    workerUrl = `https://${workerName}.workers.dev`;
-  }
   const mcpUrl = `${workerUrl}/mcp`;
   const passwordProtected = passwordHash.length > 0;
 
