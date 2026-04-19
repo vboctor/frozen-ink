@@ -41,10 +41,14 @@ interface MantisHubSyncCursor extends SyncCursor {
   _pagesProjectIds?: number[];
   /** Current browse page within the current project's pages. */
   _pagesBrowsePage?: number;
+  /** Issue IDs to fetch during incremental sync (populated by lightweight scan). */
+  _incrementalIds?: number[];
 }
 
 const PAGE_SIZE = 25;
+const SCAN_PAGE_SIZE = 100;
 const PAGE_DELAY_MS = 100;
+const SCAN_PAGE_DELAY_MS = 20;
 
 function parseTimestamp(value: string | undefined): number | null {
   if (!value) return null;
@@ -123,9 +127,18 @@ export class MantisHubCrawler implements Crawler {
   private syncEntities?: MantisHubEntityType[];
   private fetchFn: typeof fetch = globalThis.fetch;
   private assetFilter: AssetFilter | null = null;
+  private progressCallback: ((msg: string) => void) | null = null;
 
   setAssetFilter(filter: AssetFilter): void {
     this.assetFilter = filter;
+  }
+
+  setProgressCallback(callback: (msg: string) => void): void {
+    this.progressCallback = callback;
+  }
+
+  private reportProgress(msg: string): void {
+    this.progressCallback?.(msg);
   }
 
   /** Returns true if the attachment should be downloaded based on extension and size. */
@@ -165,6 +178,16 @@ export class MantisHubCrawler implements Crawler {
     this.maxEntities = cfg.maxEntities;
     this.mantisHubMode = isMantisHub(this.baseUrl);
     this.syncEntities = cfg.entities;
+
+    // Log credential diagnostics (safe — no secret values) so misloaded tokens
+    // can be identified by fingerprint in the error message.
+    const credKeys = Object.keys(credentials);
+    const tokenFingerprint = this.token
+      ? `${this.token.slice(0, 4)}…(${this.token.length} chars)`
+      : "<none>";
+    console.log(
+      `[mantishub] initialized baseUrl=${this.baseUrl} credentialKeys=[${credKeys.join(",")}] token=${tokenFingerprint}`,
+    );
 
     // Use stored project.id if available (persisted at creation time);
     // otherwise resolve project.name to project.id via API.
@@ -227,6 +250,19 @@ export class MantisHubCrawler implements Crawler {
     }
 
     // ── Issues phase ─────────────────────────────────────────────
+
+    // Incremental sync: use lightweight scan + targeted fetch approach.
+    // 1. Scan all issues with select=id,updated_at (100/page, tiny payloads)
+    // 2. Collect IDs where updated_at >= updatedSince
+    // 3. Fetch only those issues individually for full data
+    if (c.updatedSince && !c._incrementalIds) {
+      return this.scanForIncrementalIds(c);
+    }
+    if (c._incrementalIds) {
+      return this.fetchIncrementalBatch(c);
+    }
+
+    // Full sync: paginate through all issues.
     const isLegacyPageCursor =
       c.page !== undefined &&
       c.updatedSince === undefined &&
@@ -234,13 +270,13 @@ export class MantisHubCrawler implements Crawler {
       c.lastPageSignature === undefined;
     const page = isLegacyPageCursor ? 1 : (c.page ?? 1);
     const fetched = isLegacyPageCursor ? 0 : (c.fetched ?? 0);
-    const updatedSinceTs = parseTimestamp(c.updatedSince);
 
     // Throttle requests: sleep between pages to avoid overloading the server
     if (page > 1) {
       await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
     }
 
+    this.reportProgress(`Full sync: fetching issues page ${page} (${fetched} synced so far)`);
     let url = `${this.baseUrl}/api/rest/issues?page_size=${PAGE_SIZE}&page=${page}`;
     if (this.projectId) {
       url += `&project_id=${this.projectId}`;
@@ -266,13 +302,6 @@ export class MantisHubCrawler implements Crawler {
     }
 
     let issuesToProcess = issues;
-    if (updatedSinceTs !== null) {
-      issuesToProcess = issues.filter((issue) => {
-        const issueUpdatedAtTs = parseTimestamp(issue.updated_at);
-        return issueUpdatedAtTs !== null && issueUpdatedAtTs >= updatedSinceTs;
-      });
-    }
-
     let remaining = issuesToProcess.length;
     if (this.maxEntities) {
       remaining = Math.max(0, this.maxEntities - fetched);
@@ -332,7 +361,6 @@ export class MantisHubCrawler implements Crawler {
         nextCursor: {
           page: page + 1,
           fetched: newFetched,
-          updatedSince: c.updatedSince,
           newestSeenUpdatedAt,
           lastPageSignature: pageSignature,
           repeatedPageCount,
@@ -351,13 +379,147 @@ export class MantisHubCrawler implements Crawler {
     };
   }
 
+  /**
+   * Lightweight scan: fetch all issues using select=id,updated_at with large
+   * page size to quickly identify which issues need syncing. Stores matching
+   * IDs in the cursor for the fetch phase. Servers that don't support select=
+   * return the full issue payload — still correct, just less efficient.
+   */
+  private async scanForIncrementalIds(c: MantisHubSyncCursor): Promise<SyncResult> {
+    const updatedSinceTs = parseTimestamp(c.updatedSince)!;
+    const ids: number[] = [];
+    let newestSeenUpdatedAt = c.newestSeenUpdatedAt;
+    let page = 1;
+
+    this.reportProgress(`Scanning issues updated since ${c.updatedSince}`);
+    while (true) {
+      if (page > 1) {
+        await new Promise((resolve) => setTimeout(resolve, SCAN_PAGE_DELAY_MS));
+      }
+
+      this.reportProgress(`Scanning issues: page ${page} (${ids.length} updated so far)`);
+      let url = `${this.baseUrl}/api/rest/issues?select=id,updated_at&page_size=${SCAN_PAGE_SIZE}&page=${page}`;
+      if (this.projectId) url += `&project_id=${this.projectId}`;
+
+      const response = await this.apiFetch(url);
+      const data = (await response.json()) as { issues: Array<{ id: number; updated_at: string }> };
+      const issues = data.issues ?? [];
+
+      let pageMatchCount = 0;
+      for (const issue of issues) {
+        newestSeenUpdatedAt = maxTimestamp(newestSeenUpdatedAt, issue.updated_at);
+        const ts = parseTimestamp(issue.updated_at);
+        if (ts !== null && ts >= updatedSinceTs) {
+          ids.push(issue.id);
+          pageMatchCount++;
+        }
+      }
+
+      // Partial page → we've reached the end of the dataset
+      if (issues.length < SCAN_PAGE_SIZE) break;
+      // MantisBT returns issues sorted by last_updated DESC. Once a full page
+      // has zero matches, every subsequent page will also be older than
+      // updatedSince — safe to stop scanning.
+      if (pageMatchCount === 0 && issues.length > 0) break;
+
+      page++;
+    }
+    this.reportProgress(`Scan complete: ${ids.length} updated issues found across ${page} page(s)`);
+
+    if (ids.length === 0) {
+      // No issues need syncing — transition directly
+      const finalUpdatedSince = maxTimestamp(c.updatedSince, newestSeenUpdatedAt);
+      return {
+        entities: [],
+        ...this.transitionFromIssues(finalUpdatedSince),
+      };
+    }
+
+    // Apply maxEntities limit
+    let idsToFetch = ids;
+    if (this.maxEntities && ids.length > this.maxEntities) {
+      idsToFetch = ids.slice(0, this.maxEntities);
+    }
+
+    // Store IDs in cursor for the fetch phase
+    return {
+      entities: [],
+      nextCursor: {
+        updatedSince: c.updatedSince,
+        newestSeenUpdatedAt,
+        _incrementalIds: idsToFetch,
+        _users: Object.fromEntries(this.collectedUsers),
+        _projects: Object.fromEntries(this.collectedProjects),
+      },
+      hasMore: true,
+      deletedExternalIds: [],
+    };
+  }
+
+  /**
+   * Fetch phase of incremental sync: fetch full issue data for IDs
+   * identified during the scan phase, in batches of PAGE_SIZE.
+   */
+  private async fetchIncrementalBatch(c: MantisHubSyncCursor): Promise<SyncResult> {
+    const ids = c._incrementalIds ?? [];
+    const batch = ids.slice(0, PAGE_SIZE);
+    const remaining = ids.slice(PAGE_SIZE);
+
+    const entities: CrawlerEntityData[] = [];
+    for (let i = 0; i < batch.length; i++) {
+      const id = batch[i];
+      this.reportProgress(`Fetching issue #${id} (${i + 1}/${batch.length} in batch, ${remaining.length + batch.length - i - 1} remaining)`);
+      let fullIssue: MantisHubIssue;
+      try {
+        fullIssue = await this.fetchIssue(id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to sync entity type=issue id=${id}: ${message}`);
+      }
+      this.collectUsersAndProjects(fullIssue);
+      entities.push(await this.buildIssueEntity(fullIssue));
+    }
+
+    const serializedCollected = {
+      _users: Object.fromEntries(this.collectedUsers),
+      _projects: Object.fromEntries(this.collectedProjects),
+    };
+
+    if (remaining.length > 0) {
+      return {
+        entities,
+        nextCursor: {
+          updatedSince: c.updatedSince,
+          newestSeenUpdatedAt: c.newestSeenUpdatedAt,
+          _incrementalIds: remaining,
+          ...serializedCollected,
+        },
+        hasMore: true,
+        deletedExternalIds: [],
+      };
+    }
+
+    // All IDs fetched — transition to next phase
+    const finalUpdatedSince = maxTimestamp(c.updatedSince, c.newestSeenUpdatedAt);
+    return {
+      entities,
+      ...this.transitionFromIssues(finalUpdatedSince),
+    };
+  }
+
   private async syncUsersAndProjects(c: MantisHubSyncCursor): Promise<SyncResult> {
     const entities: CrawlerEntityData[] = [];
 
     // Fetch full user profiles; fall back to basic data on error.
     if (this.shouldSync("users")) {
-      for (const basic of this.collectedUsers.values()) {
-        if (!basic.name) continue; // Skip users without a name
+      const users = Array.from(this.collectedUsers.values()).filter((u) => u.name);
+      if (users.length > 0) {
+        this.reportProgress(`Fetching ${users.length} user profile(s)`);
+      }
+      let i = 0;
+      for (const basic of users) {
+        i++;
+        this.reportProgress(`Fetching user ${basic.name} (${i}/${users.length})`);
         try {
           const profile = await this.fetchUser(basic.id);
           entities.push(this.buildUserEntity(profile));
@@ -375,6 +537,9 @@ export class MantisHubCrawler implements Crawler {
     }
 
     // Emit project entities (data already collected from issues).
+    if (this.collectedProjects.size > 0) {
+      this.reportProgress(`Building ${this.collectedProjects.size} project entit${this.collectedProjects.size === 1 ? "y" : "ies"}`);
+    }
     for (const project of this.collectedProjects.values()) {
       entities.push(this.buildProjectEntity(project));
     }
@@ -444,8 +609,19 @@ export class MantisHubCrawler implements Crawler {
         const text = await response.text();
         if (text.trim()) bodySnippet = ` — ${text.trim().slice(0, 300)}`;
       } catch { /* ignore body read errors */ }
+      // Include a safe token fingerprint (length + first 4 chars) to help diagnose
+      // credential misloading without leaking the full token.
+      const tokenFingerprint = this.token
+        ? `${this.token.slice(0, 4)}…(${this.token.length} chars)`
+        : "<none>";
+      let hint = "";
+      if (response.status === 403) {
+        hint = " (MantisBT 403: token is in the DB, but the user account is likely disabled or lacks view access. Check the user account status and project access level.)";
+      } else if (response.status === 401) {
+        hint = " (MantisBT 401: token is invalid/unknown, or missing. Verify the token in credentials.yml matches a valid API token.)";
+      }
       throw new Error(
-        `MantisHub API error: GET ${url} → ${response.status} ${response.statusText}${bodySnippet}`,
+        `MantisHub API error: GET ${url} → ${response.status} ${response.statusText}${bodySnippet} [token=${tokenFingerprint}]${hint}`,
       );
     }
     return response;
@@ -617,6 +793,7 @@ export class MantisHubCrawler implements Crawler {
     try {
       // Browse all pages for this project (with pagination).
       const browsePage = c._pagesBrowsePage ?? 1;
+      this.reportProgress(`Fetching wiki pages for project ${currentProjectId} (page ${browsePage})`);
       const browseResult = await this.browsePages(currentProjectId, browsePage);
 
       // Fetch full details for each page and build entities.

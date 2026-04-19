@@ -647,10 +647,12 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
       // Remote/cloned collections use pullCollection — no prepare or crawler needed
       if (col.crawler === "remote") {
         syncProgress = { ...syncProgress, collectionName: name, status: `syncing ${name}` };
+        console.log(`[sync:${name}] starting (remote/cloned)`);
         try {
           const result = await pullCollection(name, {
             onProgress: (msg) => {
               syncProgress = { ...syncProgress, status: msg };
+              console.log(`[sync:${name}] ${msg}`);
             },
           });
           totalCreated += result.created;
@@ -680,6 +682,10 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
 
       const crawler = factory();
       try {
+        const credRef = typeof col.credentials === "string"
+          ? `name:"${col.credentials}" (from ${join(home, "credentials.yml")})`
+          : `inline(${Object.keys(col.credentials).join(",")})`;
+        console.log(`[sync] "${name}" (${col.crawler}) credentials=${credRef}`);
         await crawler.initialize(
           col.config as Record<string, unknown>,
           resolveCredentials(col.credentials),
@@ -711,11 +717,16 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
               updated: totalUpdated,
             };
           },
+          onProgress: (msg) => {
+            syncProgress = { ...syncProgress, status: `${name}: ${msg}` };
+            console.log(`[sync:${name}] ${msg}`);
+          },
         });
 
         const result = await engine.run({ syncType: full ? "full" : "incremental" });
         totalDeleted += result.deleted;
         syncProgress = { ...syncProgress, deleted: totalDeleted };
+        console.log(`[sync:${name}] done: +${result.created} ~${result.updated} -${result.deleted}`);
       } finally {
         await crawler.dispose();
       }
@@ -730,6 +741,7 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
       deleted: totalDeleted,
       error: null,
     };
+    console.log(`[sync] completed: +${totalCreated} ~${totalUpdated} -${totalDeleted} across ${collectionNames.length} collection(s)`);
   } catch (err) {
     syncProgress = {
       ...syncProgress,
@@ -737,6 +749,7 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
       status: "failed",
       error: String(err),
     };
+    console.error(`[sync] failed: ${err}`);
   }
 }
 

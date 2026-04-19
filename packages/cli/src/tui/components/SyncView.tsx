@@ -200,6 +200,9 @@ export function SyncView(): React.ReactElement {
             setFetchedCount((c) => c + externalIds.length);
           }
         },
+        onProgress: (msg: string) => {
+          setProgress((p) => [...p, `  ${msg}`]);
+        },
       });
 
       try {

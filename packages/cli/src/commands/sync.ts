@@ -153,6 +153,7 @@ Examples:
           });
           console.log(`  page ids: ${ids.join(",")}`);
         },
+        onProgress: (msg) => console.log(`  ${msg}`),
       });
 
       try {

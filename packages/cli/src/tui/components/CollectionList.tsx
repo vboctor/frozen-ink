@@ -683,6 +683,9 @@ export function CollectionList({
         onVersionUpdate: (version: string) => {
           updateCollection(name, { version });
         },
+        onProgress: (msg: string) => {
+          setSyncProgress((p) => [...p, msg]);
+        },
       });
       const stats = await engine.run({ syncType: syncType ?? "incremental" });
       setSyncFetchedCounts({});

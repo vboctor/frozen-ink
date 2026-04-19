@@ -1,8 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import type { SyncProgress as SyncProgressType } from "../../types";
 
+export interface SyncResult {
+  created: number;
+  updated: number;
+  deleted: number;
+  error: string | null;
+}
+
 interface SyncProgressProps {
-  onComplete: () => void;
+  onComplete: (result: SyncResult) => void;
 }
 
 export default function SyncProgress({ onComplete }: SyncProgressProps) {
@@ -17,7 +24,12 @@ export default function SyncProgress({ onComplete }: SyncProgressProps) {
           setProgress(data);
           if (!data.active) {
             if (intervalRef.current) clearInterval(intervalRef.current);
-            onComplete();
+            onComplete({
+              created: data.created,
+              updated: data.updated,
+              deleted: data.deleted,
+              error: data.error,
+            });
           }
         })
         .catch(() => {});
