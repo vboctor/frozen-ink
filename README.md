@@ -3,7 +3,7 @@
 ## What Is Frozen Ink?
 
 Frozen Ink is a local-first knowledge layer for technical work. It crawls sources like
-GitHub repositories, Obsidian vaults, Git repos, and MantisHub/MantisHub; syncs them into
+GitHub repositories, Obsidian vaults, Git repos, RSS feeds, and MantisHub/MantisHub; syncs them into
 a local SQLite index; renders and serves everything through a web UI and MCP server for
 AI tools.
 
@@ -80,6 +80,7 @@ Each crawler syncs a different data source into Frozen Ink. See individual docs 
 | [GitHub](packages/crawlers/src/github/) | GitHub REST API | Issues, Pull Requests | [README](packages/crawlers/src/github/README.md) |
 | [Obsidian](packages/crawlers/src/obsidian/) | Local Obsidian vault | Notes, Attachments | [README](packages/crawlers/src/obsidian/README.md) |
 | [Git](packages/crawlers/src/git/) | Local Git repository | Commits, Branches, Tags | [README](packages/crawlers/src/git/README.md) |
+| [RSS](packages/crawlers/src/rss/) | RSS/Atom feeds (+ sitemap backfill) | Posts, Media | [README](packages/crawlers/src/rss/README.md) |
 | MantisHub | MantisHub REST API | Issues, Attachments | — |
 
 ## Install the CLI
@@ -144,8 +145,15 @@ bun run fink -- add git --name my-repo --path ~/projects/my-repo --include-diffs
 ```bash
 bun run fink -- add github --name my-gh \
   --token ghp_yourPersonalAccessToken \
-  --owner your-username \
-  --repo your-repo-name
+  --repo your-username/your-repo-name
+```
+
+**RSS feed** — syncs RSS/Atom posts, with optional sitemap backfill:
+
+```bash
+bun run fink -- add rss --name my-feed \
+  --feed-url https://example.com/feed.xml \
+  --site-url https://example.com
 ```
 
 ### Syncing

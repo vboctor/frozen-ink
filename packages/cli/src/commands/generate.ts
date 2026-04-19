@@ -20,7 +20,7 @@ import {
 } from "@frozenink/core";
 import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
-import { gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme } from "@frozenink/crawlers";
+import { gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme, rssTheme } from "@frozenink/crawlers";
 
 /** Write <folder-name>.yml config files for folders matching the theme's folderConfigs(). */
 async function writeFolderConfigFiles(
@@ -52,6 +52,7 @@ export function createGenerateThemeEngine(): ThemeEngine {
   themeEngine.register(obsidianTheme);
   themeEngine.register(gitTheme);
   themeEngine.register(mantisHubTheme);
+  themeEngine.register(rssTheme);
   return themeEngine;
 }
 

@@ -31,7 +31,7 @@ export const whatIsFrozenInkPage = renderDocsPage({
   <p class="page-lead">Frozen Ink is a local-first knowledge layer for technical work. It crawls data from the services you already use, stores it in a unified local index, and makes everything queryable by humans and AI assistants.</p>
 
   <h2 id="the-problem">The problem</h2>
-  <p>Knowledge and context are scattered across services: GitHub has your issues and pull requests, Obsidian has your notes, Git repositories contain your commit history, and project management tools have your bug tracker. This fragmentation creates five concrete problems:</p>
+  <p>Knowledge and context are scattered across services: GitHub has your issues and pull requests, Obsidian has your notes, Git repositories contain your commit history, RSS feeds hold publication streams, and project management tools have your bug tracker. This fragmentation creates five concrete problems:</p>
   <ul>
     <li><strong>No offline access.</strong> If you're on a plane, you can't read your own issues. Your knowledge is only available when the service is.</li>
     <li><strong>Inconsistent search.</strong> Every tool has its own search, so you can never find what you're looking for in one place. From scattered sources to a single query should take seconds, not minutes of tab-switching.</li>
@@ -63,7 +63,7 @@ export const whatIsFrozenInkPage = renderDocsPage({
   <p>Your AI harness can be given access to the collections folder to get access to all collections or a a specific collection folder to get access to just the single collection.</p>
 
   <h3 id="entities">Entities</h3>
-  <p>An <strong>entity</strong> is an individual record within a collection — a GitHub issue, an Obsidian note, a Git commit, a MantisHub bug, and so on. Each entity has:</p>
+  <p>An <strong>entity</strong> is an individual record within a collection — a GitHub issue, an Obsidian note, a Git commit, an RSS post, a MantisHub bug, and so on. Each entity has:</p>
   <ul>
     <li><strong>External ID</strong> — the identifier in the source system (e.g., issue number, note filename)</li>
     <li><strong>Structured data</strong> — the raw fields as stored in the source (title, body, author, timestamps, labels, etc.)</li>
@@ -135,7 +135,7 @@ export const whatIsFrozenInkPage = renderDocsPage({
     <div class="feature-card">
       <div class="feature-card-icon">🧩</div>
       <h4>Source-agnostic</h4>
-      <p>Add new crawlers without changing the core. GitHub, Obsidian, Git, and MantisHub are the first four — more will follow.</p>
+      <p>Add new crawlers without changing the core. GitHub, Obsidian, Git, RSS, and MantisHub are built-in — more can be added over time.</p>
     </div>
   </div>
 

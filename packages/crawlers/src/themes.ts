@@ -3,3 +3,4 @@ export { GitHubTheme } from "./github/theme";
 export { ObsidianTheme } from "./obsidian/theme";
 export { GitTheme } from "./git/theme";
 export { MantisHubTheme } from "./mantishub/theme";
+export { RssTheme } from "./rss/theme";

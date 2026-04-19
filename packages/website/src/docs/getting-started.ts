@@ -47,7 +47,7 @@ export const gettingStartedPage = renderDocsPage({
   </ul>
 
   <h2 id="first-collection">Add your first collection</h2>
-  <p>A <em>collection</em> is a group of synced content from a single source. Frozen Ink supports <a href="/docs/connectors/github">GitHub</a>, <a href="/docs/connectors/obsidian">Obsidian</a>, <a href="/docs/connectors/git">Git</a>, and <a href="/docs/connectors/mantishub">MantisHub</a> connectors. Here's an example using a local Obsidian vault:</p>
+  <p>A <em>collection</em> is a group of synced content from a single source. Frozen Ink supports <a href="/docs/connectors/github">GitHub</a>, <a href="/docs/connectors/obsidian">Obsidian</a>, <a href="/docs/connectors/git">Git</a>, <a href="/docs/connectors/mantishub">MantisHub</a>, and <a href="/docs/connectors/rss">RSS</a> connectors. Here's an example using a local Obsidian vault:</p>
 
   <pre><code>fink add obsidian --name my-vault --path ~/Documents/MyVault</code></pre>
 

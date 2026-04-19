@@ -15,7 +15,7 @@ import {
   resolveCredentials,
 } from "@frozenink/core";
 import { sql } from "drizzle-orm";
-import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme } from "@frozenink/crawlers";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme, rssTheme } from "@frozenink/crawlers";
 import { prepareCollection } from "./prepare";
 import { createGenerateThemeEngine } from "./generate";
 import { pullCollection } from "./pull";
@@ -77,6 +77,7 @@ Examples:
     themeEngine.register(obsidianTheme);
     themeEngine.register(gitTheme);
     themeEngine.register(mantisHubTheme);
+    themeEngine.register(rssTheme);
 
     const prepareThemeEngine = createGenerateThemeEngine();
 

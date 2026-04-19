@@ -80,7 +80,7 @@ fink config set log.level debug</code></pre>
   <pre><code><span class="cmt"># ~/.frozenink/collections/my-issues/my-issues.yml</span>
 title: "My GitHub Issues"       <span class="cmt"># display title (defaults to collection name)</span>
 description: "Bug tracker"      <span class="cmt"># optional description</span>
-crawler: github                 <span class="cmt"># crawler type: github, obsidian, git, mantishub, remote</span>
+crawler: github                 <span class="cmt"># crawler type: github, obsidian, git, rss, mantishub, remote</span>
 enabled: true                   <span class="cmt"># whether this collection is active</span>
 config:                         <span class="cmt"># crawler-specific configuration</span>
   owner: my-org
@@ -117,6 +117,18 @@ credentials:                    <span class="cmt"># inline credentials OR named 
     <tbody>
       <tr><td><code>path</code></td><td>string</td><td>Absolute path to the Git repository</td></tr>
       <tr><td><code>includeDiffs</code></td><td>boolean</td><td>Include full commit diffs in markdown</td></tr>
+    </tbody>
+  </table>
+
+  <h4>RSS</h4>
+  <table>
+    <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>feedUrl</code></td><td>string</td><td>RSS/Atom feed URL</td></tr>
+      <tr><td><code>siteUrl</code></td><td>string</td><td>Optional site URL for sitemap discovery</td></tr>
+      <tr><td><code>maxItems</code></td><td>number</td><td>Maximum items emitted per sync run</td></tr>
+      <tr><td><code>sitemapBackfill</code></td><td>boolean</td><td>Backfill older URLs from sitemaps on first sync</td></tr>
+      <tr><td><code>fetchArticleContent</code></td><td>boolean</td><td>Fetch article HTML when feed content is limited</td></tr>
     </tbody>
   </table>
 

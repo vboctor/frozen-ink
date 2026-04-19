@@ -84,6 +84,7 @@ beforeEach(async () => {
     obsidianTheme: {},
     gitTheme: {},
     mantisHubTheme: {},
+    rssTheme: {},
   }));
 
   mock.module("js-yaml", () => ({

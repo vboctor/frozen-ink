@@ -23,6 +23,7 @@ import { connectorGithubPage } from "./docs/connector-github";
 import { connectorObsidianPage } from "./docs/connector-obsidian";
 import { connectorGitPage } from "./docs/connector-git";
 import { connectorMantishubPage } from "./docs/connector-mantishub";
+import { connectorRssPage } from "./docs/connector-rss";
 import { clonePullPage } from "./docs/clone-pull";
 import { cliReferencePage } from "./docs/cli-reference";
 import { configurationPage } from "./docs/configuration";
@@ -39,6 +40,7 @@ const DOC_PAGES: Record<string, string> = {
   "/docs/connectors/obsidian": connectorObsidianPage,
   "/docs/connectors/git": connectorGitPage,
   "/docs/connectors/mantishub": connectorMantishubPage,
+  "/docs/connectors/rss": connectorRssPage,
   "/docs/integrations/local-mcp": localMcpPage,
   "/docs/integrations/cloud-mcp": cloudMcpPage,
   "/docs/integrations/claude-code": claudeCodePage,

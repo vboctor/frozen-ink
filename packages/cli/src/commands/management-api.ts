@@ -3,7 +3,7 @@
  * These routes handle collection CRUD, sync triggering, publish orchestration,
  * export, and configuration — all gated behind mode === "desktop".
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync, readdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync, readdirSync, rmSync } from "fs";
 import { join } from "path";
 import yaml from "js-yaml";
 import {
@@ -35,6 +35,7 @@ import {
   obsidianTheme,
   gitTheme,
   mantisHubTheme,
+  rssTheme,
 } from "@frozenink/crawlers";
 import { prepareCollection } from "./prepare";
 import { createGenerateThemeEngine } from "./generate";
@@ -152,6 +153,7 @@ function createThemeEngine(): ThemeEngine {
   engine.register(obsidianTheme);
   engine.register(gitTheme);
   engine.register(mantisHubTheme);
+  engine.register(rssTheme);
   return engine;
 }
 
@@ -250,11 +252,18 @@ export function handleManagementRequest(req: Request): Response | null {
   // DELETE /api/collections/:name
   const deleteColMatch = path.match(/^\/api\/collections\/([^/]+)$/);
   if (deleteColMatch && method === "DELETE") {
-    const name = decodeURIComponent(deleteColMatch[1]);
-    const col = getCollection(name);
-    if (!col) return errorResponse("Collection not found", 404);
-    removeCollection(name);
-    return jsonResponse({ ok: true });
+    return handleAsync(async () => {
+      const name = decodeURIComponent(deleteColMatch[1]);
+      const col = getCollection(name);
+      if (!col) return errorResponse("Collection not found", 404);
+      const body = await readBody(req);
+      const confirmName = typeof body.confirmName === "string" ? body.confirmName : "";
+      if (confirmName !== name) {
+        return errorResponse(`Confirmation failed. Type exactly "${name}" to delete this collection.`, 400);
+      }
+      removeCollection(name);
+      return jsonResponse({ ok: true });
+    });
   }
 
   // PATCH /api/collections/:name
@@ -710,9 +719,15 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
         mkdirSync(join(collectionDir, "content"), { recursive: true });
         const storage = new LocalStorageBackend(collectionDir);
 
-        // If full sync requested, clear the incremental cursor from the DB
+        // Full re-sync should match CLI behavior: clear content + DB to start clean.
         if (full) {
+          const contentDir = join(collectionDir, "content");
+          const dbDir = join(collectionDir, "db");
+          if (existsSync(contentDir)) rmSync(contentDir, { recursive: true, force: true });
+          if (existsSync(dbDir)) rmSync(dbDir, { recursive: true, force: true });
+          mkdirSync(join(collectionDir, "content"), { recursive: true });
           updateCollectionSyncState(getCollectionDbPath(name), { cursor: null });
+          syncProgress = { ...syncProgress, status: `${name}: cleared local data for full re-sync` };
         }
 
         const engine = new SyncEngine({

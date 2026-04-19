@@ -40,6 +40,7 @@ const NAV_SECTIONS = [
       { label: "Obsidian", href: "/docs/connectors/obsidian" },
       { label: "Git", href: "/docs/connectors/git" },
       { label: "MantisHub", href: "/docs/connectors/mantishub" },
+      { label: "RSS", href: "/docs/connectors/rss" },
     ],
   },
   {

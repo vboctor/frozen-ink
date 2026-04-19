@@ -19,6 +19,7 @@ const CRAWLER_LABELS: Record<string, string> = {
   obsidian: "Obsidian",
   git: "Git",
   mantishub: "MantisHub",
+  rss: "RSS/Atom",
   remote: "Cloned",
 };
 
@@ -54,6 +55,14 @@ function CrawlerIcon({ type }: { type: string }) {
         <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/>
           <path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/>
+        </svg>
+      );
+    case "rss":
+      return (
+        <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor">
+          <circle cx="6" cy="18" r="2.2" />
+          <path d="M4 10a10 10 0 0 1 10 10h-3a7 7 0 0 0-7-7z" />
+          <path d="M4 4a16 16 0 0 1 16 16h-3A13 13 0 0 0 4 7z" />
         </svg>
       );
     default:

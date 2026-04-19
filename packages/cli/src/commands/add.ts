@@ -25,7 +25,11 @@ export const addCommand = new Command("add")
   .option("--path <path>", "Path to local directory (for obsidian, git)")
   .option("--include-diffs", "Include commit diffs (for git)")
   .option("--url <url>", "Base URL (for mantishub)")
+  .option("--feed-url <url>", "RSS/Atom feed URL (for rss)")
+  .option("--site-url <url>", "Site URL for RSS/Atom sitemap backfill (for rss)")
   .option("--project-name <name>", "Project name (for mantishub)")
+  .option("--no-sitemap-backfill", "Disable sitemap backfill (for rss)")
+  .option("--no-fetch-article-content", "Disable article HTML fetch fallback (for rss)")
   .option("--max <count>", "Maximum entities per type to sync (applies to issues and PRs independently)", parseInt)
   .option("--max-issues <count>", "Maximum issues to sync (for github)", parseInt)
   .option("--max-prs <count>", "Maximum pull requests to sync (for github)", parseInt)
@@ -51,8 +55,11 @@ Examples:
 
   # Add a MantisHub project
   fink add mantishub --name bugs --url https://myproject.mantishub.io --token xxx --project-name MyProject
+
+  # Add an RSS feed with sitemap backfill
+  fink add rss --name blog --feed-url https://example.com/feed.xml --site-url https://example.com
 `)
-  .action(async (crawlerType: string, opts: Record<string, string>) => {
+  .action(async (crawlerType: string, opts: Record<string, any>) => {
     ensureInitialized();
 
     if (!isValidCollectionKey(opts.name)) {
@@ -183,6 +190,16 @@ Examples:
       if (opts.includeDiffs) {
         config.includeDiffs = true;
       }
+    } else if (crawlerType === "rss") {
+      if (!opts.feedUrl) {
+        console.error("RSS crawler requires --feed-url <url>");
+        process.exit(1);
+      }
+      config.feedUrl = opts.feedUrl;
+      if (opts.siteUrl) config.siteUrl = opts.siteUrl;
+      if (opts.max) config.maxItems = opts.max;
+      config.sitemapBackfill = opts.sitemapBackfill !== false;
+      config.fetchArticleContent = opts.fetchArticleContent !== false;
     }
 
     // Resolve credentials for validation (named ref → concrete object)

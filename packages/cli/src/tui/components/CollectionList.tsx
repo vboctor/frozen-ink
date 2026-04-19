@@ -27,6 +27,7 @@ import {
   obsidianTheme,
   gitTheme,
   mantisHubTheme,
+  rssTheme,
 } from "@frozenink/crawlers";
 import { sql } from "drizzle-orm";
 import { TextInput } from "./TextInput.js";
@@ -161,6 +162,16 @@ function getSourceDetails(crawler: string, config: Record<string, unknown>): Arr
       if (config.maxEntities) details.push({ label: "Max entities", value: String(config.maxEntities) });
       break;
     }
+    case "rss": {
+      const feedUrl = config.feedUrl as string | undefined;
+      const siteUrl = config.siteUrl as string | undefined;
+      if (feedUrl) details.push({ label: "Feed", value: feedUrl });
+      if (siteUrl) details.push({ label: "Site", value: siteUrl });
+      if (config.maxItems) details.push({ label: "Max items", value: String(config.maxItems) });
+      if (config.sitemapBackfill === false) details.push({ label: "Sitemap backfill", value: "disabled" });
+      if (config.fetchArticleContent === false) details.push({ label: "Article fetch", value: "disabled" });
+      break;
+    }
   }
   return details;
 }
@@ -208,6 +219,14 @@ function getEditableFields(crawler: string): EditField[] {
       return [
         { key: "title", label: "Display title", type: "text", configKey: "" },
         DESCRIPTION_FIELD,
+      ];
+    case "rss":
+      return [
+        { key: "title", label: "Display title", type: "text", configKey: "" },
+        DESCRIPTION_FIELD,
+        { key: "maxItems", label: "Max items", type: "number", configKey: "maxItems" },
+        { key: "sitemapBackfill", label: "Sitemap backfill", type: "boolean", configKey: "sitemapBackfill" },
+        { key: "fetchArticleContent", label: "Fetch article content", type: "boolean", configKey: "fetchArticleContent" },
       ];
     default:
       return [
@@ -658,6 +677,7 @@ export function CollectionList({
       themeEngine.register(obsidianTheme);
       themeEngine.register(gitTheme);
       themeEngine.register(mantisHubTheme);
+      themeEngine.register(rssTheme);
       const factory = registry.get(col.crawler);
       if (!factory) { setSyncProgress((p) => [...p, `No crawler for ${col.crawler}`]); setSyncStartTime(null); setMode("list"); return; }
       const crawler = factory();

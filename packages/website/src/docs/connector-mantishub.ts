@@ -95,9 +95,9 @@ fink sync my-bugs
       <span class="docs-pagination-label">← Previous</span>
       <span class="docs-pagination-title">Git Connector</span>
     </a>
-    <a href="/docs/integrations/local-mcp" class="docs-pagination-card next">
+    <a href="/docs/connectors/rss" class="docs-pagination-card next">
       <span class="docs-pagination-label">Next →</span>
-      <span class="docs-pagination-title">Local MCP Setup</span>
+      <span class="docs-pagination-title">RSS Connector</span>
     </a>
   </div>
   `,

@@ -20,6 +20,7 @@ const CRAWLER_LABELS: Record<string, string> = {
   obsidian: "Obsidian",
   git: "Git",
   mantishub: "MantisHub",
+  rss: "RSS/Atom",
   remote: "Cloned",
 };
 
@@ -57,6 +58,14 @@ function CrawlerIcon({ type }: { type: string }) {
           <path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/>
         </svg>
       );
+    case "rss":
+      return (
+        <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor">
+          <circle cx="6" cy="18" r="2.2" />
+          <path d="M4 10a10 10 0 0 1 10 10h-3a7 7 0 0 0-7-7z" />
+          <path d="M4 4a16 16 0 0 1 16 16h-3A13 13 0 0 0 4 7z" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -84,10 +93,10 @@ function formatCount(n: number): string {
 
 export default function CollectionDetail({ name, onBack, onEdit, onCollectionsChanged }: CollectionDetailProps) {
   const [collection, setCollection] = useState<Collection | null>(null);
+  const [collectionMissing, setCollectionMissing] = useState(false);
   const [status, setStatus] = useState<CollectionStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   // Publish state
   const [publishing, setPublishing] = useState(false);
@@ -113,7 +122,13 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
       .then((r) => r.json())
       .then((data: Collection[]) => {
         const col = data.find((c) => c.name === name);
-        if (col) setCollection(col);
+        if (col) {
+          setCollection(col);
+          setCollectionMissing(false);
+        } else {
+          setCollection(null);
+          setCollectionMissing(true);
+        }
       })
       .catch(console.error);
   }, [name]);
@@ -173,13 +188,31 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
 
   // --- Delete ---
   const handleDelete = () => {
-    if (deleting) {
-      fetch(`/api/collections/${encodeURIComponent(name)}`, { method: "DELETE" })
-        .then(() => { onCollectionsChanged?.(); onBack(); })
-        .finally(() => setDeleting(false));
-    } else {
-      setDeleting(true);
+    const typed = window.prompt(
+      `Delete collection "${name}"\n\nType the collection name to confirm:`,
+      "",
+    );
+    if (typed == null) return;
+    if (typed !== name) {
+      window.alert(`Confirmation failed. You must type exactly "${name}".`);
+      return;
     }
+    fetch(`/api/collections/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmName: typed }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({ error: "Delete failed" }));
+          throw new Error(data.error || "Delete failed");
+        }
+        onCollectionsChanged?.();
+        onBack();
+      })
+      .catch((err) => {
+        window.alert(String(err));
+      });
   };
 
   // --- Publish ---
@@ -294,6 +327,19 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
     }
   };
 
+  if (collectionMissing) {
+    return (
+      <div className="manage-panel">
+        <div className="manage-panel-header">
+          <h2>Collection Not Found</h2>
+        </div>
+        <p className="manage-panel-subtitle">Collection "{name}" was deleted or is no longer available.</p>
+        <div>
+          <button className="btn btn-sm" onClick={onBack}>Back to Collections</button>
+        </div>
+      </div>
+    );
+  }
   if (!collection) return <div className="loading">Loading...</div>;
 
   // Filter MCP tools to only those relevant for this collection
@@ -522,12 +568,7 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
       {/* --- Danger Zone --- */}
       <div className="detail-section detail-section-danger">
         <h3>Danger Zone</h3>
-        <button
-          className={`btn btn-sm btn-danger${deleting ? " confirm" : ""}`}
-          onClick={handleDelete}
-        >
-          {deleting ? "Click again to confirm deletion" : "Delete Collection"}
-        </button>
+        <button className="btn btn-sm btn-danger" onClick={handleDelete}>Delete Collection</button>
       </div>
     </div>
   );

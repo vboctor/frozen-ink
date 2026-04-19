@@ -26,6 +26,7 @@ import {
   obsidianTheme,
   gitTheme,
   mantisHubTheme,
+  rssTheme,
 } from "@frozenink/crawlers";
 import { startStdioServer } from "@frozenink/mcp";
 import { eq, desc, inArray, and } from "drizzle-orm";
@@ -40,6 +41,7 @@ function createThemeEngine(): ThemeEngine {
   themeEngine.register(obsidianTheme);
   themeEngine.register(gitTheme);
   themeEngine.register(mantisHubTheme);
+  themeEngine.register(rssTheme);
   return themeEngine;
 }
 
@@ -280,9 +282,10 @@ function buildFileTree(
     }
   }
 
-  // Apply sort order to files (dirs always sort ASC alphabetically)
+  // Apply directory/file ordering by this folder's sort config.
+  const sortedDirs = sortOrder === "DESC" ? dirs.slice().reverse() : dirs;
   const sortedFiles = sortOrder === "DESC" ? files.slice().reverse() : files;
-  return [...dirs, ...sortedFiles];
+  return [...sortedDirs, ...sortedFiles];
 }
 
 function jsonResponse(data: unknown, status: number = 200): Response {
