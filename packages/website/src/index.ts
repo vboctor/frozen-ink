@@ -26,6 +26,7 @@ import { connectorMantishubPage } from "./docs/connector-mantishub";
 import { clonePullPage } from "./docs/clone-pull";
 import { cliReferencePage } from "./docs/cli-reference";
 import { configurationPage } from "./docs/configuration";
+import { downloadPage } from "./docs/download";
 
 const DOC_PAGES: Record<string, string> = {
   "/docs": gettingStartedPage,
@@ -48,6 +49,7 @@ const DOC_PAGES: Record<string, string> = {
   "/docs/integrations/chatgpt-desktop": chatgptDesktopPage,
   "/docs/reference/cli": cliReferencePage,
   "/docs/reference/configuration": configurationPage,
+  "/docs/download": downloadPage,
 };
 
 export default {
