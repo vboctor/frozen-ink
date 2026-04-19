@@ -22,7 +22,7 @@ import { mcpCommand } from "./commands/mcp";
 import { tableplusCommand } from "./commands/tableplus";
 import { vscodeCommand } from "./commands/vscode";
 import { cloneCommand } from "./commands/clone";
-import { pullCommand } from "./commands/pull";
+
 import { compactCommand } from "./commands/compact";
 import { startTui } from "./tui/index";
 
@@ -52,7 +52,7 @@ program.addCommand(mcpCommand);
 program.addCommand(tableplusCommand);
 program.addCommand(vscodeCommand);
 program.addCommand(cloneCommand);
-program.addCommand(pullCommand);
+
 program.addCommand(compactCommand);
 
 // If no arguments passed (just "fink"), launch TUI by default

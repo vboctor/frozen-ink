@@ -36,6 +36,7 @@ import { SearchView } from "./SearchView.js";
 import { McpConfigView } from "./McpConfigView.js";
 import { publishCollections, type PublishOptions } from "../../commands/publish.js";
 import { unpublishCollection } from "../../commands/unpublish.js";
+import { pullCollection } from "../../commands/pull.js";
 import type { Screen } from "./App.js";
 
 type Mode =
@@ -641,6 +642,16 @@ export function CollectionList({
     };
 
     try {
+      if (col.crawler === "remote") {
+        await pullCollection(name, {
+          onProgress: (msg) => {
+            setSyncProgress((p) => [...p, msg]);
+          },
+        });
+        const elapsed = formatElapsed(Date.now() - syncStart);
+        setSyncProgress((p) => [...p, `Completed in ${elapsed}`]);
+        setMessage(`Sync complete for "${name}"`);
+      } else {
       const registry = createDefaultRegistry();
       const themeEngine = new ThemeEngine();
       themeEngine.register(gitHubTheme);
@@ -681,6 +692,7 @@ export function CollectionList({
       setSyncProgress((p) => [...p, `+${stats.created} ~${stats.updated} -${stats.deleted} (${total} total) in ${elapsed}`]);
       await crawler.dispose();
       setMessage(`Sync complete for "${name}"`);
+      }
     } catch (err) {
       setSyncFetchedCounts({});
       setSyncProgress((p) => [...p, `Error: ${err instanceof Error ? err.message : String(err)}`]);
