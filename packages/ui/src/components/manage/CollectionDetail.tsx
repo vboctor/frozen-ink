@@ -4,7 +4,6 @@ import {
   formatTimestamp,
   type Collection,
   type CollectionStatus,
-  type SyncRun,
   type PublishProgress,
   type McpLinkStatus,
 } from "../../types";
@@ -86,11 +85,9 @@ function formatCount(n: number): string {
 export default function CollectionDetail({ name, onBack, onEdit, onCollectionsChanged }: CollectionDetailProps) {
   const [collection, setCollection] = useState<Collection | null>(null);
   const [status, setStatus] = useState<CollectionStatus | null>(null);
-  const [syncHistory, setSyncHistory] = useState<SyncRun[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
 
   // Publish state
   const [publishing, setPublishing] = useState(false);
@@ -128,13 +125,6 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
       .catch(() => {});
   }, [name]);
 
-  const loadHistory = useCallback(() => {
-    fetch(`/api/collections/${encodeURIComponent(name)}/sync-runs`)
-      .then((r) => r.json())
-      .then(setSyncHistory)
-      .catch(() => {});
-  }, [name]);
-
   const loadMcp = useCallback(async () => {
     try {
       const res = await fetch("/api/mcp/status");
@@ -145,9 +135,8 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
   useEffect(() => {
     loadCollection();
     loadStatus();
-    loadHistory();
     loadMcp();
-  }, [loadCollection, loadStatus, loadHistory, loadMcp]);
+  }, [loadCollection, loadStatus, loadMcp]);
 
   useEffect(() => {
     return () => {
@@ -170,9 +159,8 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
     setSyncing(false);
     setLastSyncResult(result);
     loadStatus();
-    loadHistory();
     onCollectionsChanged?.();
-  }, [loadStatus, loadHistory, onCollectionsChanged]);
+  }, [loadStatus, onCollectionsChanged]);
 
   // --- Enable/Disable ---
   const handleToggle = (enabled: boolean) => {
@@ -379,14 +367,6 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
               </button>
             </>
           )}
-          {syncHistory.length > 0 && (
-            <button
-              className={`btn btn-sm${showHistory ? " active" : ""}`}
-              onClick={() => setShowHistory(!showHistory)}
-            >
-              History
-            </button>
-          )}
         </div>
         {syncing && <SyncProgress onComplete={handleSyncComplete} />}
         {!syncing && lastSyncResult && (
@@ -399,38 +379,6 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
                 {status?.lastSyncRun && <span>Last sync: {formatTimestamp(status.lastSyncRun.startedAt)}</span>}
               </span>
             )}
-          </div>
-        )}
-        {showHistory && syncHistory.length > 0 && (
-          <div className="collection-card-history" style={{ marginTop: 8 }}>
-            <table className="sync-history-table">
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Type</th>
-                  <th>Created</th>
-                  <th>Updated</th>
-                  <th>Deleted</th>
-                  <th>Started</th>
-                </tr>
-              </thead>
-              <tbody>
-                {syncHistory.slice(0, 10).map((run) => (
-                  <tr key={run.id}>
-                    <td><span className={`status-badge status-${run.status}`}>{run.status}</span></td>
-                    <td>
-                      <span className={`sync-type-badge sync-type-${run.syncType || "incremental"}`}>
-                        {run.syncType === "full" ? "full" : "incr"}
-                      </span>
-                    </td>
-                    <td>{run.entitiesCreated}</td>
-                    <td>{run.entitiesUpdated}</td>
-                    <td>{run.entitiesDeleted}</td>
-                    <td>{formatTimestamp(run.startedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
       </div>
