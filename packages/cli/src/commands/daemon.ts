@@ -14,7 +14,7 @@ import {
   spawnDetached,
   resolveCredentials,
 } from "@frozenink/core";
-import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme } from "@frozenink/crawlers";
+import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme, rssTheme } from "@frozenink/crawlers";
 
 function getPidPath(): string {
   return join(getFrozenInkHome(), "daemon.pid");
@@ -44,6 +44,8 @@ async function runSyncLoop(intervalMs: number): Promise<void> {
     themeEngine.register(gitHubTheme);
     themeEngine.register(obsidianTheme);
     themeEngine.register(gitTheme);
+    themeEngine.register(mantisHubTheme);
+    themeEngine.register(rssTheme);
 
     for (const col of collectionRows) {
       const factory = registry.get(col.crawler);

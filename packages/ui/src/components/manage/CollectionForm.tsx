@@ -26,9 +26,10 @@ const CRAWLER_TYPES = [
   { id: "obsidian", label: "Obsidian", description: "Notes from an Obsidian vault" },
   { id: "git", label: "Git", description: "Commits, branches, and tags from a local repository" },
   { id: "mantishub", label: "MantisHub", description: "Issues from a MantisHub instance" },
+  { id: "rss", label: "RSS/Atom", description: "Posts from RSS or Atom feeds with optional sitemap backfill" },
 ];
 
-const NO_CREDENTIALS_CRAWLERS = ["obsidian", "git", "remote"];
+const NO_CREDENTIALS_CRAWLERS = ["obsidian", "git", "remote", "rss"];
 
 function configToStrings(obj: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
@@ -450,6 +451,34 @@ function renderConfigFields(
         <>
           {field("url", "URL", "https://mantis.example.com")}
           {field("project", "Project", "mantisbt, plugins", "optional — comma-separated project names")}
+        </>
+      );
+    case "rss":
+      return (
+        <>
+          {field("feedUrl", "Feed URL", "https://example.com/feed.xml")}
+          {field("siteUrl", "Site URL", "https://example.com", "optional — used for sitemap discovery")}
+          {field("maxItems", "Max Items", "1000", "optional", "number")}
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={config.sitemapBackfill !== "false"}
+                onChange={(e) => set("sitemapBackfill", String(e.target.checked))}
+              />
+              {" "}Sitemap backfill on first sync
+            </label>
+          </div>
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={config.fetchArticleContent !== "false"}
+                onChange={(e) => set("fetchArticleContent", String(e.target.checked))}
+              />
+              {" "}Fetch article HTML fallback
+            </label>
+          </div>
         </>
       );
     case "remote":

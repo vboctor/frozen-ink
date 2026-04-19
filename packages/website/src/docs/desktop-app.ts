@@ -77,7 +77,7 @@ export const desktopAppPage = renderDocsPage({
       <div class="step-num">3</div>
       <div class="step-body">
         <h4>Add your first collection</h4>
-        <p>Switch to <strong>Manage</strong> mode using the toggle at the top of the window, then open the <strong>Collections</strong> panel. Click <strong>Add Collection</strong>, choose a type (Obsidian, GitHub, Git, or MantisHub), fill in the details, and save.</p>
+        <p>Switch to <strong>Manage</strong> mode using the toggle at the top of the window, then open the <strong>Collections</strong> panel. Click <strong>Add Collection</strong>, choose a type (Obsidian, GitHub, Git, RSS, or MantisHub), fill in the details, and save.</p>
       </div>
     </div>
     <div class="step">

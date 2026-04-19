@@ -3,7 +3,7 @@ import { renderDocsPage } from "./layout";
 export const managingCollectionsPage = renderDocsPage({
   title: "Managing Collections",
   description:
-    "Add, configure, sync, update, and remove Frozen Ink collections across GitHub, Obsidian, Git, and MantisHub sources.",
+    "Add, configure, sync, update, and remove Frozen Ink collections across GitHub, Obsidian, Git, RSS, and MantisHub sources.",
   activePath: "/docs/collections",
   canonicalPath: "/docs/collections",
   section: "Features",
@@ -12,6 +12,7 @@ export const managingCollectionsPage = renderDocsPage({
     { id: "add-github", title: "GitHub collection" },
     { id: "add-obsidian", title: "Obsidian collection" },
     { id: "add-git", title: "Git collection" },
+    { id: "add-rss", title: "RSS collection" },
     { id: "add-mantishub", title: "MantisHub collection" },
     { id: "syncing", title: "Syncing" },
     { id: "updating", title: "Updating a collection" },
@@ -35,7 +36,7 @@ export const managingCollectionsPage = renderDocsPage({
   <p>A collection is a named, typed connection to one external data source. Each collection has:</p>
   <ul>
     <li>A <strong>name</strong> — your identifier, used in all CLI commands (e.g., <code>my-vault</code>)</li>
-    <li>A <strong>type</strong> — one of <code>github</code>, <code>obsidian</code>, <code>git</code>, <code>mantishub</code></li>
+    <li>A <strong>type</strong> — one of <code>github</code>, <code>obsidian</code>, <code>git</code>, <code>rss</code>, <code>mantishub</code></li>
     <li>Source-specific <strong>configuration</strong> — paths, tokens, repository names, etc.</li>
     <li>A <strong>directory</strong> at <code>~/.frozenink/collections/&lt;name&gt;/</code> containing:
       <ul>
@@ -129,6 +130,22 @@ export const managingCollectionsPage = renderDocsPage({
       <p>Enabling <code>--include-diffs</code> on a large repository with many commits can significantly increase the database and markdown output size. Use it selectively for repositories where diff history is important.</p>
     </div>
   </div>
+
+  <h2 id="add-rss">RSS collection</h2>
+  <p>An RSS collection syncs <strong>posts and media</strong> from RSS/Atom feeds, with optional sitemap backfill for older posts outside the feed window.</p>
+
+  <pre><code>fink add rss \
+  <span class="flag">--name</span> my-feed \
+  <span class="flag">--feed-url</span> https://example.com/feed.xml \
+  <span class="flag">--site-url</span> https://example.com</code></pre>
+
+  <p><strong>What gets synced:</strong></p>
+  <ul>
+    <li>Feed items (title, link, timestamps, tags, author when available)</li>
+    <li>Content from <code>content:encoded</code> / descriptions</li>
+    <li>Image/media attachments referenced by feed content</li>
+    <li>Older URLs discovered via sitemap backfill (initial sync)</li>
+  </ul>
 
   <h2 id="add-mantishub">MantisHub collection</h2>
   <p>A MantisHub collection syncs <strong>issues and attachments</strong> from a MantisHub or MantisHub instance via the REST API.</p>

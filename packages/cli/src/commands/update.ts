@@ -14,6 +14,11 @@ export const updateCommand = new Command("update")
   .option("--max-prs <count>", "Maximum pull requests to sync", parseInt)
   .option("--sync-comments [value]", "Sync comments (true/false)")
   .option("--sync-check-statuses [value]", "Sync check statuses (true/false)")
+  .option("--feed-url <url>", "RSS/Atom feed URL")
+  .option("--site-url <url>", "RSS/Atom site URL")
+  .option("--max-items <count>", "Maximum RSS/Atom items to sync", parseInt)
+  .option("--sitemap-backfill [value]", "RSS/Atom sitemap backfill (true/false)")
+  .option("--fetch-article-content [value]", "RSS/Atom article HTML fallback (true/false)")
   .addHelpText("after", `
 Examples:
   # Switch to open issues/PRs only
@@ -24,6 +29,9 @@ Examples:
 
   # Enable comment syncing
   fink update my-repo --sync-comments true
+
+  # Update RSS settings
+  fink update my-blog --max-items 500 --sitemap-backfill true
 `)
   .action(async (collection: string, opts: Record<string, unknown>) => {
     ensureInitialized();
@@ -86,6 +94,37 @@ Examples:
       }
     }
 
+    if (opts.feedUrl !== undefined) {
+      config.feedUrl = opts.feedUrl;
+      changes.push(`feedUrl: ${opts.feedUrl}`);
+    }
+
+    if (opts.siteUrl !== undefined) {
+      config.siteUrl = opts.siteUrl;
+      changes.push(`siteUrl: ${opts.siteUrl}`);
+    }
+
+    if (opts.maxItems !== undefined) {
+      config.maxItems = opts.maxItems;
+      changes.push(`maxItems: ${opts.maxItems}`);
+    }
+
+    if (opts.sitemapBackfill !== undefined) {
+      const val = parseBool(opts.sitemapBackfill);
+      if (val !== undefined) {
+        config.sitemapBackfill = val;
+        changes.push(`sitemapBackfill: ${val}`);
+      }
+    }
+
+    if (opts.fetchArticleContent !== undefined) {
+      const val = parseBool(opts.fetchArticleContent);
+      if (val !== undefined) {
+        config.fetchArticleContent = val;
+        changes.push(`fetchArticleContent: ${val}`);
+      }
+    }
+
     if (changes.length === 0) {
       console.log("No changes specified. Available options:");
       console.log("  --open-only [true|false]");
@@ -94,6 +133,11 @@ Examples:
       console.log("  --max-prs <count>");
       console.log("  --sync-comments [true|false]");
       console.log("  --sync-check-statuses [true|false]");
+      console.log("  --feed-url <url>");
+      console.log("  --site-url <url>");
+      console.log("  --max-items <count>");
+      console.log("  --sitemap-backfill [true|false]");
+      console.log("  --fetch-article-content [true|false]");
       return;
     }
 

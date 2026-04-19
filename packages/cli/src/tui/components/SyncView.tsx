@@ -20,6 +20,7 @@ import {
   obsidianTheme,
   gitTheme,
   mantisHubTheme,
+  rssTheme,
 } from "@frozenink/crawlers";
 import { sql } from "drizzle-orm";
 
@@ -149,6 +150,7 @@ export function SyncView(): React.ReactElement {
     themeEngine.register(obsidianTheme);
     themeEngine.register(gitTheme);
     themeEngine.register(mantisHubTheme);
+    themeEngine.register(rssTheme);
 
     let totalCreated = 0;
     let totalUpdated = 0;

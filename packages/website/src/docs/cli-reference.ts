@@ -118,6 +118,19 @@ export const cliReferencePage = renderDocsPage({
     </tbody>
   </table>
 
+  <h4>RSS (<code>fink add rss</code>)</h4>
+  <pre><code>fink add rss <span class="flag">--name</span> my-feed <span class="flag">--feed-url</span> https://example.com/feed.xml <span class="flag">--site-url</span> https://example.com</code></pre>
+  <table>
+    <thead><tr><th>Option</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>--feed-url &lt;url&gt;</code></td><td>Feed URL (required)</td></tr>
+      <tr><td><code>--site-url &lt;url&gt;</code></td><td>Optional site URL for sitemap discovery</td></tr>
+      <tr><td><code>--max &lt;count&gt;</code></td><td>Maximum items to sync</td></tr>
+      <tr><td><code>--no-sitemap-backfill</code></td><td>Disable first-sync sitemap backfill</td></tr>
+      <tr><td><code>--no-fetch-article-content</code></td><td>Disable article HTML fallback fetch</td></tr>
+    </tbody>
+  </table>
+
   <h4>MantisHub (<code>fink add mantishub</code>)</h4>
   <pre><code>fink add mantishub <span class="flag">--name</span> my-bugs <span class="flag">--url</span> https://example.mantishub.io <span class="flag">--token</span> xxx <span class="flag">--project-name</span> MyProject</code></pre>
   <table>
@@ -157,7 +170,7 @@ fink update my-issues <span class="flag">--token</span> ghp_newToken</code></pre
   <h2 id="syncing">Syncing &amp; Indexing</h2>
 
   <h3 id="cmd-sync"><code>fink sync &lt;collection&gt;</code></h3>
-  <p>Synchronize one or more collections with their data sources. Works for both local collections (GitHub, Obsidian, Git, MantisHub) and cloned/remote collections. Sync is incremental by default.</p>
+  <p>Synchronize one or more collections with their data sources. Works for both local collections (GitHub, Obsidian, Git, RSS, MantisHub) and cloned/remote collections. Sync is incremental by default.</p>
   <pre><code><span class="cmt"># Sync a single collection</span>
 fink sync my-vault
 

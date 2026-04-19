@@ -139,7 +139,7 @@ fink sync my-github-issues</code></pre>
       <tr><td>Requires source credentials</td><td>Yes</td><td>No (only site password)</td></tr>
       <tr><td>Can be published</td><td>Yes</td><td>Yes</td></tr>
       <tr><td>MCP access</td><td>Yes</td><td>Yes</td></tr>
-      <tr><td>Crawler type</td><td>github, obsidian, git, mantishub</td><td>remote</td></tr>
+      <tr><td>Crawler type</td><td>github, obsidian, git, rss, mantishub</td><td>remote</td></tr>
     </tbody>
   </table>
 

@@ -11,6 +11,7 @@ import {
   obsidianTheme,
   gitTheme,
   mantisHubTheme,
+  rssTheme,
 } from "@frozenink/crawlers";
 import { TextInput } from "./TextInput.js";
 
@@ -97,6 +98,7 @@ export function ExportView({
         themeEngine.register(obsidianTheme);
         themeEngine.register(gitTheme);
         themeEngine.register(mantisHubTheme);
+        themeEngine.register(rssTheme);
       }
 
       await exportStaticSite({

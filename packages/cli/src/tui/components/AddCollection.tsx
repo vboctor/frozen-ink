@@ -35,6 +35,11 @@ type Step =
   | "mantishub-sync-entities"
   | "mantishub-project-name"
   | "mantishub-max"
+  | "rss-feed-url"
+  | "rss-site-url"
+  | "rss-max-items"
+  | "rss-sitemap-backfill"
+  | "rss-fetch-article-content"
   | "confirm"
   | "validating"
   | "sync-prompt"
@@ -61,6 +66,8 @@ function getStepsForCrawler(type: string): Step[] {
       return [...base, "git-path", "git-include-diffs", "confirm"];
     case "mantishub":
       return [...base, "mantishub-url", "mantishub-token", "mantishub-sync-entities", "mantishub-project-name", "mantishub-max", "confirm"];
+    case "rss":
+      return [...base, "rss-feed-url", "rss-site-url", "rss-max-items", "rss-sitemap-backfill", "rss-fetch-article-content", "confirm"];
     default:
       return [...base, "confirm"];
   }
@@ -222,6 +229,45 @@ export function AddCollection({
         nextStep();
         break;
       }
+      case "rss-feed-url":
+        if (!val) { setError("Feed URL is required"); return; }
+        setData((d) => ({ ...d, config: { ...d.config, feedUrl: val } }));
+        nextStep();
+        break;
+      case "rss-site-url":
+        if (val) {
+          setData((d) => ({ ...d, config: { ...d.config, siteUrl: val } }));
+        }
+        nextStep();
+        break;
+      case "rss-max-items":
+        if (val) {
+          const n = parseInt(val, 10);
+          if (isNaN(n) || n < 1) { setError("Enter a positive number or leave blank"); return; }
+          setData((d) => ({ ...d, config: { ...d.config, maxItems: n } }));
+        }
+        nextStep();
+        break;
+      case "rss-sitemap-backfill":
+        setData((d) => ({
+          ...d,
+          config: {
+            ...d.config,
+            sitemapBackfill: !(val.toLowerCase() === "n" || val.toLowerCase() === "no"),
+          },
+        }));
+        nextStep();
+        break;
+      case "rss-fetch-article-content":
+        setData((d) => ({
+          ...d,
+          config: {
+            ...d.config,
+            fetchArticleContent: !(val.toLowerCase() === "n" || val.toLowerCase() === "no"),
+          },
+        }));
+        nextStep();
+        break;
     }
   }, [step, inputValue, nextStep]);
 
@@ -368,6 +414,21 @@ export function AddCollection({
         {step === "mantishub-max" && (
           <TextInput label="Max entities (blank for unlimited)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
         )}
+        {step === "rss-feed-url" && (
+          <TextInput label="Feed URL" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} placeholder="https://example.com/feed.xml" />
+        )}
+        {step === "rss-site-url" && (
+          <TextInput label="Site URL (optional)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} placeholder="https://example.com" />
+        )}
+        {step === "rss-max-items" && (
+          <TextInput label="Max items (blank for unlimited)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
+        )}
+        {step === "rss-sitemap-backfill" && (
+          <TextInput label="Backfill from sitemap on first sync? (Y/n)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
+        )}
+        {step === "rss-fetch-article-content" && (
+          <TextInput label="Fetch article HTML fallback? (Y/n)" value={inputValue} onChange={setInputValue} onSubmit={handleTextSubmit} />
+        )}
 
         {step === "confirm" && (
           <Box flexDirection="column">
@@ -375,6 +436,12 @@ export function AddCollection({
             <Text>  Crawler: <Text color="cyan">{data.crawlerType}</Text></Text>
             {data.crawlerType === "mantishub" && !!data.config.url && (
               <Text>  URL:     <Text color="cyan">{String(data.config.url)}</Text></Text>
+            )}
+            {data.crawlerType === "rss" && !!data.config.feedUrl && (
+              <Text>  Feed:    <Text color="cyan">{String(data.config.feedUrl)}</Text></Text>
+            )}
+            {data.crawlerType === "rss" && !!data.config.siteUrl && (
+              <Text>  Site:    <Text color="cyan">{String(data.config.siteUrl)}</Text></Text>
             )}
             <Text>  Name:    <Text color="cyan">{data.name}</Text></Text>
             {data.title && <Text>  Title:   <Text color="cyan">{data.title}</Text></Text>}
