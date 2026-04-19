@@ -112,6 +112,10 @@ function fileToUrlPath(file: string): string {
   return `/${file.replace(/\.md$/, "")}`;
 }
 
+function encodeFilePath(file: string): string {
+  return file.split("/").map(encodeURIComponent).join("/");
+}
+
 interface NavEntry {
   collection: string;
   file: string;
@@ -518,7 +522,7 @@ export default function App() {
     setLoading(true);
     setFileNotFound(false);
     fetch(
-      `/api/collections/${encodeURIComponent(selectedCollection)}/markdown/${selectedFile}`,
+      `/api/collections/${encodeURIComponent(selectedCollection)}/markdown/${encodeFilePath(selectedFile)}`,
     )
       .then((r) => {
         if (!r.ok) throw new Error("not-found");
@@ -542,7 +546,7 @@ export default function App() {
       return;
     }
     fetch(
-      `/api/collections/${encodeURIComponent(selectedCollection)}/backlinks/${selectedFile}`,
+      `/api/collections/${encodeURIComponent(selectedCollection)}/backlinks/${encodeFilePath(selectedFile)}`,
     )
       .then((r) => (r.ok ? r.json() : []))
       .then(setBacklinks)
@@ -556,7 +560,7 @@ export default function App() {
       return;
     }
     fetch(
-      `/api/collections/${encodeURIComponent(selectedCollection)}/outgoing-links/${selectedFile}`,
+      `/api/collections/${encodeURIComponent(selectedCollection)}/outgoing-links/${encodeFilePath(selectedFile)}`,
     )
       .then((r) => (r.ok ? r.json() : []))
       .then(setOutgoingLinks)
@@ -592,7 +596,7 @@ export default function App() {
     setHtmlContent(null);
     setHtmlLoading(true);
     fetch(
-      `/api/collections/${encodeURIComponent(selectedCollection)}/html/${selectedFile}`,
+      `/api/collections/${encodeURIComponent(selectedCollection)}/html/${encodeFilePath(selectedFile)}`,
     )
       .then((r) => {
         if (!r.ok) throw new Error("HTML not available");
@@ -1039,7 +1043,7 @@ export default function App() {
               <button
                 className="nav-btn icon-btn"
                 onClick={() => {
-                  const url = `/api/collections/${encodeURIComponent(selectedCollection)}/textpack/${selectedFile}`;
+                  const url = `/api/collections/${encodeURIComponent(selectedCollection)}/textpack/${encodeFilePath(selectedFile)}`;
                   const a = document.createElement("a");
                   a.href = url;
                   a.download = "";

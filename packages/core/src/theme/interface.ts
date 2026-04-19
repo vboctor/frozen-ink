@@ -1,7 +1,7 @@
 export interface FolderConfig {
   /** Whether this folder is visible in the file tree (default: true). */
   visible?: boolean;
-  /** Sort order for files in this folder (default: ASC). */
+  /** Sort order for both files and subdirectories in this folder (default: ASC). */
   sort?: "ASC" | "DESC";
   /**
    * Glob patterns matching filenames to hide within this folder.
@@ -16,6 +16,21 @@ export interface FolderConfig {
    * children are a fixed set of entity-type subfolders plus the project entity).
    */
   showCount?: boolean;
+  /**
+   * Expand the first N visible child directories by default (default: 0).
+   * After sorting, the first N directories in this folder are marked expanded.
+   */
+  expandFirstN?: number;
+  /**
+   * Whether this folder starts expanded in the tree (default: true).
+   * Set to false to render this folder collapsed by default.
+   */
+  expanded?: boolean;
+  /**
+   * Prefix each file's display title with its creation date as `YYYYMMDD `.
+   * The date is extracted from the leading 8-character date stamp in the filename.
+   */
+  created_at_prefix?: boolean;
 }
 
 export interface ThemeRenderContext {

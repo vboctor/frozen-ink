@@ -52,6 +52,8 @@ export interface TreeNode {
   title?: string;
   /** Total number of entity files (recursive) in this directory; only present on directory nodes. */
   count?: number;
+  /** Whether this directory starts expanded (undefined = true). */
+  expanded?: boolean;
   children?: TreeNode[];
 }
 

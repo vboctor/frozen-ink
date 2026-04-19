@@ -235,13 +235,23 @@ function buildFileTree(
   dirPath: string,
   titleByPath: Map<string, string>,
   basePath: string = "",
+  themeConfigs: Record<string, FolderConfig> = {},
+  themeRootConfig: FolderConfig = {},
 ): object[] {
   if (!existsSync(dirPath)) return [];
 
-  // Read this directory's own config (including root: content/content.yml)
-  const ownConfig = readFolderConfig(dirPath);
-  const sortOrder = ownConfig.sort ?? "ASC";
-  const folderHide = ownConfig.hide ?? [];
+  // Resolve which theme config applies to this directory.
+  const folderLeaf = basePath
+    ? (basePath.includes("/") ? basePath.split("/").pop()! : basePath)
+    : "";
+  const themeConfig = folderLeaf ? (themeConfigs[folderLeaf] ?? {}) : themeRootConfig;
+
+  // Merge: yml overrides theme for fields it specifies; theme provides defaults.
+  const ymlConfig = readFolderConfig(dirPath);
+  const merged: FolderConfig = { ...themeConfig, ...ymlConfig };
+
+  const sortOrder = merged.sort ?? "ASC";
+  const folderHide = merged.hide ?? [];
 
   const entries = readdirSync(dirPath, { withFileTypes: true });
   const dirs: object[] = [];
@@ -251,10 +261,11 @@ function buildFileTree(
     const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
       const childDirPath = join(dirPath, entry.name);
-      // Check child dir's visibility before including it
-      const childConfig = readFolderConfig(childDirPath);
-      if (childConfig.visible === false) continue;
-      const children = buildFileTree(childDirPath, titleByPath, relativePath);
+      const childThemeCfg = themeConfigs[entry.name] ?? {};
+      const childYmlCfg = readFolderConfig(childDirPath);
+      const childMerged: FolderConfig = { ...childThemeCfg, ...childYmlCfg };
+      if (childMerged.visible === false) continue;
+      const children = buildFileTree(childDirPath, titleByPath, relativePath, themeConfigs, themeRootConfig);
       // Hide directories with no (visible) files in their subtree so stale
       // empty folders on disk don't leak into the tree.
       if (countFiles(children) === 0) continue;
@@ -264,8 +275,11 @@ function buildFileTree(
         type: "directory",
         children,
       };
-      if (childConfig.showCount === true) {
+      if (childMerged.showCount === true) {
         dirNode.count = countFiles(children);
+      }
+      if (childMerged.expanded === false) {
+        dirNode.expanded = false;
       }
       dirs.push(dirNode);
     } else if (entry.name.endsWith(".md")) {
@@ -276,8 +290,14 @@ function buildFileTree(
         path: relativePath,
         type: "file",
       };
-      const title = titleByPath.get(relativePath);
-      if (title) node.title = title;
+      if (merged.created_at_prefix) {
+        const datePrefix = entry.name.slice(0, 8);
+        const stored = titleByPath.get(relativePath);
+        node.title = stored ? `${datePrefix} ${stored}` : entry.name.replace(/\.md$/, "");
+      } else {
+        const title = titleByPath.get(relativePath);
+        if (title) node.title = title;
+      }
       files.push(node);
     }
   }
@@ -285,6 +305,15 @@ function buildFileTree(
   // Apply directory/file ordering by this folder's sort config.
   const sortedDirs = sortOrder === "DESC" ? dirs.slice().reverse() : dirs;
   const sortedFiles = sortOrder === "DESC" ? files.slice().reverse() : files;
+
+  // Mark the first N expanded, rest explicitly collapsed. The UI defaults to
+  // "expanded" when the flag is absent, so both states must be set.
+  if (merged.expandFirstN && merged.expandFirstN > 0) {
+    for (let i = 0; i < sortedDirs.length; i++) {
+      (sortedDirs[i] as Record<string, unknown>).expanded = i < merged.expandFirstN;
+    }
+  }
+
   return [...sortedDirs, ...sortedFiles];
 }
 
@@ -395,7 +424,10 @@ export function createApiServer(
           }
         }
 
-        const tree = buildFileTree(contentDir, titleByPath);
+        const crawlerType = effectiveCrawlerType(col, dbPath);
+        const themeConfigs = themeEngine.getFolderConfigs(crawlerType);
+        const themeRootConfig = themeEngine.getRootConfig(crawlerType);
+        const tree = buildFileTree(contentDir, titleByPath, "", themeConfigs, themeRootConfig);
         return jsonResponse(tree);
       }
 
