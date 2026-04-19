@@ -11,6 +11,12 @@
       "url": "https://sam-altman.vboctor.workers.dev",
       "description": "Posts from Sam Altman's personal blog, synced from its Atom feed. Useful grounding for agents reasoning about OpenAI history, startup advice, and AI policy.",
       "crawler": "rss"
+    },
+    {
+      "title": "Turso / libSQL",
+      "url": "https://turso-database-libsql.vboctor.workers.dev",
+      "description": "Issues and pull requests from the tursodatabase/libsql repository, synced from GitHub. Useful grounding for agents working with libSQL, Turso, or SQLite-based edge databases.",
+      "crawler": "github"
     }
   ]
 }
