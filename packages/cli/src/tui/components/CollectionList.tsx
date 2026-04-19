@@ -766,7 +766,7 @@ export function CollectionList({
       }
     } else if (mode === "publish-menu") {
       if (key.escape) { setMode("list"); return; }
-      if (input === "p") {
+      if (input === "p" && !current?.publish) {
         setInputValue("");
         setMode("publish-password");
       }
@@ -893,7 +893,7 @@ export function CollectionList({
           </Box>
         )}
         <Box flexDirection="column" marginTop={1}>
-          <Text color="cyan">[p] Publish{isPublished ? " (update)" : ""}</Text>
+          {!isPublished && <Text color="cyan">[p] Publish</Text>}
           <Text>[u] Unpublish</Text>
           <Text color={isPublished && isProtected ? undefined : "gray"}>[r] Remove password{!isPublished ? " (not published)" : !isProtected ? " (already public)" : ""}</Text>
         </Box>

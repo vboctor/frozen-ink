@@ -416,9 +416,6 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
               <span>Published {formatTimestamp(collection.publish.publishedAt)}</span>
             </div>
             <div className="collection-card-actions" style={{ marginTop: 8 }}>
-              <button className="btn btn-sm btn-primary" onClick={doPublish} disabled={publishing}>
-                {publishing ? "Publishing..." : "Republish"}
-              </button>
               <button className="btn btn-sm btn-danger" onClick={handleUnpublish} disabled={publishing}>
                 Unpublish
               </button>
