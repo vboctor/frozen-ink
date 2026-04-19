@@ -251,12 +251,22 @@ api.get("/api/collections/:name/manifest", async (c) => {
   const col = await getCollectionConfig(c.env.BUCKET, name);
   if (!col) return c.json({ error: "Collection not found" }, 404);
 
+  // Serve from R2 cache if present. Publish invalidates the cache so stale
+  // reads aren't possible after a re-publish.
+  const cacheKey = `_cache/manifest-${name}.json`;
+  const cached = await c.env.BUCKET.get(cacheKey);
+  if (cached) {
+    return new Response(cached.body, {
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const manifest = await getFullManifest(c.env.DB);
   const entitiesStr = manifest
     .map((e) => `${e.externalId}\t${e.hash}`)
     .join("\n");
 
-  return c.json({
+  const body = {
     version: 1,
     capabilities: ["bulk-entities", "html-render"],
     collection: {
@@ -265,6 +275,15 @@ api.get("/api/collections/:name/manifest", async (c) => {
       crawlerType: col.crawler,
     },
     entities: entitiesStr,
+  };
+  const bodyJson = JSON.stringify(body);
+
+  await c.env.BUCKET.put(cacheKey, bodyJson, {
+    httpMetadata: { contentType: "application/json" },
+  });
+
+  return new Response(bodyJson, {
+    headers: { "content-type": "application/json" },
   });
 });
 

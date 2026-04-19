@@ -369,12 +369,14 @@ export async function publishCollections(
     // re-created if Phase 3 reaches the config-upload step. A crash mid-publish
     // would leave the worker with no _config/collections.yml, which makes
     // /api/collections return [] and breaks remote clones.
+    // Skip `_cache/` — worker-managed manifest cache invalidated explicitly
+    // in Phase 3 after the D1 rebuild.
     let deletedCount = 0;
     if (isUpdate) {
       const allKeys = new Set(fileSizes.keys());
       try {
         const staleKeys = [...existingR2Objects.keys()].filter(
-          (key) => !allKeys.has(key) && !key.startsWith("_config/"),
+          (key) => !allKeys.has(key) && !key.startsWith("_config/") && !key.startsWith("_cache/"),
         );
         if (staleKeys.length > 0) {
           onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
@@ -590,6 +592,17 @@ export async function publishCollections(
           onProgress("d1-upload", `Uploading to D1... ${batchCount}/${totalBatches} batches`);
         }
       }
+    }
+
+    // Invalidate cached manifests so the next client request rebuilds from
+    // the fresh D1 state. Worker writes the cache on the next GET /manifest.
+    const cacheKeys = collectionNames.map((n) => `_cache/manifest-${n}.json`);
+    try {
+      await deleteR2Objects(r2BucketName, cacheKeys);
+    } catch {
+      // Non-fatal — stale cache just means clients get slightly outdated data
+      // until the next publish. Better than failing the whole publish.
+      onProgress("r2-cleanup", "Warning: could not invalidate manifest cache");
     }
 
     // Upload collection config YAML to R2 (needed by new worker architecture)
