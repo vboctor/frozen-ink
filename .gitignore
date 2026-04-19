@@ -1,15 +1,39 @@
-node_modules
-*.db
-*.db-shm
-*.db-wal
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies
+node_modules/
+
+# Environment
 .env
+.env.local
+.env.*.local
+
+# Build output
 dist/
-daemon.pid
-.frozenink/
-.context
-.wrangler/
 *.tsbuildinfo
 *.d.ts
 *.d.ts.map
 *.js.map
 packages/*/src/*.js
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Runtime
+daemon.pid
+
+# Tool-specific
+.frozenink/
+.context
+.wrangler/
+
