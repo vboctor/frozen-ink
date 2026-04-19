@@ -24,6 +24,18 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
+/**
+ * Recover the raw GitHub title from an entity. New entities store it in
+ * `data.title`; older ones only have `entity.title`, which may already be
+ * zero-prefixed from a prior generate run — strip that so the result is
+ * idempotent.
+ */
+function resolveRawTitle(entityTitle: string, dataTitle: unknown): string {
+  if (typeof dataTitle === "string" && dataTitle.length > 0) return dataTitle;
+  const m = entityTitle.match(/^\d{5} (.+)$/);
+  return m ? m[1] : entityTitle;
+}
+
 interface MappedUser {
   login: string;
   avatarUrl: string;
@@ -403,12 +415,24 @@ export class GitHubTheme implements Theme {
     }
 
     const number = entity.data.number as number;
-    const slug = slugify(entity.title);
+    // Slugify the raw GitHub title so filenames stay `1-title-slug.md`
+    // even though entity.title carries the zero-padded display prefix.
+    const rawTitle = resolveRawTitle(entity.title, entity.data.title);
+    const slug = slugify(rawTitle);
 
     if (entity.entityType === "pull_request") {
       return `pull-requests/${number}-${slug}.md`;
     }
     return `issues/${number}-${slug}.md`;
+  }
+
+  getTitle(context: ThemeRenderContext): string | undefined {
+    const { entity } = context;
+    if (entity.entityType === "user") return undefined;
+    const number = entity.data.number as number | undefined;
+    if (number === undefined) return undefined;
+    const raw = resolveRawTitle(entity.title, entity.data.title);
+    return `${String(number).padStart(5, "0")} ${raw}`;
   }
 
   folderConfigs() {
@@ -456,9 +480,11 @@ export class GitHubTheme implements Theme {
     const user = d.user as MappedUser | null;
     const sections: string[] = [];
 
+    const rawTitle = resolveRawTitle(entity.title, d.title);
+
     // Frontmatter
     const fm: Record<string, unknown> = {
-      title: entity.title,
+      title: rawTitle,
       type: "issue",
       number: d.number,
       state: d.state,
@@ -480,7 +506,7 @@ export class GitHubTheme implements Theme {
     sections.push(frontmatter(fm));
 
     // Title
-    sections.push(`# ${entity.title}`);
+    sections.push(`# ${rawTitle}`);
 
     // Metadata callout
     const metaParts: string[] = [];
@@ -537,9 +563,11 @@ export class GitHubTheme implements Theme {
     else if (d.state === "closed") reviewStatus = "closed";
     else if (d.draft) reviewStatus = "draft";
 
+    const rawTitle = resolveRawTitle(entity.title, d.title);
+
     // Frontmatter
     const fm: Record<string, unknown> = {
-      title: entity.title,
+      title: rawTitle,
       type: "pull_request",
       number: d.number,
       state: d.state,
@@ -566,7 +594,7 @@ export class GitHubTheme implements Theme {
     sections.push(frontmatter(fm));
 
     // Title
-    sections.push(`# ${entity.title}`);
+    sections.push(`# ${rawTitle}`);
 
     // Metadata callout
     const metaParts: string[] = [];
@@ -744,6 +772,7 @@ export class GitHubTheme implements Theme {
     const assignees = d.assignees as MappedUser[] | undefined;
     const comments = d.comments as MappedComment[] | undefined;
     const reactions = d.reactions as MappedReactions | null;
+    const rawTitle = resolveRawTitle(entity.title, d.title);
 
     // Build repo slug from entity URL for GitHub ref shortening
     const repoSlug = this.extractRepoSlug(entity.url);
@@ -760,7 +789,7 @@ export class GitHubTheme implements Theme {
 
     // Header
     parts.push(`<div class="gh-header">`);
-    parts.push(`<h1 class="gh-title">${esc(entity.title)} <span class="gh-title-number">#${d.number}</span></h1>`);
+    parts.push(`<h1 class="gh-title">${esc(rawTitle)} <span class="gh-title-number">#${d.number}</span></h1>`);
     parts.push(`<div class="gh-header-meta">`);
     parts.push(`<span class="gh-state-badge ${stateClass}">${stateIcon} ${esc(stateLabel)}</span>`);
     if (user) {
@@ -833,6 +862,7 @@ export class GitHubTheme implements Theme {
     const mdOpts: MarkdownOptions = { resolveUser: resolve, repo: repoSlug, lookupEntityPath: context.lookupEntityPath };
     const checkRuns = d.checkRuns as MappedCheckRun[] | undefined;
     const reactions = d.reactions as MappedReactions | null;
+    const rawTitle = resolveRawTitle(entity.title, d.title);
 
     let stateClass: string;
     let stateIcon: string;
@@ -856,7 +886,7 @@ export class GitHubTheme implements Theme {
 
     // Header
     parts.push(`<div class="gh-header">`);
-    parts.push(`<h1 class="gh-title">${esc(entity.title)} <span class="gh-title-number">#${d.number}</span></h1>`);
+    parts.push(`<h1 class="gh-title">${esc(rawTitle)} <span class="gh-title-number">#${d.number}</span></h1>`);
     parts.push(`<div class="gh-header-meta">`);
     parts.push(`<span class="gh-state-badge ${stateClass}">${stateIcon} ${esc(stateLabel)}</span>`);
     if (user) {

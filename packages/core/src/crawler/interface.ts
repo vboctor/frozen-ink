@@ -70,4 +70,10 @@ export interface Crawler {
    * by the UI/TUI to show what's happening under the hood.
    */
   setProgressCallback?(callback: (message: string) => void): void;
+  /**
+   * Optional: hand the crawler the set of externalIds already present in the
+   * local DB so it can skip re-fetching entities it already has (e.g. user
+   * profiles whose bios rarely change).
+   */
+  setExistingExternalIds?(ids: Set<string>): void;
 }

@@ -175,6 +175,12 @@ export class SyncEngine {
     if (this.onProgress) {
       this.crawler.setProgressCallback?.(this.onProgress);
     }
+    // Hand the crawler the existing external-id set so it can skip re-fetching
+    // entities we already have (e.g. user profiles for returning contributors).
+    if (this.crawler.setExistingExternalIds) {
+      const rows = this.db.select({ externalId: entities.externalId }).from(entities).all();
+      this.crawler.setExistingExternalIds(new Set(rows.map((r: { externalId: string }) => r.externalId)));
+    }
 
     const metadata = new MetadataStore(this.dbPath);
 
@@ -213,8 +219,22 @@ export class SyncEngine {
 
       // Sync loop
       let hasMore = true;
+      let pausedByRateLimit = false;
       while (hasMore) {
-        const result = await this.crawler.sync(cursor);
+        let result: Awaited<ReturnType<Crawler["sync"]>>;
+        try {
+          result = await this.crawler.sync(cursor);
+        } catch (err) {
+          // RateLimitPauseError signals the crawler hit a wait longer than
+          // what's safe to sleep through inline (e.g. in a Workers request).
+          // Persist the cursor and exit cleanly so the next sync tick resumes.
+          if (err instanceof Error && err.name === "RateLimitPauseError") {
+            pausedByRateLimit = true;
+            this.onProgress?.(err.message);
+            break;
+          }
+          throw err;
+        }
         this.onBatchFetched?.({
           collectionName: this.collectionName,
           externalIds: result.entities.map((e) => e.externalId),
@@ -257,6 +277,23 @@ export class SyncEngine {
 
       // Persist cursor to DB; version goes to YAML (user-facing) and is mirrored in DB.
       metadata.setSyncState({ cursor: cursor ?? null });
+
+      if (pausedByRateLimit) {
+        // Don't bump version, reconcile (would delete unsynced entities as
+        // orphans), or write folder configs — the sync is mid-flight. Mark
+        // as failed so the UI shows an incomplete state and the next run
+        // resumes from the persisted cursor.
+        metadata.setSyncState({
+          lastStatus: "failed",
+          lastAt: new Date().toISOString().replace("T", " ").replace("Z", ""),
+          lastCreated: created,
+          lastUpdated: updated,
+          lastDeleted: deleted,
+          lastErrors: ["Paused due to GitHub rate limit; will resume on next sync"],
+        });
+        return { created, updated, deleted };
+      }
+
       metadata.setCollectionVersion(currentVersion);
       updateCollection(this.collectionName, { version: currentVersion });
 

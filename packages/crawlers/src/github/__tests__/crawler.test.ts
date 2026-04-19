@@ -159,7 +159,9 @@ describe("GitHubCrawler", () => {
       expect(result.entities).toHaveLength(1);
       expect(result.entities[0].externalId).toBe("issue-10");
       expect(result.entities[0].entityType).toBe("issue");
-      expect(result.entities[0].title).toBe("Bug report");
+      // Title carries the zero-padded prefix for file-tree display.
+      expect(result.entities[0].title).toBe("00010 Bug report");
+      expect(result.entities[0].data.title).toBe("Bug report");
       expect(result.entities[0].url).toBe("https://github.com/owner/repo/issues/10");
       expect(result.entities[0].tags).toContain("bug");
       expect(result.entities[0].data.state).toBe("open");
@@ -200,7 +202,8 @@ describe("GitHubCrawler", () => {
       expect(result2.entities).toHaveLength(1);
       expect(result2.entities[0].externalId).toBe("pr-20");
       expect(result2.entities[0].entityType).toBe("pull_request");
-      expect(result2.entities[0].title).toBe("Add feature X");
+      expect(result2.entities[0].title).toBe("00020 Add feature X");
+      expect(result2.entities[0].data.title).toBe("Add feature X");
       expect(result2.entities[0].data.head).toBe("feat/x");
       expect(result2.entities[0].data.base).toBe("main");
       expect(result2.entities[0].data.merged).toBe(false);
@@ -612,6 +615,70 @@ describe("GitHubCrawler", () => {
     });
   });
 
+  describe("ETag caching", () => {
+    it("sends If-None-Match after caching an etag and treats 304 as empty", async () => {
+      const seen: Array<{ url: string; etag: string | null }> = [];
+      let call = 0;
+      crawler.setFetch(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const etag = (init?.headers as Record<string, string> | undefined)?.[
+          "If-None-Match"
+        ] ?? null;
+        seen.push({ url, etag });
+        call++;
+        if (url.includes("/issues?") && call === 1) {
+          return new Response(JSON.stringify([sampleIssue()]), {
+            status: 200,
+            headers: { etag: '"issues-v1"' },
+          });
+        }
+        if (url.includes("/issues?")) {
+          return new Response("", { status: 304 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      });
+
+      const first = await crawler.sync(null);
+      expect(first.entities.length).toBeGreaterThan(0);
+
+      // Next sync run reuses the persisted etag cache but restarts the phase.
+      const second = await crawler.sync({
+        ...(first.nextCursor ?? {}),
+        phase: "issues",
+        issuesPage: 1,
+      });
+      const issuesCalls = seen.filter((s) => s.url.includes("/issues?"));
+      expect(issuesCalls[1]?.etag).toBe('"issues-v1"');
+      // 304 → treated as empty page → no new entities.
+      expect(
+        second.entities.filter((e) => e.entityType === "issue"),
+      ).toHaveLength(0);
+    });
+  });
+
+  describe("skip existing users", () => {
+    it("does not fetch user profiles already in the local DB", async () => {
+      const urls: string[] = [];
+      crawler.setFetch(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input.toString();
+        urls.push(url);
+        if (url.includes("/issues?"))
+          return new Response(JSON.stringify([sampleIssue()]), { status: 200 });
+        if (url.includes("/pulls?"))
+          return new Response(JSON.stringify([]), { status: 200 });
+        return new Response(JSON.stringify(sampleUserProfile()), { status: 200 });
+      });
+      // testuser already exists; dev1 does not.
+      crawler.setExistingExternalIds(new Set(["user-testuser"]));
+
+      let r = await crawler.sync(null);
+      while (r.hasMore) r = await crawler.sync(r.nextCursor);
+
+      expect(urls.some((u) => u.endsWith("/users/testuser"))).toBe(false);
+      expect(urls.some((u) => u.endsWith("/users/dev1"))).toBe(true);
+    });
+  });
+
   describe("openOnly mode", () => {
     let openOnlyCrawler: GitHubCrawler;
 
@@ -638,7 +705,9 @@ describe("GitHubCrawler", () => {
       expect(issuesUrl).not.toContain("state=all");
     });
 
-    it("does not use since parameter in openOnly mode", async () => {
+    it("uses incremental since parameter in openOnly mode", async () => {
+      // Deletion tracking was dropped, so openOnly can now ride the
+      // incremental `since` filter for the same speedup as full mode.
       const urls: string[] = [];
       openOnlyCrawler.setFetch(async (input: string | URL | Request) => {
         const url = typeof input === "string" ? input : input.toString();
@@ -646,7 +715,6 @@ describe("GitHubCrawler", () => {
         return new Response(JSON.stringify([]), { status: 200 });
       });
 
-      // Even with updatedSince in cursor, openOnly should not use since
       await openOnlyCrawler.sync({
         phase: "issues",
         issuesPage: 1,
@@ -654,53 +722,10 @@ describe("GitHubCrawler", () => {
       });
 
       const issuesUrl = urls.find((u) => u.includes("/issues?"));
-      expect(issuesUrl).not.toContain("since=");
+      expect(issuesUrl).toContain("since=2024-06-01");
     });
 
-    it("stores knownOpenIds in cursor after sync completes", async () => {
-      const issue = sampleIssue({ number: 10 });
-      openOnlyCrawler.setFetch(
-        mockFetch({
-          "/issues?": [issue],
-          "/pulls?": [],
-          "/users/testuser": sampleUserProfile(),
-          "/users/dev1": sampleUserProfile({ login: "dev1" }),
-        }),
-      );
-
-      // Issues phase
-      let r = await openOnlyCrawler.sync(null);
-      expect(r.hasMore).toBe(true);
-      // Pulls phase (empty), then users
-      r = await openOnlyCrawler.sync(r.nextCursor);
-      expect(r.hasMore).toBe(true);
-      // Users phase
-      r = await openOnlyCrawler.sync(r.nextCursor);
-      expect(r.hasMore).toBe(false);
-
-      const cursor = r.nextCursor as { knownOpenIds?: string[] };
-      expect(cursor.knownOpenIds).toContain("issue-10");
-    });
-
-    it("returns deletedExternalIds for items no longer open", async () => {
-      // First sync: issues 10 and 20 are open
-      openOnlyCrawler.setFetch(
-        mockFetch({
-          "/issues?": [sampleIssue({ number: 10 }), sampleIssue({ number: 20 })],
-          "/pulls?": [],
-          "/users/testuser": sampleUserProfile(),
-          "/users/dev1": sampleUserProfile({ login: "dev1" }),
-        }),
-      );
-
-      let r = await openOnlyCrawler.sync(null);
-      r = await openOnlyCrawler.sync(r.nextCursor); // pulls phase
-      r = await openOnlyCrawler.sync(r.nextCursor); // users phase
-      const firstCursor = r.nextCursor as { knownOpenIds: string[] };
-      expect(firstCursor.knownOpenIds).toEqual(["issue-10", "issue-20"]);
-      expect(r.deletedExternalIds).toEqual([]); // No previous known IDs to compare against
-
-      // Second sync: only issue 10 is still open (20 was closed)
+    it("never returns deletedExternalIds", async () => {
       openOnlyCrawler.setFetch(
         mockFetch({
           "/issues?": [sampleIssue({ number: 10 })],
@@ -709,57 +734,10 @@ describe("GitHubCrawler", () => {
           "/users/dev1": sampleUserProfile({ login: "dev1" }),
         }),
       );
-
-      let r2 = await openOnlyCrawler.sync({
-        ...firstCursor,
-        phase: "issues",
-        issuesPage: 1,
-      });
-      r2 = await openOnlyCrawler.sync(r2.nextCursor); // pulls phase
-      r2 = await openOnlyCrawler.sync(r2.nextCursor); // users phase
-
-      expect(r2.deletedExternalIds).toEqual(["issue-20"]);
-      const secondCursor = r2.nextCursor as { knownOpenIds: string[] };
-      expect(secondCursor.knownOpenIds).toEqual(["issue-10"]);
-    });
-
-    it("tracks PR IDs in knownOpenIds too", async () => {
-      openOnlyCrawler.setFetch(
-        mockFetch({
-          "/issues?": [sampleIssue({ number: 5 })],
-          "/pulls?": [samplePR({ number: 15 })],
-          "/reviews?": [],
-          "/check-runs?": { total_count: 0, check_runs: [] },
-          "/users/testuser": sampleUserProfile(),
-          "/users/dev1": sampleUserProfile({ login: "dev1" }),
-        }),
-      );
-
       let r = await openOnlyCrawler.sync(null);
-      r = await openOnlyCrawler.sync(r.nextCursor); // pulls phase
-      r = await openOnlyCrawler.sync(r.nextCursor); // users phase
-
-      const cursor = r.nextCursor as { knownOpenIds: string[] };
-      expect(cursor.knownOpenIds).toContain("issue-5");
-      expect(cursor.knownOpenIds).toContain("pr-15");
-    });
-
-    it("does not set updatedSince in openOnly cursor", async () => {
-      openOnlyCrawler.setFetch(
-        mockFetch({
-          "/issues?": [sampleIssue()],
-          "/pulls?": [],
-          "/users/testuser": sampleUserProfile(),
-          "/users/dev1": sampleUserProfile({ login: "dev1" }),
-        }),
-      );
-
-      let r = await openOnlyCrawler.sync(null);
-      r = await openOnlyCrawler.sync(r.nextCursor); // pulls
-      r = await openOnlyCrawler.sync(r.nextCursor); // users
-
-      const cursor = r.nextCursor as { updatedSince?: string };
-      expect(cursor.updatedSince).toBeUndefined();
+      r = await openOnlyCrawler.sync(r.nextCursor);
+      r = await openOnlyCrawler.sync(r.nextCursor);
+      expect(r.deletedExternalIds).toEqual([]);
     });
   });
 
