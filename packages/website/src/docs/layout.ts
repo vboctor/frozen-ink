@@ -802,6 +802,7 @@ export function renderDocsPage(opts: DocsPageOptions): string {
       <li><a href="/#why">What &amp; Why</a></li>
       <li><a href="/#how">Getting Started</a></li>
       <li><a href="/#connectors">Connectors</a></li>
+      <li><a href="/catalog">Catalog</a></li>
       <li><a href="/docs/what-is-frozen-ink" class="active">Docs</a></li>
       <li><a href="/docs/download" class="nav-cta">Download</a></li>
       <li class="nav-social">

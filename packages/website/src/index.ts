@@ -27,6 +27,7 @@ import { clonePullPage } from "./docs/clone-pull";
 import { cliReferencePage } from "./docs/cli-reference";
 import { configurationPage } from "./docs/configuration";
 import { downloadPage } from "./docs/download";
+import { catalogPage } from "./catalog";
 
 const DOC_PAGES: Record<string, string> = {
   "/docs": gettingStartedPage,
@@ -50,6 +51,7 @@ const DOC_PAGES: Record<string, string> = {
   "/docs/reference/cli": cliReferencePage,
   "/docs/reference/configuration": configurationPage,
   "/docs/download": downloadPage,
+  "/catalog": catalogPage,
 };
 
 export default {
@@ -103,6 +105,7 @@ export default {
       "/docs/chatgpt-desktop": "/docs/integrations/chatgpt-desktop",
       "/docs/local-mcp": "/docs/integrations/local-mcp",
       "/docs/cloud-mcp": "/docs/integrations/cloud-mcp",
+      "/docs/catalog": "/catalog",
     };
 
     const redirect = REDIRECTS[path];
