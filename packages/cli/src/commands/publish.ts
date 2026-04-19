@@ -363,12 +363,19 @@ export async function publishCollections(
       uploadCount++;
     });
 
-    // Stale cleanup: remove R2 keys no longer in the local set
+    // Stale cleanup: remove R2 keys no longer in the local set.
+    // Skip `_config/` — those files are uploaded later in Phase 3 (not tracked
+    // in `fileSizes`), so without this guard they'd be deleted here and only
+    // re-created if Phase 3 reaches the config-upload step. A crash mid-publish
+    // would leave the worker with no _config/collections.yml, which makes
+    // /api/collections return [] and breaks remote clones.
     let deletedCount = 0;
     if (isUpdate) {
       const allKeys = new Set(fileSizes.keys());
       try {
-        const staleKeys = [...existingR2Objects.keys()].filter((key) => !allKeys.has(key));
+        const staleKeys = [...existingR2Objects.keys()].filter(
+          (key) => !allKeys.has(key) && !key.startsWith("_config/"),
+        );
         if (staleKeys.length > 0) {
           onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
           await deleteR2Objects(r2BucketName, staleKeys);
