@@ -437,8 +437,10 @@ export async function publishCollections(
     // Read all local entities once.
     const themeEngine = createGenerateThemeEngine();
     const MAX_FTS_CONTENT = 8000;
-    // D1's per-statement SQL length limit is ~100-128 KB. Skip entities whose
-    // serialized data alone exceeds this — their INSERT would fail SQLITE_TOOBIG.
+    // D1's per-statement SQL length limit is ~100-128 KB. Entities whose
+    // serialized data alone exceeds this can never be pushed — their INSERT
+    // would fail SQLITE_TOOBIG. Filter them out of the plan entirely so they
+    // don't keep showing up as "+1 to push" forever on every re-publish.
     const MAX_ENTITY_DATA_BYTES = 80 * 1024;
     let skippedTooLarge = 0;
 
@@ -452,8 +454,19 @@ export async function publishCollections(
       const colDef = getCollection(colName)!;
       const colDb = getCollectionDb(getCollectionDbPath(colName));
       for (const entity of colDb.select().from(entities).all()) {
+        const dataStr = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
+        if (Buffer.byteLength(dataStr, "utf8") > MAX_ENTITY_DATA_BYTES) {
+          skippedTooLarge++;
+          continue;
+        }
         localRows.push({ entity, colName, colCrawler: colDef.crawler });
       }
+    }
+    if (skippedTooLarge > 0) {
+      onProgress(
+        "d1-build",
+        `Skipped ${skippedTooLarge} oversized entit${skippedTooLarge === 1 ? "y" : "ies"} (data > ${MAX_ENTITY_DATA_BYTES / 1024} KB)`,
+      );
     }
 
     const localForPlan: LocalEntity[] = localRows.map(({ entity }) => ({
@@ -514,10 +527,6 @@ export async function publishCollections(
         if (!pushSet.has(entity.externalId)) continue;
 
         const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
-        if (Buffer.byteLength(data, "utf8") > MAX_ENTITY_DATA_BYTES) {
-          skippedTooLarge++;
-          continue;
-        }
         const folderVal = entity.folder != null ? `'${escapeSQL(entity.folder)}'` : "NULL";
         const slugVal = entity.slug != null ? `'${escapeSQL(entity.slug)}'` : "NULL";
 
@@ -547,10 +556,6 @@ export async function publishCollections(
 
         deltaSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${ftsEntityIdFor(entity.externalId)}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(ftsContent)}', '${escapeSQL(entityTagNames)}');`);
       }
-    }
-
-    if (skippedTooLarge > 0) {
-      onProgress("d1-build", `Skipped ${skippedTooLarge} oversized entit${skippedTooLarge === 1 ? "y" : "ies"} (data > ${MAX_ENTITY_DATA_BYTES / 1024} KB)`);
     }
 
     if (deltaSql.length === 0) {
