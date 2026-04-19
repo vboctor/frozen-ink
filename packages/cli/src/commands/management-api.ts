@@ -3,7 +3,7 @@
  * These routes handle collection CRUD, sync triggering, publish orchestration,
  * export, and configuration — all gated behind mode === "desktop".
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync, readdirSync } from "fs";
 import { join } from "path";
 import yaml from "js-yaml";
 import {
@@ -106,6 +106,32 @@ let publishCollectionsOverride: PublishCollectionsFn | null = null;
 
 export function setPublishCollectionsOverride(fn: PublishCollectionsFn | null): void {
   publishCollectionsOverride = fn;
+}
+
+// --- Helpers ---
+
+/** Recursively sum file sizes in a directory. */
+function getDirectorySize(dirPath: string): number {
+  if (!existsSync(dirPath)) return 0;
+  let total = 0;
+  try {
+    for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+      const fullPath = join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        total += getDirectorySize(fullPath);
+      } else {
+        try { total += statSync(fullPath).size; } catch {}
+      }
+    }
+  } catch {}
+  return total;
+}
+
+/** Get disk size in bytes for a collection (db + content). */
+function getCollectionDiskSize(name: string): number {
+  const home = getFrozenInkHome();
+  const colDir = join(home, "collections", name);
+  return getDirectorySize(colDir);
 }
 
 // --- Mode detection ---
@@ -247,6 +273,23 @@ export function handleManagementRequest(req: Request): Response | null {
     });
   }
 
+  // GET /api/collections/:name/config — returns full collection YAML config for editing
+  const getConfigMatch = path.match(/^\/api\/collections\/([^/]+)\/config$/);
+  if (getConfigMatch && method === "GET") {
+    const name = decodeURIComponent(getConfigMatch[1]);
+    const col = getCollection(name);
+    if (!col) return errorResponse("Collection not found", 404);
+    // Return the full config including credentials key (string name or inline object)
+    return jsonResponse({
+      title: col.title,
+      description: col.description,
+      crawler: col.crawler,
+      enabled: col.enabled,
+      config: col.config ?? {},
+      credentials: col.credentials ?? {},
+    });
+  }
+
   // POST /api/collections/:name/prepare
   const prepareColMatch = path.match(/^\/api\/collections\/([^/]+)\/prepare$/);
   if (prepareColMatch && method === "POST") {
@@ -290,9 +333,11 @@ export function handleManagementRequest(req: Request): Response | null {
       entityCount = colDb.select().from(entities).all().length;
     }
 
+    const diskSizeBytes = getCollectionDiskSize(name);
     const sync = getCollectionSyncState(dbPath);
     return jsonResponse({
       entityCount,
+      diskSizeBytes,
       lastSyncRun: sync.lastAt ? {
         status: sync.lastStatus,
         startedAt: sync.lastAt,

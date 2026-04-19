@@ -7,6 +7,7 @@
  * - Externalizes electron, better-sqlite3, and Node builtins (native / provided at runtime)
  */
 import { build } from "esbuild";
+import { execSync } from "child_process";
 
 const common = {
   bundle: true,
@@ -47,5 +48,9 @@ await build({
   entryPoints: ["src/preload/index.ts"],
   outfile: "dist/preload/index.js",
 });
+
+// Rebuild native modules (better-sqlite3) against Electron's Node.js version
+console.log("Rebuilding native modules for Electron...");
+execSync("electron-rebuild -m .", { stdio: "inherit" });
 
 console.log("Desktop build complete: dist/main/index.mjs, dist/preload/index.js");

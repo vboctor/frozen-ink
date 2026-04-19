@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, nativeImage, Menu } from "electron";
 import { join, dirname } from "path";
 import { existsSync } from "fs";
+import { homedir } from "os";
 import { fileURLToPath } from "url";
 
 const __desktopFilename = fileURLToPath(import.meta.url);
@@ -13,6 +14,10 @@ import { createApiServer } from "../../../cli/src/commands/serve";
 
 let mainWindow: BrowserWindow | null = null;
 let apiServer: { port: number; stop?: () => void } | null = null;
+
+function getDefaultHome(): string {
+  return join(homedir(), ".frozenink");
+}
 
 async function startApiServer(workspacePath: string): Promise<{ port: number; stop?: () => void }> {
   // Set environment before importing core modules
@@ -145,19 +150,14 @@ app.whenReady().then(async () => {
     },
   });
 
-  // Check for last workspace
-  const lastWorkspace = getLastWorkspace();
+  // Always use ~/.frozenink as the home directory for collections
+  const home = getDefaultHome();
 
-  if (lastWorkspace && existsSync(lastWorkspace)) {
-    // Auto-open last workspace
-    try {
-      apiServer = await startApiServer(lastWorkspace);
-      mainWindow.loadURL(`http://localhost:${apiServer.port}`);
-    } catch (err) {
-      console.error("Failed to start API server:", err);
-      showWelcomeScreen();
-    }
-  } else {
+  try {
+    apiServer = await startApiServer(home);
+    mainWindow.loadURL(`http://localhost:${apiServer.port}`);
+  } catch (err) {
+    console.error("Failed to start API server:", err);
     showWelcomeScreen();
   }
 });

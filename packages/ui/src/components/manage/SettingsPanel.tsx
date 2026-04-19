@@ -22,7 +22,7 @@ export default function SettingsPanel() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sync: config.sync,
-        logging: config.logging,
+        ui: config.ui,
       }),
     });
     setSaving(false);
@@ -49,41 +49,19 @@ export default function SettingsPanel() {
           }
           className="form-input"
         />
-        <label>Concurrency</label>
-        <input
-          type="number"
-          value={config.sync.concurrency}
-          onChange={(e) =>
-            setConfig({ ...config, sync: { ...config.sync, concurrency: Number(e.target.value) } })
-          }
-          className="form-input"
-        />
-        <label>Retries</label>
-        <input
-          type="number"
-          value={config.sync.retries}
-          onChange={(e) =>
-            setConfig({ ...config, sync: { ...config.sync, retries: Number(e.target.value) } })
-          }
-          className="form-input"
-        />
       </div>
 
       <div className="form-group">
-        <h3>Logging</h3>
-        <label>Level</label>
-        <select
-          value={config.logging.level}
+        <h3>UI</h3>
+        <label>Port</label>
+        <input
+          type="number"
+          value={config.ui.port}
           onChange={(e) =>
-            setConfig({ ...config, logging: { ...config.logging, level: e.target.value } })
+            setConfig({ ...config, ui: { ...config.ui, port: Number(e.target.value) } })
           }
           className="form-input"
-        >
-          <option value="debug">Debug</option>
-          <option value="info">Info</option>
-          <option value="warn">Warn</option>
-          <option value="error">Error</option>
-        </select>
+        />
       </div>
 
       <div className="form-actions">

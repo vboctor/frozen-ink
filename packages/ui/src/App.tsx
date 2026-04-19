@@ -14,10 +14,7 @@ import ModeSwitcher from "./components/ModeSwitcher";
 import ManageNav, { type ManageSection } from "./components/manage/ManageNav";
 import CollectionList from "./components/manage/CollectionList";
 import CollectionForm from "./components/manage/CollectionForm";
-import PublishPanel from "./components/manage/PublishPanel";
-import ExportPanel from "./components/manage/ExportPanel";
-import SettingsPanel from "./components/manage/SettingsPanel";
-import McpPanel from "./components/manage/McpPanel";
+import CollectionDetail from "./components/manage/CollectionDetail";
 import type { Collection, TreeNode, AppInfo, UIMode } from "./types";
 
 function loadTheme(): ThemeId {
@@ -185,6 +182,7 @@ export default function App() {
   const [manageSection, setManageSection] = useState<ManageSection>("collections");
   const [editingCollection, setEditingCollection] = useState<string | null>(null);
   const [addingCollection, setAddingCollection] = useState(false);
+  const [viewingCollection, setViewingCollection] = useState<string | null>(null);
   // refreshKey: increment to force collections + file tree to re-fetch
   const [refreshKey, setRefreshKey] = useState(0);
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -363,7 +361,7 @@ export default function App() {
 
   useEffect(() => {
     const title = collections.find((c) => c.name === selectedCollection)?.title ?? selectedCollection;
-    document.title = title ?? "Frozen Ink";
+    document.title = title ? `${title} - Frozen Ink` : "Frozen Ink";
   }, [selectedCollection, collections]);
 
   useEffect(() => {
@@ -884,12 +882,12 @@ export default function App() {
   const canGoForward = navIndex < navHistory.length - 1;
   const showLogout = isPublishedDeployment() || appMode === "published";
 
-  const isDesktop = appMode === "desktop";
+  const canManage = appMode !== "published";
 
   const sidebar = (
     <>
       <ThemeSwitcher current={theme} onChange={handleThemeChange} />
-      {isDesktop && <ModeSwitcher mode={uiMode} onChange={handleUIModeChange} />}
+      {canManage && <ModeSwitcher mode={uiMode} onChange={handleUIModeChange} />}
       {uiMode === "browse" && (
         <>
           <CollectionPicker
@@ -905,18 +903,19 @@ export default function App() {
           />
         </>
       )}
-      {uiMode === "manage" && isDesktop && (
+      {uiMode === "manage" && canManage && (
         <ManageNav active={manageSection} onSelect={(section) => {
           setManageSection(section);
           // Close any open forms when navigating between manage pages
           setEditingCollection(null);
           setAddingCollection(false);
+          setViewingCollection(null);
         }} />
       )}
     </>
   );
 
-  const manageContent = isDesktop && uiMode === "manage" ? (
+  const manageContent = canManage && uiMode === "manage" ? (
     <div className="manage-content">
       {addingCollection ? (
         <CollectionForm
@@ -926,28 +925,23 @@ export default function App() {
       ) : editingCollection ? (
         <CollectionForm
           editName={editingCollection}
-          editConfig={(() => {
-            const col = collections.find((c) => c.name === editingCollection);
-            return col ? { title: col.title, description: col.description, crawler: col.crawlerType, config: {}, credentials: {} } : undefined;
-          })()}
-          onSave={() => { setEditingCollection(null); triggerRefresh(); }}
+          onSave={() => { setEditingCollection(null); setViewingCollection(editingCollection); triggerRefresh(); }}
           onCancel={() => setEditingCollection(null)}
+        />
+      ) : manageSection === "collections" && viewingCollection ? (
+        <CollectionDetail
+          name={viewingCollection}
+          onBack={() => setViewingCollection(null)}
+          onEdit={(n) => setEditingCollection(n)}
+          onCollectionsChanged={triggerRefresh}
         />
       ) : manageSection === "collections" ? (
         <CollectionList
-          onEdit={(name) => setEditingCollection(name)}
+          onSelect={(name) => setViewingCollection(name)}
           onAdd={() => setAddingCollection(true)}
           onSyncComplete={triggerRefresh}
           onCollectionsChanged={triggerRefresh}
         />
-      ) : manageSection === "publish" ? (
-        <PublishPanel />
-      ) : manageSection === "mcp" ? (
-        <McpPanel />
-      ) : manageSection === "export" ? (
-        <ExportPanel />
-      ) : manageSection === "settings" ? (
-        <SettingsPanel />
       ) : null}
     </div>
   ) : null;
@@ -1141,7 +1135,21 @@ export default function App() {
               </p>
             </div>
           )}
-          {!selectedFile && !loading && !fileNotFound && (
+          {!selectedFile && !loading && !fileNotFound && canManage && browseCollections.length === 0 && (
+            <div className="empty-state">
+              <p>No collections yet</p>
+              <p className="hint">
+                Use <strong>Manage</strong> in the sidebar to add a collection and start syncing.
+              </p>
+              <button
+                className="empty-state-action"
+                onClick={() => handleUIModeChange("manage")}
+              >
+                Go to Manage
+              </button>
+            </div>
+          )}
+          {!selectedFile && !loading && !fileNotFound && !(canManage && browseCollections.length === 0) && (
             <div className="empty-state">
               <p>{isMobile ? "Tap the sidebar icon below to browse files" : "Select a file from the sidebar to view its contents"}</p>
               {!isMobile && (

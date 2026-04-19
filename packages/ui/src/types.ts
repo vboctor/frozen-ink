@@ -75,6 +75,7 @@ export interface AppInfo {
 
 export interface CollectionStatus {
   entityCount: number;
+  diskSizeBytes: number;
   lastSyncRun: SyncRun | null;
 }
 
@@ -133,8 +134,8 @@ export interface CollectionConfig {
 }
 
 export interface FrozenInkConfig {
-  sync: { interval: number; concurrency: number; retries: number };
-  logging: { level: string };
+  sync: { interval: number };
+  ui: { port: number };
   [key: string]: unknown;
 }
 
