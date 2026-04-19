@@ -1206,6 +1206,22 @@ body {
   color: var(--text);
 }
 
+.empty-state-action {
+  margin-top: 8px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.empty-state-action:hover {
+  background: var(--bg-hover, var(--border));
+}
+
 .loading {
   padding: 24px;
   color: var(--text-muted);
@@ -2877,6 +2893,14 @@ body {
   box-shadow: 0 0 0 2px var(--accent-bg);
 }
 select.form-input { cursor: pointer; }
+.path-field {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.path-field .form-input {
+  flex: 1;
+}
 .form-error {
   color: #cf222e;
   font-size: 13px;
@@ -2900,16 +2924,45 @@ select.form-input { cursor: pointer; }
   padding: 5px 0;
   cursor: pointer;
 }
-.checkbox-label input[type="checkbox"] {
+.checkbox-label input[type="checkbox"],
+.checkbox-label input[type="radio"] {
   margin: 0;
   flex-shrink: 0;
   width: 16px;
   height: 16px;
 }
+.cred-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.cred-mode-toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  margin: 0;
+  color: var(--text);
+}
+.cred-mode-toggle input[type="radio"] {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+}
+.cred-mode-inline-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cred-mode-inline-select select {
+  flex: 1;
+}
 .toggle-label {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   font-size: 12px;
   cursor: pointer;
 }
@@ -2935,10 +2988,16 @@ select.form-input { cursor: pointer; }
   margin-bottom: 4px;
 }
 .collection-card-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+.collection-card-type svg {
+  flex-shrink: 0;
 }
 .collection-card-name {
   margin: 0 0 6px;
@@ -2961,6 +3020,36 @@ select.form-input { cursor: pointer; }
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
+}
+.collection-card-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.collection-card-clickable:hover {
+  border-color: var(--accent, var(--text-muted));
+}
+.collection-card-badges {
+  display: flex;
+  gap: 6px;
+}
+.collection-card-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+.detail-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.detail-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+.detail-section-danger {
+  border-top-color: var(--danger, #cf222e);
 }
 
 /* Crawler Picker */

@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 
+declare global {
+  interface Window {
+    frozenink?: {
+      openDirectoryPicker: () => Promise<string | null>;
+      platform?: string;
+    };
+  }
+}
+
 interface NamedCredential {
   name: string;
   keys: string[];
@@ -8,13 +17,6 @@ interface NamedCredential {
 interface CollectionFormProps {
   /** If provided, editing existing collection; else creating new */
   editName?: string;
-  editConfig?: {
-    title: string;
-    description?: string;
-    crawler: string;
-    config: Record<string, unknown>;
-    credentials: string | Record<string, unknown>;
-  };
   onSave: () => void;
   onCancel: () => void;
 }
@@ -26,29 +28,39 @@ const CRAWLER_TYPES = [
   { id: "mantishub", label: "MantisHub", description: "Issues from a MantisHub instance" },
 ];
 
-export default function CollectionForm({ editName, editConfig, onSave, onCancel }: CollectionFormProps) {
-  const [step, setStep] = useState(editConfig ? 2 : 1);
-  const [crawler, setCrawler] = useState(editConfig?.crawler ?? "");
+const NO_CREDENTIALS_CRAWLERS = ["obsidian", "git", "remote"];
+
+function configToStrings(obj: Record<string, unknown>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    result[k] = typeof v === "string" ? v : JSON.stringify(v);
+  }
+  return result;
+}
+
+export default function CollectionForm({ editName, onSave, onCancel }: CollectionFormProps) {
+  const [loading, setLoading] = useState(!!editName);
+  const [step, setStep] = useState(editName ? 2 : 1);
+  const [crawler, setCrawler] = useState("");
   const [name, setName] = useState(editName ?? "");
-  const [title, setTitle] = useState(editConfig?.title ?? "");
-  const [description, setDescription] = useState(editConfig?.description ?? "");
-  const [config, setConfig] = useState<Record<string, string>>(
-    configToStrings(editConfig?.config ?? {}),
-  );
-  const editCredsIsNamed = typeof editConfig?.credentials === "string";
-  const [credMode, setCredMode] = useState<"inline" | "named">(editCredsIsNamed ? "named" : "inline");
-  const [selectedCredName, setSelectedCredName] = useState<string>(
-    editCredsIsNamed ? (editConfig?.credentials as string) : "",
-  );
-  const [credentials, setCredentials] = useState<Record<string, string>>(
-    editCredsIsNamed ? {} : configToStrings((editConfig?.credentials as Record<string, unknown>) ?? {}),
-  );
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [enabled, setEnabled] = useState(true);
+  const [config, setConfig] = useState<Record<string, string>>({});
+  const [credMode, setCredMode] = useState<"inline" | "named">("inline");
+  const [selectedCredName, setSelectedCredName] = useState<string>("");
+  const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [namedCredentials, setNamedCredentials] = useState<NamedCredential[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [discardPrompt, setDiscardPrompt] = useState(false);
 
-  // Fetch available named credentials
+  // Track original values for unsaved-change detection
+  const originalRef = useRef<{
+    title: string; description: string; config: string; credMode: string; selectedCredName: string; credentials: string; enabled: boolean;
+  } | null>(null);
+
+  // Fetch named credentials
   useEffect(() => {
     fetch("/api/credentials")
       .then((res) => res.json())
@@ -56,16 +68,57 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
       .catch(() => {});
   }, []);
 
+  // Fetch full config when editing
+  useEffect(() => {
+    if (!editName) return;
+    fetch(`/api/collections/${encodeURIComponent(editName)}/config`)
+      .then((r) => r.json())
+      .then((data: { title: string; description?: string; crawler: string; enabled: boolean; config: Record<string, unknown>; credentials: string | Record<string, unknown> }) => {
+        setCrawler(data.crawler);
+        setTitle(data.title ?? "");
+        setDescription(data.description ?? "");
+        setEnabled(data.enabled);
+        const cfg = configToStrings(data.config ?? {});
+        setConfig(cfg);
+
+        const isNamed = typeof data.credentials === "string";
+        if (isNamed) {
+          setCredMode("named");
+          setSelectedCredName(data.credentials as string);
+        } else {
+          setCredMode("inline");
+          setCredentials(configToStrings((data.credentials as Record<string, unknown>) ?? {}));
+        }
+
+        originalRef.current = {
+          title: data.title ?? "",
+          description: data.description ?? "",
+          config: JSON.stringify(cfg),
+          credMode: isNamed ? "named" : "inline",
+          selectedCredName: isNamed ? (data.credentials as string) : "",
+          credentials: isNamed ? "{}" : JSON.stringify(configToStrings((data.credentials as Record<string, unknown>) ?? {})),
+          enabled: data.enabled,
+        };
+
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(String(err));
+        setLoading(false);
+      });
+  }, [editName]);
+
   function hasUnsavedChanges(): boolean {
-    if (!editName) return false; // creating new — no prior state to compare
-    const credsChanged = editCredsIsNamed
-      ? (credMode !== "named" || selectedCredName !== (editConfig?.credentials as string))
-      : (credMode !== "inline" || JSON.stringify(credentials) !== JSON.stringify(configToStrings((editConfig?.credentials as Record<string, unknown>) ?? {})));
+    if (!editName || !originalRef.current) return false;
+    const o = originalRef.current;
     return (
-      title !== (editConfig?.title ?? "") ||
-      description !== (editConfig?.description ?? "") ||
-      JSON.stringify(config) !== JSON.stringify(configToStrings(editConfig?.config ?? {})) ||
-      credsChanged
+      title !== o.title ||
+      description !== o.description ||
+      enabled !== o.enabled ||
+      JSON.stringify(config) !== o.config ||
+      credMode !== o.credMode ||
+      selectedCredName !== o.selectedCredName ||
+      JSON.stringify(credentials) !== o.credentials
     );
   }
 
@@ -77,26 +130,16 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
     }
   }
 
-  // Keep a ref to always call the latest handleCancel without re-registering the listener
   const handleCancelRef = useRef(handleCancel);
   handleCancelRef.current = handleCancel;
 
-  // ESC dismisses the form (with confirmation if there are unsaved changes)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") handleCancelRef.current();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []); // register once on mount
-
-  function configToStrings(obj: Record<string, unknown>): Record<string, string> {
-    const result: Record<string, string> = {};
-    for (const [k, v] of Object.entries(obj)) {
-      result[k] = typeof v === "string" ? v : JSON.stringify(v);
-    }
-    return result;
-  }
+  }, []);
 
   const handleSubmit = async () => {
     setSaving(true);
@@ -122,7 +165,7 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
         await fetch(`/api/collections/${encodeURIComponent(editName)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, description: description || undefined, config: parsedConfig, credentials: credsPayload }),
+          body: JSON.stringify({ title, description: description || undefined, enabled, config: parsedConfig, credentials: credsPayload }),
         });
       } else {
         const res = await fetch("/api/collections", {
@@ -149,6 +192,8 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
       setSaving(false);
     }
   };
+
+  if (loading) return <div className="loading">Loading...</div>;
 
   if (discardPrompt) {
     return (
@@ -232,6 +277,16 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
           className="form-input form-textarea"
           rows={3}
         />
+        {editName && (
+          <label className="toggle-label" style={{ marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+            />
+            <span className="toggle-text">Enabled</span>
+          </label>
+        )}
       </div>
 
       <div className="form-group">
@@ -239,52 +294,51 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
         {renderConfigFields(crawler, config, setConfig)}
       </div>
 
-      <div className="form-group">
-        <h3>Credentials</h3>
-        {namedCredentials.length > 0 && (
-          <div className="cred-mode-toggle">
-            <label>
-              <input
-                type="radio"
-                name="credMode"
-                value="inline"
-                checked={credMode === "inline"}
-                onChange={() => setCredMode("inline")}
-              />
-              {" "}Enter directly
-            </label>
-            <label style={{ marginLeft: "1rem" }}>
-              <input
-                type="radio"
-                name="credMode"
-                value="named"
-                checked={credMode === "named"}
-                onChange={() => setCredMode("named")}
-              />
-              {" "}Use saved credentials
-            </label>
-          </div>
-        )}
-        {credMode === "named" ? (
-          <div>
-            <label>Credential Set</label>
-            <select
-              className="form-input"
-              value={selectedCredName}
-              onChange={(e) => setSelectedCredName(e.target.value)}
-            >
-              <option value="">Select...</option>
-              {namedCredentials.map((nc) => (
-                <option key={nc.name} value={nc.name}>
-                  {nc.name} ({nc.keys.join(", ")})
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          renderCredentialFields(crawler, credentials, setCredentials)
-        )}
-      </div>
+      {!NO_CREDENTIALS_CRAWLERS.includes(crawler) && (
+        <div className="form-group">
+          <h3>Credentials</h3>
+          {namedCredentials.length > 0 && (
+            <div className="cred-mode-toggle">
+              <label>
+                <input
+                  type="radio"
+                  name="credMode"
+                  value="inline"
+                  checked={credMode === "inline"}
+                  onChange={() => setCredMode("inline")}
+                />
+                Enter directly
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="credMode"
+                  value="named"
+                  checked={credMode === "named"}
+                  onChange={() => setCredMode("named")}
+                />
+                Use saved credentials
+                {credMode === "named" && (
+                  <select
+                    className="form-input"
+                    value={selectedCredName}
+                    onChange={(e) => setSelectedCredName(e.target.value)}
+                    style={{ marginLeft: 8, minWidth: 160 }}
+                  >
+                    <option value="">Select...</option>
+                    {namedCredentials.map((nc) => (
+                      <option key={nc.name} value={nc.name}>
+                        {nc.name} ({nc.keys.join(", ")})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </label>
+            </div>
+          )}
+          {credMode === "inline" && renderCredentialFields(crawler, credentials, setCredentials)}
+        </div>
+      )}
 
       {error && <div className="form-error">{error}</div>}
 
@@ -302,15 +356,47 @@ export default function CollectionForm({ editName, editConfig, onSave, onCancel 
   );
 }
 
+function PathField({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder: string;
+}) {
+  const handleBrowse = async () => {
+    const path = await window.frozenink?.openDirectoryPicker();
+    if (path) onChange(path);
+  };
+
+  return (
+    <div>
+      <label>{label}</label>
+      <div className="path-field">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="form-input"
+        />
+        {window.frozenink?.openDirectoryPicker && (
+          <button type="button" className="btn btn-sm" onClick={handleBrowse} title="Browse...">
+            ...
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function renderConfigFields(
   crawler: string,
   config: Record<string, string>,
   setConfig: (c: Record<string, string>) => void,
 ) {
   const set = (key: string, val: string) => setConfig({ ...config, [key]: val });
-  const field = (key: string, label: string, placeholder: string, type = "text") => (
+  const field = (key: string, label: string, placeholder: string, hint?: string, type = "text") => (
     <div key={key}>
-      <label>{label}</label>
+      <label>
+        {label}
+        {hint && <span className="form-label-hint"> — {hint}</span>}
+      </label>
       <input
         type={type}
         value={config[key] ?? ""}
@@ -327,8 +413,8 @@ function renderConfigFields(
         <>
           {field("owner", "Owner", "octocat")}
           {field("repo", "Repository", "hello-world")}
-          {field("maxIssues", "Max Issues", "1000", "number")}
-          {field("maxPullRequests", "Max Pull Requests", "1000", "number")}
+          {field("maxIssues", "Max Issues", "1000", undefined, "number")}
+          {field("maxPullRequests", "Max Pull Requests", "1000", undefined, "number")}
           <div>
             <label>
               <input
@@ -342,18 +428,34 @@ function renderConfigFields(
         </>
       );
     case "obsidian":
-      return field("vaultPath", "Vault Path", "/path/to/vault");
+      return (
+        <PathField
+          label="Vault Path"
+          value={config.vaultPath ?? ""}
+          onChange={(v) => set("vaultPath", v)}
+          placeholder="/path/to/vault"
+        />
+      );
     case "git":
-      return field("repoPath", "Repository Path", "/path/to/repo");
+      return (
+        <PathField
+          label="Repository Path"
+          value={config.repoPath ?? ""}
+          onChange={(v) => set("repoPath", v)}
+          placeholder="/path/to/repo"
+        />
+      );
     case "mantishub":
       return (
         <>
-          {field("baseUrl", "MantisHub URL", "https://mantis.example.com")}
-          {field("projectName", "Project Name", "My Project")}
+          {field("url", "URL", "https://mantis.example.com")}
+          {field("project", "Project", "mantisbt, plugins", "optional — comma-separated project names")}
         </>
       );
+    case "remote":
+      return field("sourceUrl", "Source URL", "https://example.workers.dev");
     default:
-      return <p>Unknown crawler type</p>;
+      return <p className="text-muted">No configuration needed.</p>;
   }
 }
 
@@ -384,6 +486,8 @@ function renderCredentialFields(
     case "obsidian":
     case "git":
       return <p className="text-muted">No credentials needed for local sources.</p>;
+    case "remote":
+      return <p className="text-muted">Credentials are inherited from the source.</p>;
     default:
       return null;
   }
