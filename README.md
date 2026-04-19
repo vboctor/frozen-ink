@@ -445,7 +445,9 @@ On tag push, the `.github/workflows/release.yml` workflow runs:
 - **`build-desktop`**: builds the Electron app (DMG, NSIS installer, AppImage, deb) on native runners.
 - **`publish`**: publishes `@vboctor/fink` to npm and creates a GitHub Release with all binaries attached.
 
-**One-time setup required:** add an `NPM_TOKEN` Automation token (from npmjs.com) as a GitHub Actions repository secret.
+**One-time setup required:** configure **npm trusted publishing (OIDC)** for `@vboctor/fink` on [npmjs.com](https://docs.npmjs.com/trusted-publishers) — point it at this repo and the `.github/workflows/release.yml` workflow. No long-lived `NPM_TOKEN` secret is needed; npm verifies the workflow identity per-release via GitHub OIDC, and the package is published with provenance attestations.
+
+CODEOWNERS requires owner approval for any change under `.github/workflows/` or `scripts/release.sh` so a malicious PR can't quietly modify the publish step.
 
 ### UI and Worker
 

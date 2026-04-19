@@ -1,0 +1,5 @@
+# Release pipeline & CI — changes here can access publish credentials via OIDC.
+# Require repo owner review for any workflow or release-script changes.
+/.github/workflows/    @vboctor
+/.github/CODEOWNERS    @vboctor
+/scripts/release.sh    @vboctor

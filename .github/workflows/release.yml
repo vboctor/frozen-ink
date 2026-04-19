@@ -8,7 +8,7 @@ on:
   # which bumps versions, commits, and pushes the tag that triggers this workflow.
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-cli:
@@ -137,9 +137,22 @@ jobs:
     name: Publish npm + GitHub Release
     needs: [build-cli, build-desktop]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # softprops/action-gh-release needs this to create the release
+      id-token: write   # required for npm OIDC trusted publishing
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for trusted publishing
+        # npm ≥11.5.1 supports OIDC trusted publishing; setup-node@v4 ships older npm
+        run: npm install -g npm@latest
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -160,13 +173,13 @@ jobs:
           echo "Release assets:"
           ls -lh release-assets/
 
-      - name: Publish to npm
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to npm (OIDC trusted publishing)
+        # No NPM_TOKEN needed. npm auto-detects the OIDC context from GitHub Actions.
+        # Prerequisite: configure trusted publishing on npmjs.com for @vboctor/fink
+        # pointing at this repo + this workflow file.
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
           cd artifacts/npm-payload/packages/cli/dist
-          npm publish --access public
+          npm publish --access public --provenance
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
