@@ -8,6 +8,7 @@ import SearchBar, { type FileEntry } from "./components/SearchBar";
 import FullTextSearch from "./components/FullTextSearch";
 import ThemeSwitcher, { type ThemeId } from "./components/ThemeSwitcher";
 import ViewModeToggle, { type ViewMode } from "./components/ViewModeToggle";
+import BrowseSyncButton from "./components/BrowseSyncButton";
 import TabBar, { type Tab } from "./components/TabBar";
 import LinksPanel, { type Backlink, type LinkItem } from "./components/LinksPanel";
 import ModeSwitcher from "./components/ModeSwitcher";
@@ -997,6 +998,12 @@ export default function App() {
               htmlAvailable={htmlAvailable}
               onChange={setViewMode}
             />
+            {appMode !== "published" && selectedCollection && (
+              <BrowseSyncButton
+                collectionName={selectedCollection}
+                onSyncComplete={() => setRefreshKey((k) => k + 1)}
+              />
+            )}
             <button
               className="nav-btn"
               onClick={() => setSearchOpen(true)}

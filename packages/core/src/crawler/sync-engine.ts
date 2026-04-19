@@ -109,6 +109,8 @@ export interface SyncEngineOptions {
   }) => void;
   /** Called after a successful sync with the crawler version, so callers can update .config. */
   onVersionUpdate?: (version: string) => void;
+  /** Called with human-readable status messages describing what the sync is doing. */
+  onProgress?: (message: string) => void;
 }
 
 export class SyncEngine {
@@ -125,6 +127,7 @@ export class SyncEngine {
   private onEntityProcessed?: SyncEngineOptions["onEntityProcessed"];
   private onBatchFetched?: SyncEngineOptions["onBatchFetched"];
   private onVersionUpdate?: SyncEngineOptions["onVersionUpdate"];
+  private onProgress?: SyncEngineOptions["onProgress"];
 
   /**
    * Check version compatibility between a collection and crawler.
@@ -155,6 +158,7 @@ export class SyncEngine {
     this.onEntityProcessed = options.onEntityProcessed;
     this.onBatchFetched = options.onBatchFetched;
     this.onVersionUpdate = options.onVersionUpdate;
+    this.onProgress = options.onProgress;
   }
 
   async run(options?: { syncType?: "full" | "incremental" }): Promise<{ created: number; updated: number; deleted: number }> {
@@ -167,6 +171,10 @@ export class SyncEngine {
       maxSizeBytes: this.maxAssetSizeBytes,
       allowedExtensions: this.allowedExtensions,
     });
+    // Forward progress messages from the crawler to the UI.
+    if (this.onProgress) {
+      this.crawler.setProgressCallback?.(this.onProgress);
+    }
 
     const metadata = new MetadataStore(this.dbPath);
 
@@ -252,10 +260,12 @@ export class SyncEngine {
       metadata.setCollectionVersion(currentVersion);
       updateCollection(this.collectionName, { version: currentVersion });
 
-      // Reconcile filesystem with DB
-      await this.reconcile(crawlerType);
+      // Reconcile filesystem with DB — orphan cleanup only. Entity markdown is
+      // already written during the sync loop, so there's no need to re-render.
+      await this.reconcile();
 
       // Write folder config yml files (visible/sort settings)
+      this.onProgress?.("Writing folder config files");
       await this.writeFolderConfigFiles(crawlerType);
 
       // Notify caller to update collection version in .config
@@ -351,6 +361,24 @@ export class SyncEngine {
         }
         // Handle assets (update data.assets)
         await this.syncAssets(existing.id, entityData);
+
+        // Restore the markdown file if it was deleted from disk. Cheap: one
+        // existence check per entity; only re-renders when actually missing.
+        if (existing.folder != null && existing.slug != null) {
+          const filePath = existing.folder ? `${existing.folder}/${existing.slug}.md` : `${existing.slug}.md`;
+          const storagePath = this.toStoragePath(filePath);
+          let fileExists = true;
+          try {
+            await this.storage.read(storagePath);
+          } catch {
+            fileExists = false;
+          }
+          if (!fileExists) {
+            const markdown = this.renderMarkdown(entityData, crawlerType);
+            await this.storage.write(storagePath, markdown);
+          }
+        }
+
         // Defer link syncing
         if (deferredLinks) {
           // We need to re-read the markdown to re-sync links, but source hasn't changed
@@ -776,47 +804,15 @@ export class SyncEngine {
     }
   }
 
-  private async reconcile(crawlerType: string): Promise<void> {
+  private async reconcile(): Promise<void> {
     const allEntities = this.db.select().from(entities).all();
 
-    // 1. Re-render every entity's markdown from stored source data and write to disk.
-    for (const entity of allEntities) {
-      if (entity.folder == null || entity.slug == null) continue;
-      const markdownPath = entity.folder ? `${entity.folder}/${entity.slug}.md` : `${entity.slug}.md`;
-      const storagePath = this.toStoragePath(markdownPath);
+    // Note: entity markdown is written by upsertEntity during the sync loop.
+    // Reconcile only handles orphan cleanup — do NOT re-render every entity
+    // here; that would be equivalent to running `generate` and is wasteful
+    // for incremental syncs (which may only touch a handful of entities).
 
-      const entityData = (entity.data as EntityData) ?? { source: {} };
-      const entityTagNames = this.getEntityTagNames(entity.id);
-      const rendered = this.themeEngine.render({
-        entity: {
-          externalId: entity.externalId,
-          entityType: entity.entityType,
-          title: entity.title,
-          data: entityData.source,
-          url: entityData.url ?? undefined,
-          tags: entityTagNames,
-        },
-        collectionName: this.collectionName,
-        crawlerType,
-        lookupEntityPath: this.makeLookupEntityPath(),
-        resolveWikilink: this.makeResolveWikilink(),
-      });
-
-      // Read-before-write: preserve mtime when content is unchanged
-      let needsWrite = true;
-      try {
-        const existing = await this.storage.read(storagePath);
-        if (existing === rendered) needsWrite = false;
-      } catch {
-        // File doesn't exist yet
-      }
-      if (needsWrite) {
-        await this.storage.write(storagePath, rendered);
-        this.recomputeHash(entity.id);
-      }
-    }
-
-    // 2. Delete orphaned markdown files (on disk but no matching entity in DB)
+    // Delete orphaned markdown files (on disk but no matching entity in DB)
     // Skip paths containing hidden directories (e.g. .git, .obsidian) — those
     // are tool index files that belong to other applications and will be
     // recreated by them; we must not touch them.
@@ -833,6 +829,8 @@ export class SyncEngine {
       const entityAssets: Array<{ storagePath: string }> = entityData.assets ?? [];
       for (const att of entityAssets) dbAssetStoragePaths.add(att.storagePath);
     }
+    this.onProgress?.("Scanning filesystem for orphaned markdown files");
+    let orphanedMd = 0;
     try {
       const diskMarkdownFiles = await this.storage.list(this.markdownBasePath);
       for (const diskPath of diskMarkdownFiles) {
@@ -842,6 +840,7 @@ export class SyncEngine {
         if (!dbStoragePaths.has(diskPath)) {
           try {
             await this.storage.delete(diskPath);
+            orphanedMd++;
           } catch {
             // ignore
           }
@@ -850,8 +849,11 @@ export class SyncEngine {
     } catch {
       // markdown directory may not exist yet
     }
+    if (orphanedMd > 0) {
+      this.onProgress?.(`Removed ${orphanedMd} orphaned markdown file(s)`);
+    }
 
-    // 3. Delete orphaned asset files (on disk but no matching record in entity JSON)
+    // Delete orphaned asset files (on disk but no matching record in entity JSON)
     const dbAssetPaths = new Set<string>();
     const assetDirs = new Set<string>();
     for (const entity of allEntities) {
@@ -868,6 +870,8 @@ export class SyncEngine {
     for (const dir of ["content/assets", "assets", "attachments"]) {
       assetDirs.add(dir);
     }
+    this.onProgress?.("Scanning filesystem for orphaned asset files");
+    let orphanedAssets = 0;
     for (const assetsDir of assetDirs) {
       try {
         const diskAssetFiles = await this.storage.list(assetsDir);
@@ -876,6 +880,7 @@ export class SyncEngine {
           if (!dbAssetPaths.has(diskPath)) {
             try {
               await this.storage.delete(diskPath);
+              orphanedAssets++;
             } catch {
               // ignore
             }
@@ -884,6 +889,9 @@ export class SyncEngine {
       } catch {
         // directory may not exist yet
       }
+    }
+    if (orphanedAssets > 0) {
+      this.onProgress?.(`Removed ${orphanedAssets} orphaned asset file(s)`);
     }
   }
 

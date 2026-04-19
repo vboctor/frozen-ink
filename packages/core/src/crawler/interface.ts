@@ -63,4 +63,11 @@ export interface Crawler {
    * match the filter, avoiding unnecessary network requests and errors.
    */
   setAssetFilter?(filter: AssetFilter): void;
+  /**
+   * Optional: set a progress callback that the crawler will invoke during
+   * sync() with short human-readable messages about what it's doing
+   * (e.g. "Scanning issues (page 3)", "Fetching 42 updated issues"). Used
+   * by the UI/TUI to show what's happening under the hood.
+   */
+  setProgressCallback?(callback: (message: string) => void): void;
 }

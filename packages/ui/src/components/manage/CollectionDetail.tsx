@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import SyncProgress from "./SyncProgress";
+import SyncProgress, { type SyncResult } from "./SyncProgress";
 import {
   formatTimestamp,
   type Collection,
@@ -80,6 +80,7 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
   const [status, setStatus] = useState<CollectionStatus | null>(null);
   const [syncHistory, setSyncHistory] = useState<SyncRun[]>([]);
   const [syncing, setSyncing] = useState(false);
+  const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -143,6 +144,7 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
   // --- Sync ---
   const handleSync = (full: boolean) => {
     setSyncing(true);
+    setLastSyncResult(null);
     fetch(`/api/sync/${encodeURIComponent(name)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -150,12 +152,13 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
     }).catch(console.error);
   };
 
-  const handleSyncComplete = () => {
+  const handleSyncComplete = useCallback((result: SyncResult) => {
     setSyncing(false);
+    setLastSyncResult(result);
     loadStatus();
     loadHistory();
     onCollectionsChanged?.();
-  };
+  }, [loadStatus, loadHistory, onCollectionsChanged]);
 
   // --- Enable/Disable ---
   const handleToggle = (enabled: boolean) => {
@@ -372,6 +375,18 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
           )}
         </div>
         {syncing && <SyncProgress onComplete={handleSyncComplete} />}
+        {!syncing && lastSyncResult && (
+          <div className="sync-result" style={{ marginTop: 8 }}>
+            {lastSyncResult.error ? (
+              <div className="form-error">{lastSyncResult.error}</div>
+            ) : (
+              <span className="collection-card-stats">
+                <span>{lastSyncResult.created} created, {lastSyncResult.updated} updated, {lastSyncResult.deleted} deleted</span>
+                {status?.lastSyncRun && <span>Last sync: {formatTimestamp(status.lastSyncRun.startedAt)}</span>}
+              </span>
+            )}
+          </div>
+        )}
         {showHistory && syncHistory.length > 0 && (
           <div className="collection-card-history" style={{ marginTop: 8 }}>
             <table className="sync-history-table">
