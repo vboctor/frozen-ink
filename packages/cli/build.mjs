@@ -85,6 +85,7 @@ async function compileBunExecutables() {
     { name: "fink-darwin-x64", target: "bun-darwin-x64" },
     { name: "fink-linux-x64", target: "bun-linux-x64" },
     { name: "fink-linux-arm64", target: "bun-linux-arm64" },
+    { name: "fink-windows-x64.exe", target: "bun-windows-x64" },
   ];
 
   for (const { name, target } of targets) {

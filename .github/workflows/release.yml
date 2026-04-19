@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Manual dispatch is intentionally omitted: releases must go through scripts/release.sh,
+  # which bumps versions, commits, and pushes the tag that triggers this workflow.
+
+permissions:
+  contents: write
+
+jobs:
+  build-cli:
+    name: Build CLI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            upload_npm: true
+          - os: macos-14
+            platform: darwin-arm64
+          - os: macos-13
+            platform: darwin-x64
+          - os: windows-latest
+            platform: windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build CLI
+        run: cd packages/cli && bun run build:all
+
+      - name: Upload darwin-arm64 binary
+        if: matrix.os == 'macos-14'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fink-darwin-arm64
+          path: packages/cli/dist/fink-darwin-arm64
+
+      - name: Upload darwin-x64 binary
+        if: matrix.os == 'macos-13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fink-darwin-x64
+          path: packages/cli/dist/fink-darwin-x64
+
+      - name: Upload linux-x64 binary
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fink-linux-x64
+          path: packages/cli/dist/fink-linux-x64
+          # linux-arm64 is not uploaded: no native GH free-tier runner; follow-up work needed
+
+      - name: Upload windows-x64 binary
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fink-windows-x64
+          path: packages/cli/dist/fink-windows-x64.exe
+
+      - name: Upload npm payload
+        if: matrix.upload_npm
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-payload
+          path: |
+            packages/cli/dist/fink.mjs
+            packages/cli/dist/package.json
+            packages/cli/dist/README.md
+            packages/cli/dist/LICENSE
+
+  build-desktop:
+    name: Build Desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build UI
+        run: bun run build:ui
+
+      - name: Build worker
+        run: cd packages/worker && bun run build
+
+      - name: Build Desktop (Mac)
+        if: matrix.os == 'macos-14'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: cd packages/desktop && bun run dist:mac
+
+      - name: Build Desktop (Windows)
+        if: matrix.os == 'windows-latest'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: cd packages/desktop && bun run dist:win
+
+      - name: Build Desktop (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: cd packages/desktop && bun run dist:linux
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.exe
+            packages/desktop/release/*.AppImage
+            packages/desktop/release/*.deb
+
+  publish:
+    name: Publish npm + GitHub Release
+    needs: [build-cli, build-desktop]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts for release
+        run: |
+          mkdir -p release-assets
+          find artifacts -name 'fink-darwin-arm64' -exec cp {} release-assets/ \;
+          find artifacts -name 'fink-darwin-x64' -exec cp {} release-assets/ \;
+          find artifacts -name 'fink-linux-x64' -exec cp {} release-assets/ \;
+          find artifacts -name 'fink-windows-x64.exe' -exec cp {} release-assets/ \;
+          find artifacts/desktop-macos-14 -name '*.dmg' -exec cp {} release-assets/ \;
+          find artifacts/desktop-windows-latest -name '*.exe' -exec cp {} release-assets/ \;
+          find artifacts/desktop-ubuntu-latest -name '*.AppImage' -exec cp {} release-assets/ \;
+          find artifacts/desktop-ubuntu-latest -name '*.deb' -exec cp {} release-assets/ \;
+          echo "Release assets:"
+          ls -lh release-assets/
+
+      - name: Publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          cd artifacts/npm-payload/packages/cli/dist
+          npm publish --access public
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: release-assets/*
