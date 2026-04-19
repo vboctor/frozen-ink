@@ -86,6 +86,17 @@ Examples:
       process.exit(1);
     }
 
+    // Fail early if the manifest's crawler type is unknown to this installation —
+    // a newer Frozen Ink likely published this collection with a crawler we don't have.
+    const manifestCrawlerType = manifest.collection?.crawlerType ?? "";
+    const themeEngine = createGenerateThemeEngine();
+    if (manifestCrawlerType && !themeEngine.has(manifestCrawlerType)) {
+      console.error(
+        `Unknown crawler type "${manifestCrawlerType}". This collection requires a newer version of Frozen Ink — please upgrade to clone it.`,
+      );
+      process.exit(1);
+    }
+
     // Register the collection
     addCollection(localName, {
       crawler: "remote",
@@ -132,8 +143,7 @@ Examples:
 
     // Generate markdown locally using the theme engine (same as generateCollection) so that
     // the on-disk files match what prepare/serve render — no re-generation needed on first serve.
-    const crawlerType = manifest.collection?.crawlerType ?? "";
-    const themeEngine = createGenerateThemeEngine();
+    const crawlerType = manifestCrawlerType;
     const indexer = new SearchIndexer(dbPath);
 
     if (themeEngine.has(crawlerType)) {
