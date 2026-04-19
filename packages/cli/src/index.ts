@@ -22,6 +22,7 @@ import { mcpCommand } from "./commands/mcp";
 import { tableplusCommand } from "./commands/tableplus";
 import { vscodeCommand } from "./commands/vscode";
 import { cloneCommand } from "./commands/clone";
+import { infoCommand } from "./commands/info";
 
 import { compactCommand } from "./commands/compact";
 import { startTui } from "./tui/index";
@@ -52,6 +53,7 @@ program.addCommand(mcpCommand);
 program.addCommand(tableplusCommand);
 program.addCommand(vscodeCommand);
 program.addCommand(cloneCommand);
+program.addCommand(infoCommand);
 
 program.addCommand(compactCommand);
 

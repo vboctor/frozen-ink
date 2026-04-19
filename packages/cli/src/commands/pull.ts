@@ -88,15 +88,38 @@ export async function pullCollection(collectionName: string, opts: PullCollectio
   const collectionDir = join(home, "collections", collectionName);
   const storage = new LocalStorageBackend(collectionDir);
 
+  // Fast-path: ask /info for the remote manifest hash and compare to the hash
+  // stored from the last successful sync. If they match, nothing has changed
+  // and we can skip the full manifest download + sync-plan computation.
+  // Falls back to the manifest flow if /info is unavailable (older worker) or
+  // no hash is stored locally yet.
+  const meta = new MetadataStore(dbPath);
+  const localManifestHash = meta.getRemoteManifestHash();
+  let remoteManifestHash: string | null = null;
+  try {
+    const info = await client.getInfo();
+    remoteManifestHash = info.manifestHash ?? null;
+    if (info.crawlerType) meta.setCrawlerType(info.crawlerType);
+    if (localManifestHash && remoteManifestHash && localManifestHash === remoteManifestHash) {
+      meta.close();
+      log("Already up to date.");
+      return { created: 0, updated: 0, deleted: 0 };
+    }
+  } catch (err) {
+    // Older workers won't have /info — fall back to the manifest path below.
+    if (!(err instanceof Error) || !err.message.startsWith("HTTP 404 ")) {
+      meta.close();
+      throw err;
+    }
+  }
+
   // Fetch remote manifest
   log("Fetching manifest...");
   const { manifest, entries } = await client.getManifest();
 
   // Keep crawler.type in sync — repairs clones created before this field existed
   if (manifest.collection?.crawlerType) {
-    const meta = new MetadataStore(dbPath);
     meta.setCrawlerType(manifest.collection.crawlerType);
-    meta.close();
   }
 
   // Build local entity list
@@ -114,6 +137,10 @@ export async function pullCollection(collectionName: string, opts: PullCollectio
   const plan = computeSyncPlan(localEntities, entries);
 
   if (isSyncPlanEmpty(plan)) {
+    // Persist the hash so the next /info fast-path short-circuits even if the
+    // local DB predated the manifestHash feature.
+    if (remoteManifestHash) meta.setRemoteManifestHash(remoteManifestHash);
+    meta.close();
     log("Already up to date.");
     return { created: 0, updated: 0, deleted: 0 };
   }
@@ -121,6 +148,7 @@ export async function pullCollection(collectionName: string, opts: PullCollectio
   printSyncPlan(plan);
 
   if (opts.dryRun) {
+    meta.close();
     return { created: plan.entities.add.length, updated: plan.entities.update.length, deleted: plan.entities.delete.length };
   }
 
@@ -275,6 +303,9 @@ export async function pullCollection(collectionName: string, opts: PullCollectio
     indexer.removeIndex(entityId);
   }
   indexer.close();
+
+  if (remoteManifestHash) meta.setRemoteManifestHash(remoteManifestHash);
+  meta.close();
 
   const result: PullCollectionResult = {
     created: plan.entities.add.length,

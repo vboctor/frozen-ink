@@ -42,6 +42,7 @@ const K = {
   description: "description",
   version: "version",
   crawlerType: "crawler.type",
+  remoteManifestHash: "remote.manifest_hash",
 } as const;
 
 export class MetadataStore {
@@ -181,6 +182,20 @@ export class MetadataStore {
 
   getCrawlerType(): string | null {
     return this.getOptional(K.crawlerType);
+  }
+
+  /**
+   * Manifest hash from the last successful sync of a remote-cloned collection.
+   * Compared against the remote /info endpoint's manifestHash so sync can skip
+   * the full /manifest download when nothing has changed.
+   */
+  setRemoteManifestHash(hash: string | null | undefined): void {
+    if (hash == null || hash === "") this.delete(K.remoteManifestHash);
+    else this.set(K.remoteManifestHash, hash);
+  }
+
+  getRemoteManifestHash(): string | null {
+    return this.getOptional(K.remoteManifestHash);
   }
 
   close(): void {

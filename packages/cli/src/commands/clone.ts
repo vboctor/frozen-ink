@@ -110,9 +110,17 @@ Examples:
     const collectionDir = join(home, "collections", localName);
     const storage = new LocalStorageBackend(collectionDir);
 
-    // Persist the original crawler type so serve/prepare can use the right theme
+    // Persist the original crawler type so serve/prepare can use the right theme,
+    // and — when the remote exposes /info — the manifest hash so the next sync's
+    // fast-path can detect "no changes" without a manifest download.
     const meta = new MetadataStore(dbPath);
     meta.setCrawlerType(manifest.collection?.crawlerType ?? null);
+    try {
+      const info = await client.getInfo();
+      if (info.manifestHash) meta.setRemoteManifestHash(info.manifestHash);
+    } catch {
+      // Older workers won't have /info — the first sync will populate the hash.
+    }
     meta.close();
 
     // Batch-fetch all entity data

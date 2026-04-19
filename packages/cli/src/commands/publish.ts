@@ -594,9 +594,22 @@ export async function publishCollections(
       }
     }
 
-    // Invalidate cached manifests so the next client request rebuilds from
-    // the fresh D1 state. Worker writes the cache on the next GET /manifest.
-    const cacheKeys = collectionNames.map((n) => `_cache/manifest-${n}.json`);
+    // Invalidate cached manifests and info blobs so the next client request
+    // rebuilds from the fresh D1 state. Info cache keys include the worker
+    // build ID, so we list and filter rather than guessing.
+    const cacheKeys: string[] = collectionNames.map((n) => `_cache/manifest-${n}.json`);
+    try {
+      const cached = await listR2Objects(r2BucketName, "_cache/");
+      for (const obj of cached) {
+        for (const n of collectionNames) {
+          if (obj.key.startsWith("_cache/info-") && obj.key.endsWith(`-${n}.json`)) {
+            cacheKeys.push(obj.key);
+          }
+        }
+      }
+    } catch {
+      // Listing is best-effort; manifest cache invalidation still proceeds below.
+    }
     try {
       await deleteR2Objects(r2BucketName, cacheKeys);
     } catch {

@@ -46,6 +46,8 @@ export function buildRenderContext(
   };
 }
 
+declare const __BUILD_ID__: string;
+
 const api = new Hono<{ Bindings: Env }>();
 
 // GET /api/app-info
@@ -242,6 +244,80 @@ api.get("/api/collections/:name/entities", async (c) => {
   return c.json({
     entities: result,
     pagination: { limit, offset, count: result.length },
+  });
+});
+
+// GET /api/collections/:name/info
+// Returns summary metadata about a collection — intended for discovery and to
+// let clients decide whether a full manifest pull is worthwhile.
+// Cached in R2 at `_cache/info-{buildId}-{name}.json`; the buildId prefix means
+// worker redeploys automatically bypass old caches. Publish invalidates the
+// current-buildId key alongside the manifest cache.
+api.get("/api/collections/:name/info", async (c) => {
+  const name = c.req.param("name");
+  const col = await getCollectionConfig(c.env.BUCKET, name);
+  if (!col) return c.json({ error: "Collection not found" }, 404);
+
+  const cacheKey = `_cache/info-${__BUILD_ID__}-${name}.json`;
+  const cached = await c.env.BUCKET.get(cacheKey);
+  if (cached) {
+    return new Response(cached.body, {
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const manifest = await getFullManifest(c.env.DB);
+  const entityCount = manifest.length;
+
+  // Aggregate per-type counts, total data size (bytes of stored JSON), and the
+  // most recent updated_at so clients can tell at a glance how big a sync is
+  // and whether anything changed since their last pull.
+  const typeRows = await c.env.DB.prepare(
+    "SELECT entity_type, COUNT(*) as count FROM entities GROUP BY entity_type",
+  ).all<{ entity_type: string; count: number }>();
+  const entityTypes: Record<string, number> = {};
+  for (const row of typeRows.results ?? []) {
+    entityTypes[row.entity_type] = row.count;
+  }
+
+  const sizeRow = await c.env.DB.prepare(
+    "SELECT COALESCE(SUM(LENGTH(data)), 0) as bytes, MAX(updated_at) as last FROM entities",
+  ).first<{ bytes: number; last: string | null }>();
+
+  // manifestHash: a stable fingerprint of every (externalId, hash) pair so
+  // clients can cheaply detect "nothing changed" without downloading the full
+  // entity list. Same input as the manifest body → same hash.
+  const fingerprint = manifest.map((e) => `${e.externalId}\t${e.hash}`).join("\n");
+  const fpBytes = new TextEncoder().encode(fingerprint);
+  const digest = await crypto.subtle.digest("SHA-256", fpBytes);
+  const manifestHash = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const body = {
+    version: 1,
+    name: col.name,
+    title: col.title || col.name,
+    description: col.description ?? null,
+    crawlerType: col.crawler,
+    entityCount,
+    entityTypes,
+    totalDataBytes: sizeRow?.bytes ?? 0,
+    lastUpdatedAt: sizeRow?.last ?? null,
+    manifestVersion: 1,
+    manifestHash,
+    capabilities: ["bulk-entities", "html-render"],
+    workerBuildId: __BUILD_ID__,
+    generatedAt: new Date().toISOString(),
+  };
+  const bodyJson = JSON.stringify(body);
+
+  await c.env.BUCKET.put(cacheKey, bodyJson, {
+    httpMetadata: { contentType: "application/json" },
+  });
+
+  return new Response(bodyJson, {
+    headers: { "content-type": "application/json" },
   });
 });
 
