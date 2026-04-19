@@ -25,9 +25,13 @@ import { cloneCommand } from "./commands/clone";
 import { infoCommand } from "./commands/info";
 
 import { compactCommand } from "./commands/compact";
+import { upgradeCommand } from "./commands/upgrade";
 import { startTui } from "./tui/index";
+import { notifyIfUpdateAvailable } from "./update-notifier";
 
 const program = new Command();
+
+notifyIfUpdateAvailable(version);
 
 program
   .name("fink")
@@ -56,6 +60,7 @@ program.addCommand(cloneCommand);
 program.addCommand(infoCommand);
 
 program.addCommand(compactCommand);
+program.addCommand(upgradeCommand);
 
 // If no arguments passed (just "fink"), launch TUI by default
 const args = process.argv.slice(2);
