@@ -22,6 +22,7 @@ const require = createRequire(import.meta.url);`,
   },
   external: [
     "electron",
+    "electron-updater",
     "better-sqlite3",
     // Bun-specific modules — only reached at runtime when isBun===true (never in Electron)
     "bun:sqlite",

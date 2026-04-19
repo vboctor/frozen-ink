@@ -12,6 +12,7 @@ import BrowseSyncButton from "./components/BrowseSyncButton";
 import TabBar, { type Tab } from "./components/TabBar";
 import LinksPanel, { type Backlink, type LinkItem } from "./components/LinksPanel";
 import ModeSwitcher from "./components/ModeSwitcher";
+import UpdateBanner from "./components/UpdateBanner";
 import ManageNav, { type ManageSection } from "./components/manage/ManageNav";
 import CollectionList from "./components/manage/CollectionList";
 import CollectionForm from "./components/manage/CollectionForm";
@@ -1263,6 +1264,7 @@ export default function App() {
 
   return (
     <>
+      {appMode === "desktop" && <UpdateBanner />}
       {appMode !== "desktop" && (
         <FrozenInkBanner
           collectionTitle={collections.find((c) => c.name === selectedCollection)?.title ?? selectedCollection}

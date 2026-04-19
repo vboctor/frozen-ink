@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from "electron";
+import { ipcMain, dialog, shell, BrowserWindow } from "electron";
 import {
   loadWorkspaces,
   createWorkspace,
@@ -39,5 +39,18 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
 
   ipcMain.handle("get-platform", () => {
     return process.platform;
+  });
+
+  // Open a release page in the user's default browser. URL is validated to
+  // avoid the IPC channel being repurposed to open arbitrary links.
+  ipcMain.handle("update:open-release-page", async (_event, url: string) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.host !== "github.com") return { ok: false };
+      await shell.openExternal(parsed.toString());
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
   });
 }

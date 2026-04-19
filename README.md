@@ -445,7 +445,7 @@ On tag push, the `.github/workflows/release.yml` workflow runs:
 
 - **`build-cli`**: builds the CLI npm bundle and platform-native Bun binaries on Ubuntu, macOS arm64, macOS x64, and Windows runners.
 - **`build-desktop`**: builds the Electron app (DMG, NSIS installer, AppImage, deb) on native runners.
-- **`publish`**: publishes `@vboctor/fink` to npm and creates a GitHub Release with all binaries attached.
+- **`publish`**: publishes `@vboctor/fink` to npm and creates a GitHub Release with all binaries attached. The desktop job also emits `latest-mac.yml`, `latest.yml`, and `latest-linux.yml` update manifests so packaged Frozen Ink installs can detect new releases via `electron-updater`; the CLI reads `registry.npmjs.org` to notify users of available upgrades.
 
 **One-time setup required:** configure **npm trusted publishing (OIDC)** for `@vboctor/fink` on [npmjs.com](https://docs.npmjs.com/trusted-publishers) — point it at this repo and the `.github/workflows/release.yml` workflow. No long-lived `NPM_TOKEN` secret is needed; npm verifies the workflow identity per-release via GitHub OIDC, and the package is published with provenance attestations.
 

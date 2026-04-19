@@ -2,6 +2,14 @@ appId: com.frozenink.desktop
 productName: Frozen Ink
 copyright: Copyright © 2026
 
+# Tells electron-builder where to emit `latest-*.yml` update manifests during
+# dist:* runs, and where electron-updater should look at runtime. Uploading
+# the installers themselves to the release is handled by our GH workflow.
+publish:
+  provider: github
+  owner: vboctor
+  repo: frozen-ink
+
 directories:
   output: release
   buildResources: build

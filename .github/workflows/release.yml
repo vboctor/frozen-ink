@@ -132,6 +132,7 @@ jobs:
             packages/desktop/release/*.exe
             packages/desktop/release/*.AppImage
             packages/desktop/release/*.deb
+            packages/desktop/release/*.yml
 
   publish:
     name: Publish npm + GitHub Release
@@ -170,6 +171,10 @@ jobs:
           find artifacts/desktop-windows-latest -name '*.exe' -exec cp {} release-assets/ \;
           find artifacts/desktop-ubuntu-latest -name '*.AppImage' -exec cp {} release-assets/ \;
           find artifacts/desktop-ubuntu-latest -name '*.deb' -exec cp {} release-assets/ \;
+          # electron-updater auto-update manifests (one per platform)
+          find artifacts/desktop-macos-14 -name 'latest-mac.yml' -exec cp {} release-assets/ \;
+          find artifacts/desktop-windows-latest -name 'latest.yml' -exec cp {} release-assets/ \;
+          find artifacts/desktop-ubuntu-latest -name 'latest-linux.yml' -exec cp {} release-assets/ \;
           echo "Release assets:"
           ls -lh release-assets/
 

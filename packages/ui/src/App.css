@@ -371,6 +371,52 @@ body {
   color: var(--text);
 }
 
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--accent-bg);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-family: var(--font-sans);
+  flex-shrink: 0;
+}
+
+.update-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.update-banner-btn {
+  padding: 4px 10px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.update-banner-btn:hover {
+  opacity: 0.9;
+}
+
+.update-banner-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.update-banner-close:hover {
+  color: var(--text);
+}
+
 /* ===== Layout ===== */
 .layout {
   display: flex;

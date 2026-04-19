@@ -9,6 +9,7 @@ const __desktopDirname = dirname(__desktopFilename);
 import { getLastWorkspace, openWorkspace, createWorkspace, listRecentWorkspaces } from "./workspace-manager";
 import { registerIpcHandlers } from "./ipc-handlers";
 import { createTray, updateTrayMenu, destroyTray } from "./tray";
+import { initAutoUpdater } from "./auto-updater";
 import { setAppMode } from "../../../cli/src/commands/management-api";
 import { createApiServer } from "../../../cli/src/commands/serve";
 
@@ -127,6 +128,8 @@ app.whenReady().then(async () => {
   }
 
   mainWindow = createMainWindow();
+
+  initAutoUpdater(mainWindow);
 
   // Register IPC handlers
   registerIpcHandlers(() => mainWindow);

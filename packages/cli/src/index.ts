@@ -24,9 +24,13 @@ import { vscodeCommand } from "./commands/vscode";
 import { cloneCommand } from "./commands/clone";
 
 import { compactCommand } from "./commands/compact";
+import { upgradeCommand } from "./commands/upgrade";
 import { startTui } from "./tui/index";
+import { notifyIfUpdateAvailable } from "./update-notifier";
 
 const program = new Command();
+
+notifyIfUpdateAvailable(version);
 
 program
   .name("fink")
@@ -54,6 +58,7 @@ program.addCommand(vscodeCommand);
 program.addCommand(cloneCommand);
 
 program.addCommand(compactCommand);
+program.addCommand(upgradeCommand);
 
 // If no arguments passed (just "fink"), launch TUI by default
 const args = process.argv.slice(2);
