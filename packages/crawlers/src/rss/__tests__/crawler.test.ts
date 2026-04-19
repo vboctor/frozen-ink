@@ -1,11 +1,31 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { RssCrawler } from "../crawler";
+import type { CrawlerEntityData, SyncCursor, SyncResult } from "@frozenink/core";
 
 function textResponse(body: string, status = 200, contentType = "application/xml"): Response {
   return new Response(body, {
     status,
     headers: { "Content-Type": contentType },
   });
+}
+
+/**
+ * Drive the crawler the same way the sync engine does: loop sync() until
+ * hasMore is false. The crawler yields one entity per call so progress is
+ * reported live; tests want the aggregate.
+ */
+async function drainSync(crawler: RssCrawler, cursor: SyncCursor | null): Promise<{ entities: CrawlerEntityData[]; nextCursor: SyncResult["nextCursor"] }> {
+  const entities: CrawlerEntityData[] = [];
+  let cur = cursor;
+  let last: SyncResult | null = null;
+  for (let i = 0; i < 100; i++) {
+    const r = await crawler.sync(cur);
+    last = r;
+    entities.push(...r.entities);
+    cur = r.nextCursor ?? cur;
+    if (!r.hasMore) break;
+  }
+  return { entities, nextCursor: last!.nextCursor };
 }
 
 describe("RssCrawler", () => {
@@ -41,7 +61,7 @@ describe("RssCrawler", () => {
       return textResponse("", 404);
     });
 
-    const result = await crawler.sync(null);
+    const result = await drainSync(crawler, null);
     expect(result.entities).toHaveLength(1);
     expect(result.entities[0].externalId).toBe("post-1");
     expect(result.entities[0].entityType).toBe("post");
@@ -73,7 +93,7 @@ describe("RssCrawler", () => {
       return textResponse("", 404);
     });
 
-    const result = await crawler.sync({
+    const result = await drainSync(crawler, {
       watermark: "2025-01-15T00:00:00.000Z",
       seenIds: ["old"],
       backfillComplete: true,
@@ -114,7 +134,7 @@ describe("RssCrawler", () => {
       return textResponse("", 404);
     });
 
-    const result = await crawler.sync(null);
+    const result = await drainSync(crawler, null);
     expect(result.entities.map((e) => e.externalId).sort()).toEqual([
       "https://example.com/posts/older-one",
       "https://example.com/posts/older-two",
@@ -152,7 +172,7 @@ describe("RssCrawler", () => {
       return textResponse("", 404);
     });
 
-    const result = await crawler.sync({ backfillComplete: true });
+    const result = await drainSync(crawler, { backfillComplete: true });
     expect(result.entities).toHaveLength(1);
     const attachments = result.entities[0].attachments ?? [];
     expect(attachments).toHaveLength(1);

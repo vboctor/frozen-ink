@@ -23,6 +23,138 @@ function arr<T>(value: T | T[] | undefined | null): T[] {
   return Array.isArray(value) ? value : [value];
 }
 
+function escapeHtmlAttr(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function escapeHtmlText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Drop the Jina reader preamble ("Title: ...\nURL Source: ...\nMarkdown Content:\n")
+ * so we're left with just the article body.
+ */
+function stripReaderPreamble(markdown: string): string {
+  const idx = markdown.indexOf("Markdown Content:");
+  if (idx >= 0) {
+    const after = markdown.slice(idx + "Markdown Content:".length);
+    return after.replace(/^\s+/, "");
+  }
+  return markdown;
+}
+
+/**
+ * Minimal markdown → HTML converter. Handles headings, paragraphs, unordered
+ * lists, blockquotes, fenced code, images, links, bold, italic, inline code.
+ * Used to wrap reader-proxy markdown so the rest of the pipeline (image
+ * extraction, theme renderHtml) keeps working.
+ */
+function markdownToSimpleHtml(md: string): string {
+  const lines = md.replace(/\r\n?/g, "\n").split("\n");
+  const out: string[] = [];
+  let i = 0;
+  let inList = false;
+  const closeList = () => { if (inList) { out.push("</ul>"); inList = false; } };
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    if (/^```/.test(line)) {
+      closeList();
+      const code: string[] = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i])) { code.push(lines[i]); i++; }
+      if (i < lines.length) i++;
+      out.push(`<pre><code>${escapeHtmlText(code.join("\n"))}</code></pre>`);
+      continue;
+    }
+
+    // Heading
+    const h = line.match(/^(#{1,6})\s+(.+)$/);
+    if (h) {
+      closeList();
+      const level = h[1].length;
+      out.push(`<h${level}>${renderInline(h[2].trim())}</h${level}>`);
+      i++;
+      continue;
+    }
+
+    // Blockquote
+    if (/^>\s?/.test(line)) {
+      closeList();
+      const quote: string[] = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) {
+        quote.push(lines[i].replace(/^>\s?/, ""));
+        i++;
+      }
+      out.push(`<blockquote>${renderInline(quote.join(" "))}</blockquote>`);
+      continue;
+    }
+
+    // Unordered list item
+    const li = line.match(/^[-*]\s+(.+)$/);
+    if (li) {
+      if (!inList) { out.push("<ul>"); inList = true; }
+      out.push(`<li>${renderInline(li[1])}</li>`);
+      i++;
+      continue;
+    }
+
+    // Blank line — paragraph break
+    if (/^\s*$/.test(line)) {
+      closeList();
+      i++;
+      continue;
+    }
+
+    // Standalone image line — render as bare <img> so extractMediaUrls picks it up
+    const imgOnly = line.trim().match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/);
+    if (imgOnly) {
+      closeList();
+      out.push(`<p><img alt="${escapeHtmlAttr(imgOnly[1])}" src="${escapeHtmlAttr(imgOnly[2])}"></p>`);
+      i++;
+      continue;
+    }
+
+    // Paragraph: accumulate until blank line or block element
+    closeList();
+    const para: string[] = [line];
+    i++;
+    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^(#{1,6}\s|>\s?|[-*]\s+|```)/.test(lines[i])) {
+      para.push(lines[i]);
+      i++;
+    }
+    out.push(`<p>${renderInline(para.join(" "))}</p>`);
+  }
+  closeList();
+  return out.join("\n");
+}
+
+function renderInline(text: string): string {
+  // Order matters: protect code spans first so their contents aren't re-parsed.
+  const codeSpans: string[] = [];
+  let s = text.replace(/`([^`]+)`/g, (_m, c: string) => {
+    codeSpans.push(`<code>${escapeHtmlText(c)}</code>`);
+    return `\u0000${codeSpans.length - 1}\u0000`;
+  });
+  // Escape raw HTML unsafe chars in remaining text.
+  s = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Images: ![alt](url)
+  s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_m, alt: string, url: string) =>
+    `<img alt="${escapeHtmlAttr(alt)}" src="${escapeHtmlAttr(url)}">`);
+  // Links: [text](url)
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_m, label: string, url: string) =>
+    `<a href="${escapeHtmlAttr(url)}">${label}</a>`);
+  // Bold and italics
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+  // Restore code spans
+  s = s.replace(/\u0000(\d+)\u0000/g, (_m, n: string) => codeSpans[Number(n)]);
+  return s;
+}
+
 function text(value: unknown): string | undefined {
   if (typeof value === "string") return value.trim() || undefined;
   if (typeof value === "number") return String(value);
@@ -121,6 +253,19 @@ export class RssCrawler implements Crawler {
     trimValues: true,
   });
 
+  // State across sync() calls in one run. The sync engine drives one entity
+  // at a time so per-entity progress (counts, file writes) happens live
+  // instead of after the whole feed has been fetched + converted.
+  private runState: {
+    pending: ParsedFeedPost[];
+    total: number;
+    processed: number;
+    newestIso: string | undefined;
+    seenIds: Set<string>;
+    sawBackfill: boolean;
+    backfillTriggered: boolean;
+  } | null = null;
+
   async initialize(config: Record<string, unknown>): Promise<void> {
     this.config = {
       feedUrl: String(config.feedUrl ?? "").trim(),
@@ -148,58 +293,85 @@ export class RssCrawler implements Crawler {
   }
 
   async dispose(): Promise<void> {
-    // No-op
+    this.runState = null;
   }
 
   async sync(cursor: SyncCursor | null): Promise<SyncResult> {
     const c = (cursor as RssSyncCursor) ?? {};
-    const entities: CrawlerEntityData[] = [];
-    const seenIds = new Set(c.seenIds ?? []);
 
-    this.report(`Fetching feed: ${this.config.feedUrl}`);
-    const feedPosts = await this.fetchFeedPosts();
+    // On first call of a run, fetch the feed + sitemap once and build the
+    // queue of posts to process. Subsequent calls pop one post from the
+    // queue so the sync engine writes markdown + bumps counts live.
+    if (!this.runState) {
+      this.report(`Fetching feed: ${this.config.feedUrl}`);
+      const feedPosts = await this.fetchFeedPosts();
 
-    // Feed is always authoritative for latest watermark and incremental detection.
-    let newestIso = c.watermark;
-    let feedProcessed = 0;
-    for (const post of feedPosts) {
-      const postTime = post.updatedAt ?? post.publishedAt;
-      newestIso = maxIso(newestIso, postTime);
-      if (!this.shouldInclude(post, c.watermark, seenIds)) continue;
-      feedProcessed += 1;
-      this.report(`Processing feed post ${feedProcessed}/${feedPosts.length}: ${post.title}`);
-      entities.push(await this.postToEntity(post));
-      seenIds.add(post.id);
-      if (this.config.maxItems && entities.length >= this.config.maxItems) break;
+      let newestIso = c.watermark;
+      const seenIds = new Set(c.seenIds ?? []);
+      const toProcess: ParsedFeedPost[] = [];
+      for (const post of feedPosts) {
+        newestIso = maxIso(newestIso, post.updatedAt ?? post.publishedAt);
+        if (!this.shouldInclude(post, c.watermark, seenIds)) continue;
+        toProcess.push(post);
+        if (this.config.maxItems && toProcess.length >= this.config.maxItems) break;
+      }
+
+      let backfillPosts: ParsedFeedPost[] = [];
+      const wantBackfill = this.shouldRunBackfill(c)
+        && (!this.config.maxItems || toProcess.length < this.config.maxItems);
+      if (wantBackfill) {
+        const sitemapCandidates = await this.discoverSitemaps();
+        if (sitemapCandidates.length > 0) {
+          this.report(`Backfilling from ${sitemapCandidates.length} sitemap candidate(s)`);
+        }
+        backfillPosts = await this.fetchBackfillPosts(
+          sitemapCandidates,
+          seenIds,
+          this.config.maxItems ? this.config.maxItems - toProcess.length : undefined,
+        );
+        for (const post of backfillPosts) {
+          newestIso = maxIso(newestIso, post.updatedAt ?? post.publishedAt);
+        }
+      }
+
+      const pending = [...toProcess, ...backfillPosts];
+      this.runState = {
+        pending,
+        total: pending.length,
+        processed: 0,
+        newestIso,
+        seenIds,
+        sawBackfill: backfillPosts.length > 0 || wantBackfill,
+        backfillTriggered: wantBackfill,
+      };
     }
 
-    if (this.shouldRunBackfill(c) && (!this.config.maxItems || entities.length < this.config.maxItems)) {
-      const sitemapCandidates = await this.discoverSitemaps();
-      if (sitemapCandidates.length > 0) {
-        this.report(`Backfilling from ${sitemapCandidates.length} sitemap candidate(s)`);
-      }
-      const backfillPosts = await this.fetchBackfillPosts(sitemapCandidates, seenIds, this.config.maxItems ? this.config.maxItems - entities.length : undefined);
-      let backfillProcessed = 0;
-      for (const post of backfillPosts) {
-        const postTime = post.updatedAt ?? post.publishedAt;
-        newestIso = maxIso(newestIso, postTime);
-        backfillProcessed += 1;
-        this.report(`Processing sitemap post ${backfillProcessed}/${backfillPosts.length}: ${post.title}`);
-        entities.push(await this.postToEntity(post));
-        seenIds.add(post.id);
-      }
+    const state = this.runState;
+    const post = state.pending.shift();
+    if (!post) {
+      // Queue drained — final call. Return empty result with the finalized
+      // cursor and clear run state so the next sync run refetches the feed.
+      const nextCursor = {
+        watermark: state.newestIso,
+        seenIds: Array.from(state.seenIds).slice(-DEFAULT_SEEN_WINDOW),
+        backfillComplete: state.backfillTriggered ? true : c.backfillComplete,
+      } satisfies RssSyncCursor;
+      this.runState = null;
+      return { entities: [], nextCursor, hasMore: false, deletedExternalIds: [] };
     }
 
-    return {
-      entities,
-      nextCursor: {
-        watermark: newestIso,
-        seenIds: Array.from(seenIds).slice(-DEFAULT_SEEN_WINDOW),
-        backfillComplete: this.shouldRunBackfill(c) ? true : c.backfillComplete,
-      } satisfies RssSyncCursor,
-      hasMore: false,
-      deletedExternalIds: [],
-    };
+    state.processed += 1;
+    this.report(`Processing post ${state.processed}/${state.total}: ${post.title}`);
+    const entity = await this.postToEntity(post);
+    state.seenIds.add(post.id);
+
+    const hasMore = state.pending.length > 0;
+    const nextCursor = {
+      watermark: state.newestIso,
+      seenIds: Array.from(state.seenIds).slice(-DEFAULT_SEEN_WINDOW),
+      backfillComplete: hasMore ? c.backfillComplete : (state.backfillTriggered ? true : c.backfillComplete),
+    } satisfies RssSyncCursor;
+    return { entities: [entity], nextCursor, hasMore, deletedExternalIds: [] };
   }
 
   private report(message: string): void {
@@ -281,9 +453,16 @@ export class RssCrawler implements Crawler {
     const title = text(item.title) ?? link;
     const guid = text(item.guid);
 
-    const contentHtml =
-      text(item["content:encoded"]) ??
-      text(item.description);
+    // Prefer `content:encoded` (full body). Fall back to `description` only
+    // when it looks like real content (contains block-level HTML), since many
+    // feeds (e.g. openai.com) use <description> for a plain-text summary and
+    // the full post is only reachable via the item URL. Leaving contentHtml
+    // empty in that case lets resolvePostContent fetch the article HTML.
+    const fullContent = text(item["content:encoded"]);
+    const descriptionHtml = text(item.description);
+    const descriptionLooksLikeBody =
+      !!descriptionHtml && /<(p|img|div|ul|ol|h[1-6]|blockquote|pre|table)\b/i.test(descriptionHtml);
+    const contentHtml = fullContent ?? (descriptionLooksLikeBody ? descriptionHtml : undefined);
 
     const tags = arr(item.category).map((c) => text(c)).filter((v): v is string => !!v);
     const author = text(item["dc:creator"]) ?? text(item.author);
@@ -531,11 +710,53 @@ export class RssCrawler implements Crawler {
   }
 
   private async fetchArticleHtml(url: string): Promise<string | undefined> {
-    const html = await this.fetchText(url);
-    const article = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)?.[0]
-      ?? html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)?.[0]
-      ?? html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[0];
-    return article;
+    // Try a direct fetch first. Many sites (e.g. openai.com) sit behind a
+    // Cloudflare challenge that returns a small "Just a moment..." page to
+    // non-browser agents; detect that and fall through to the reader proxy.
+    try {
+      const html = await this.fetchText(url);
+      if (html && !this.looksLikeBotChallenge(html)) {
+        const article = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)?.[0]
+          ?? html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)?.[0]
+          ?? html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[0];
+        if (article && article.length > 800) return article;
+      }
+    } catch {
+      // Fall through to reader proxy.
+    }
+    return this.fetchArticleViaReader(url);
+  }
+
+  /** Heuristic: detect Cloudflare / generic bot-challenge interstitials. */
+  private looksLikeBotChallenge(html: string): boolean {
+    const sample = html.slice(0, 4000).toLowerCase();
+    return (
+      sample.includes("just a moment") ||
+      sample.includes("cf-challenge") ||
+      sample.includes("cf_chl_opt") ||
+      sample.includes("__cf_chl_") ||
+      sample.includes("attention required") ||
+      (sample.includes("cloudflare") && sample.includes("checking your browser"))
+    );
+  }
+
+  /**
+   * Pull article content through Jina's reader proxy (https://r.jina.ai/<url>),
+   * which returns cleaned markdown and bypasses most anti-bot interstitials.
+   * We convert its markdown into basic HTML so the rest of the pipeline (image
+   * extraction, theme rendering) keeps working unchanged.
+   */
+  private async fetchArticleViaReader(url: string): Promise<string | undefined> {
+    try {
+      this.report(`Fetching via reader proxy: ${url}`);
+      const res = await this.fetchFn(`https://r.jina.ai/${url}`);
+      if (!res.ok) return undefined;
+      const markdown = await res.text();
+      if (!markdown || markdown.length < 200) return undefined;
+      return markdownToSimpleHtml(stripReaderPreamble(markdown));
+    } catch {
+      return undefined;
+    }
   }
 
   private async downloadImageAttachments(post: ParsedFeedPost, imageUrls: string[]): Promise<CrawlerEntityData["attachments"]> {
