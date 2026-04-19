@@ -348,9 +348,17 @@ export default function App() {
   }, []);
 
   const handleUIModeChange = useCallback((mode: UIMode) => {
+    // When leaving manage for browse, carry the collection the user was
+    // looking at (or editing) over to the browse view so they don't have
+    // to re-pick it from the dropdown. The enabled-only effect will fall
+    // back to the first enabled collection if this one isn't browsable.
+    if (mode === "browse") {
+      const carryOver = viewingCollection ?? editingCollection;
+      if (carryOver) setSelectedCollection(carryOver);
+    }
     setUIMode(mode);
     saveUIMode(mode);
-  }, []);
+  }, [viewingCollection, editingCollection]);
 
   const handleThemeChange = useCallback((newTheme: ThemeId) => {
     setTheme(newTheme);
