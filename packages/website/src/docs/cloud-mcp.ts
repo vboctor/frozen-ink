@@ -129,12 +129,12 @@ export const cloudMcpPage = renderDocsPage({
   <p>From v0.2 onward, <code>fink mcp add --http</code> registers the remote MCP endpoint automatically for Claude Code and Claude Desktop, reusing the password stored in <code>credentials.yml</code> when you published:</p>
 
   <pre><code><span class="cmt"># Claude Code</span>
-fink mcp add <span class="flag">--http</span> <span class="flag">--tool</span> claude-code my-vault
+fink mcp add <span class="flag">--tool</span> claude-code my-vault <span class="flag">--http</span>
 
 <span class="cmt"># Claude Desktop</span>
-fink mcp add <span class="flag">--http</span> <span class="flag">--tool</span> claude-desktop my-vault</code></pre>
+fink mcp add <span class="flag">--tool</span> claude-desktop my-vault <span class="flag">--http</span></code></pre>
 
-  <p>Pass <code>--password &lt;value&gt;</code> if you want to override the stored token (useful when sharing a deployment across machines). For other MCP clients that don't yet support <code>--http</code>, edit the configuration file by hand:</p>
+  <p>The password is read automatically from <code>credentials.yml</code> (stored when you published). For other MCP clients that don't yet support <code>--http</code>, edit the configuration file by hand:</p>
 
   <p>Example for Claude Code's <code>~/.claude/mcp_servers.json</code>:</p>
   <pre><code>{
@@ -245,8 +245,8 @@ fink publish github-issues architecture-notes runbooks \
     <tbody>
       <tr>
         <td><strong>Setup</strong></td>
-        <td><code>fink mcp add --tool claude-code</code></td>
-        <td><code>fink mcp add --http --tool claude-code</code> (after publish)</td>
+        <td><code>fink mcp add --tool claude-code my-vault</code></td>
+        <td><code>fink mcp add --tool claude-code my-vault --http</code> (after publish)</td>
       </tr>
       <tr>
         <td><strong>Data location</strong></td>

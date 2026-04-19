@@ -46,6 +46,17 @@ export const cloneCommand = new Command("clone")
   .option("--name <name>", "Local collection name (defaults to remote collection name)")
   .option("--password <password>", "Password for protected sites")
   .option("--dry-run", "Show sync plan without making changes")
+  .addHelpText("after", `
+Examples:
+  # Clone a published site
+  fink clone https://my-fink.workers.dev --password secret123
+
+  # Clone with a custom local name
+  fink clone https://my-fink.workers.dev --name team-kb --password secret123
+
+  # Preview what would be synced
+  fink clone https://my-fink.workers.dev --password secret123 --dry-run
+`)
   .action(async (url: string, opts: { name?: string; password?: string; dryRun?: boolean }) => {
     ensureInitialized();
     const home = getFrozenInkHome();

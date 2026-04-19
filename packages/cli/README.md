@@ -12,38 +12,14 @@ Frozen Ink creates a unified, queryable, markdown-native workspace from your dat
 npm install -g @vboctor/fink
 ```
 
-Requires Node.js >= 20 and a C++ toolchain for the SQLite native module (`better-sqlite3`).
-
-### Standalone binary (no dependencies)
-
-Download the pre-built binary for your platform from the [releases page](https://github.com/vboctor/fink/releases):
-
-| Platform | Binary |
-|----------|--------|
-| macOS Apple Silicon | `fink-darwin-arm64` |
-| macOS Intel | `fink-darwin-x64` |
-| Linux x64 | `fink-linux-x64` |
-| Linux ARM64 | `fink-linux-arm64` |
-
-```bash
-# Example: macOS Apple Silicon
-curl -L -o fink https://github.com/vboctor/fink/releases/latest/download/fink-darwin-arm64
-chmod +x fink
-sudo mv fink /usr/local/bin/
-```
-
-### From source (development)
-
-```bash
-git clone https://github.com/vboctor/fink.git
-cd fink
-bun install
-cd packages/cli && bun link    # makes `fink` available globally
-```
+Requires Node.js >= 20.
 
 ## Quick Start
 
 ```bash
+# Help
+fink --help
+
 # Initialize (creates ~/.frozenink/)
 fink init
 
@@ -74,61 +50,16 @@ Running `fink` without arguments launches the interactive TUI:
 fink
 ```
 
-The TUI provides keyboard-driven access to all features:
-
-| Key | Screen |
-|-----|--------|
-| `c` | Collections (manage, publish, sync, export) |
-| `s` | Sync all |
-| `f` | Search |
-| `g` | Settings |
-| `ESC` | Go back |
-| `q` | Quit |
-
-## Commands
-
-All commands are also available in headless mode for scripting and CI:
-
-| Command | Description |
-|---------|-------------|
-| `fink` | Launch interactive TUI |
-| `fink init` | Initialize `~/.frozenink/` |
-| `fink add <type>` | Add a collection (github, obsidian, git, mantishub) |
-| `fink sync <name\|"*">` | Sync one or all collections |
-| `fink sync <name> --full` | Full re-sync from scratch |
-| `fink status` | Show sync status |
-| `fink search <query>` | Full-text search |
-| `fink collections list` | List all collections |
-| `fink collections remove <name>` | Delete a collection |
-| `fink collections enable <name>` | Enable a collection |
-| `fink collections disable <name>` | Disable a collection |
-| `fink collections rename <old> <new>` | Rename a collection |
-| `fink update <name>` | Update collection config |
-| `fink config list` | Show configuration |
-| `fink config get <key>` | Get a config value |
-| `fink config set <key> <value>` | Set a config value |
-| `fink generate <name\|"*">` | Re-render markdown from DB |
-| `fink index <name\|"*">` | Rebuild search index |
-| `fink serve` | Start API server + web UI |
-| `fink serve --mcp-only` | Start MCP server only |
-| `fink mcp add --tool <tool> <collection...>` | Register collection-scoped MCP links in a client tool |
-| `fink mcp remove --tool <tool> <collection...>` | Remove collection-scoped MCP links from a client tool |
-| `fink mcp list [--tool <tool>]` | Show MCP link status by collection |
-| `fink mcp serve --collection <name>` | MCP stdio entrypoint used by client tools |
-| `fink daemon start\|stop\|status` | Background sync daemon |
-| `fink publish <collection>` | Publish to Cloudflare |
-| `fink unpublish <collection>` | Remove a published collection |
-| `fink tui` | Launch TUI explicitly |
-
 ## Publishing to Cloudflare
 
-Publish a collection as a password-protected website with remote MCP access:
+Here are the steps to publish to Cloudflare:
 
 ```bash
 # Authenticate with Cloudflare first
 npx wrangler login
 
 # Publish a collection (worker name = collection name)
+# password is optional.
 fink publish my-repo --password secret123
 
 # Update an existing deployment
@@ -142,25 +73,27 @@ Published collections include:
 
 - Web UI for browsing synced data
 - Full-text search
-- MCP endpoint for AI assistants at `https://my-repo.workers.dev/mcp`
+- MCP endpoint for AI assistants at `https://my-collection.my-account.workers.dev/mcp`
 
 ## MCP Server
 
 Frozen Ink includes an MCP server for AI tools (Claude, Codex CLI, etc.):
 
 ```bash
-# Link one or more collections to Claude Code
-fink mcp add --tool claude-code my-repo
-fink mcp add --tool claude-code my-notes
+# Link a local collection to Claude Code (stdio transport)
+fink mcp add --tool claude-code my-vault
 
-# Link to Codex CLI (canonical name)
-fink mcp add --tool codex-cli my-repo
-
-# Legacy alias (still supported)
-fink mcp add --tool codex my-repo
-
-# Or add both in one command
+# Link multiple collections at once
 fink mcp add --tool claude-code my-repo my-notes
+
+# Link a published collection via its remote HTTP endpoint
+fink mcp add --tool claude-code my-vault --http
+
+# Link to Claude Desktop
+fink mcp add --tool claude-desktop my-vault
+
+# Link to Codex CLI (legacy alias: codex)
+fink mcp add --tool codex-cli my-vault
 
 # List link status
 fink mcp list --tool claude-code
@@ -170,22 +103,16 @@ fink mcp remove --tool claude-code my-repo
 
 # MCP stdio command used by clients
 fink mcp serve --collection my-notes
-
-# Or use the published MCP endpoint
-claude mcp add frozenink --transport streamable-http \
-  --url https://my-site.workers.dev/mcp \
-  --header "Authorization: Bearer <password>"
 ```
 
 Behavior notes:
 
-- Installed-user flow uses `fink mcp serve --collection <name>` and does not require Bun.
-- MCP clients launch the stdio command on demand; you do not run a background MCP server manually.
+- MCP clients launch `fink mcp serve` on demand; you do not run a background MCP server.
 - One MCP connection is created per `(tool, collection)`:
   - Add `my-repo` then `my-notes` => 2 connections
   - Add `my-repo my-notes` together => also 2 connections
+- `--http` links the remote HTTP endpoint of a published collection instead of local stdio. The password defaults to the one stored in `credentials.yml` during `fink publish`.
 - `--tool codex-cli` is the canonical Codex option; `--tool codex` remains a legacy alias.
-- Codex CLI support is best-effort and shown only when `codex mcp` commands are detected.
 - ChatGPT Desktop uses a remote MCP endpoint flow. `fink mcp add --tool chatgpt-desktop` returns setup guidance instead of writing local client config.
 
 TUI path: open `fink` -> `Collections` -> select a collection -> press `[m]` for MCP actions.
@@ -217,6 +144,10 @@ All data is stored locally in `~/.frozenink/`:
       content/               # rendered markdown files
       attachments/           # binary files (images, etc.)
 ```
+
+## Publishing to npm
+
+See [PUBLISH.md](PUBLISH.md) for the full build, version management, and publish process.
 
 ## License
 

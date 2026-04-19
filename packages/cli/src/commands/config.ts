@@ -98,6 +98,14 @@ const listConfigCommand = new Command("list")
 
 export const configCommand = new Command("config")
   .description("Manage configuration")
+  .addHelpText("after", `
+Examples:
+  fink config list
+  fink config get sync.interval
+  fink config set sync.interval 1800
+  fink config set sync.concurrency 2
+  fink config set logging.level debug
+`)
   .addCommand(getCommand)
   .addCommand(setCommand)
   .addCommand(listConfigCommand);

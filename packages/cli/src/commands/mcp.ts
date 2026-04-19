@@ -71,6 +71,23 @@ mcpCommand
   .option("--http", "Link the remote HTTP MCP endpoint of a published collection instead of local stdio")
   .option("--password <value>", "Bearer token for --http (defaults to the password stored in credentials.yml)")
   .argument("<collections...>", "Collection names")
+  .addHelpText("after", `
+Examples:
+  # Link a local collection to Claude Code (stdio transport)
+  fink mcp add --tool claude-code my-vault
+
+  # Link multiple collections at once
+  fink mcp add --tool claude-code my-vault my-project-issues
+
+  # Link a published collection via its remote HTTP endpoint
+  fink mcp add --tool claude-code my-vault --http
+
+  # Link to Claude Desktop instead
+  fink mcp add --tool claude-desktop my-vault
+
+  # Link to Codex CLI (legacy alias: codex)
+  fink mcp add --tool codex-cli my-vault
+`)
   .action(async (collectionNames: string[], opts: {
     tool: string;
     description?: string;
@@ -105,6 +122,11 @@ mcpCommand
   .description("Remove MCP tool links for one or more collections")
   .requiredOption("--tool <tool>", `Target MCP client tool (${TOOL_HELP})`)
   .argument("<collections...>", "Collection names")
+  .addHelpText("after", `
+Examples:
+  fink mcp remove --tool claude-code my-vault
+  fink mcp remove --tool claude-desktop my-vault my-notes
+`)
   .action(async (collectionNames: string[], opts: { tool: string }) => {
     requireInitialized();
     const tool = parseTool(opts.tool);
@@ -130,6 +152,14 @@ mcpCommand
   .command("list")
   .description("List MCP tool links by collection")
   .option("--tool <tool>", `Filter by tool (${TOOL_HELP})`)
+  .addHelpText("after", `
+Examples:
+  # List all MCP links across all tools
+  fink mcp list
+
+  # List links for a specific tool
+  fink mcp list --tool claude-code
+`)
   .action(async (opts: { tool?: string }) => {
     requireInitialized();
 

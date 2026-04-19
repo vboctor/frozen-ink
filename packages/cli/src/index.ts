@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
+import pkg from "../package.json";
+
+const version: string = pkg.version;
 import { initCommand } from "./commands/init";
 import { addCommand } from "./commands/add";
 import { syncCommand } from "./commands/sync";
@@ -28,7 +31,7 @@ const program = new Command();
 program
   .name("fink")
   .description("Frozen Ink - Local data replica manager")
-  .version("0.1.0");
+  .version(version);
 
 program.addCommand(initCommand);
 program.addCommand(addCommand);

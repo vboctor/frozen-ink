@@ -26,6 +26,20 @@ export const syncCommand = new Command("sync")
   .option("--max <count>", "Maximum entities per type to sync (overrides collection config)", parseInt)
   .option("--max-issues <count>", "Maximum issues to sync (overrides collection config)", parseInt)
   .option("--max-prs <count>", "Maximum pull requests to sync (overrides collection config)", parseInt)
+  .addHelpText("after", `
+Examples:
+  # Sync a single collection
+  fink sync my-repo
+
+  # Sync all collections
+  fink sync "*"
+
+  # Full re-sync from scratch (ignores cursors)
+  fink sync my-repo --full
+
+  # Sync with a limit on entities
+  fink sync my-repo --max 100
+`)
   .action(async (collection: string, opts: { full?: boolean; max?: number; maxIssues?: number; maxPrs?: number }) => {
     ensureInitialized();
 

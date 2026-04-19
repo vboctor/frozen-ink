@@ -87,6 +87,11 @@ export const unpublishCommand = new Command("unpublish")
   .description("Remove a published collection from Cloudflare")
   .argument("<collection>", "Collection name to unpublish")
   .option("--force", "Skip confirmation")
+  .addHelpText("after", `
+Examples:
+  fink unpublish my-repo
+  fink unpublish my-repo --force
+`)
   .action(async (collectionName: string, opts: {
     force?: boolean;
   }) => {

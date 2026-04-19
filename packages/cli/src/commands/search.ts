@@ -16,6 +16,20 @@ export const searchCommand = new Command("search")
   .option("--type <type>", "Filter by entity type (e.g., issue, pull_request)")
   .option("--limit <n>", "Maximum results", "20")
   .option("--json", "Output results as JSON")
+  .addHelpText("after", `
+Examples:
+  # Search across all collections
+  fink search "authentication bug"
+
+  # Search within a specific collection
+  fink search "login flow" --collection my-repo
+
+  # Filter by entity type
+  fink search "performance" --type issue
+
+  # Output as JSON for scripting
+  fink search "API design" --json --limit 5
+`)
   .action(
     (
       query: string,
