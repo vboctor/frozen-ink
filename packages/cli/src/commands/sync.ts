@@ -8,6 +8,7 @@ import {
   listCollections,
   getCollection,
   getCollectionDbPath,
+  getCollectionPublishState,
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
@@ -19,6 +20,7 @@ import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisHubT
 import { prepareCollection } from "./prepare";
 import { createGenerateThemeEngine } from "./generate";
 import { pullCollection } from "./pull";
+import { publishCollections } from "./publish";
 
 export const syncCommand = new Command("sync")
   .description("Sync collections")
@@ -156,6 +158,7 @@ Examples:
         onProgress: (msg) => console.log(`  ${msg}`),
       });
 
+      let syncSucceeded = false;
       try {
         const stats = await engine.run();
         const colDb = getCollectionDb(dbPath);
@@ -166,10 +169,23 @@ Examples:
         console.log(
           `  Sync completed: ${stats.created} added, ${stats.updated} updated, ${stats.deleted} deleted (${total} total entities)`,
         );
+        syncSucceeded = true;
       } catch (err) {
         console.error(`  Sync failed for "${col.name}": ${err}`);
       }
 
       await crawler.dispose();
+
+      if (syncSucceeded && getCollectionPublishState(col.name)) {
+        console.log(`Republishing "${col.name}"...`);
+        try {
+          await publishCollections(
+            { collectionName: col.name },
+            (step, detail) => console.log(`  [publish:${step}] ${detail}`),
+          );
+        } catch (err) {
+          console.error(`  Republish failed for "${col.name}": ${err}`);
+        }
+      }
     }
   });

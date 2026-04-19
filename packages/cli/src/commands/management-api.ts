@@ -17,6 +17,7 @@ import {
   updateCollection,
   renameCollection,
   clearCollectionPublishState,
+  getCollectionPublishState,
   loadConfig,
   SyncEngine,
   ThemeEngine,
@@ -744,6 +745,16 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
         console.log(`[sync:${name}] done: +${result.created} ~${result.updated} -${result.deleted}`);
       } finally {
         await crawler.dispose();
+      }
+
+      if (getCollectionPublishState(name)) {
+        console.log(`[sync:${name}] collection is published — republishing`);
+        syncProgress = { ...syncProgress, status: `republishing ${name}` };
+        try {
+          await triggerPublish({ collectionName: name });
+        } catch (err) {
+          console.error(`[sync:${name}] republish failed: ${err}`);
+        }
       }
     }
 

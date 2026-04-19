@@ -196,13 +196,6 @@ export default function PublishPanel() {
                 </div>
                 <div className="preset-card-actions">
                   <button
-                    className="btn btn-sm btn-primary"
-                    onClick={() => handleRepublish(col.name)}
-                    disabled={publishing}
-                  >
-                    {publishing ? "Publishing..." : "Republish"}
-                  </button>
-                  <button
                     className="btn btn-sm btn-danger"
                     onClick={() => handleUnpublish(col.name)}
                     disabled={publishing}
