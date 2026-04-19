@@ -420,11 +420,32 @@ bun run publish:npm
 | `dist/fink-linux-arm64` | ~96 MB | Linux ARM64 standalone |
 | `dist/package.json` | — | npm package manifest (`@vboctor/fink`) |
 
-The standalone binaries include the Bun runtime and all dependencies — no Node.js or Bun install required. Upload them to GitHub Releases.
+The standalone binaries include the Bun runtime and all dependencies — no Node.js or Bun install required.
 
-**Version bumping:**
+### Releasing
 
-Update the version in `packages/cli/package.json` before publishing. The build script copies the version to `dist/package.json`.
+Run the release script locally to bump versions, tag, and push. GitHub Actions handles building and publishing.
+
+```bash
+# Dry-run to preview what will happen
+scripts/release.sh 0.2.0 --dry-run
+
+# Release for real
+scripts/release.sh 0.2.0
+```
+
+The script:
+1. Verifies a clean working tree on `main`, up to date with `origin/main`.
+2. Runs `bun run ci` (full CI check before tagging).
+3. Bumps the version in `packages/cli/package.json`, `packages/desktop/package.json`, and root `package.json`.
+4. Commits and tags `v<version>`, then pushes tag and commit to `origin`.
+
+On tag push, the `.github/workflows/release.yml` workflow runs:
+- **`build-cli`**: builds the CLI npm bundle and platform-native Bun binaries on Ubuntu, macOS arm64, macOS x64, and Windows runners.
+- **`build-desktop`**: builds the Electron app (DMG, NSIS installer, AppImage, deb) on native runners.
+- **`publish`**: publishes `@vboctor/fink` to npm and creates a GitHub Release with all binaries attached.
+
+**One-time setup required:** add an `NPM_TOKEN` Automation token (from npmjs.com) as a GitHub Actions repository secret.
 
 ### UI and Worker
 
