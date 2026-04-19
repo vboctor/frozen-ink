@@ -96,8 +96,6 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
   const [mcpBusyKey, setMcpBusyKey] = useState<string | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
 
-  const isRemote = collection?.crawlerType === "remote";
-
   const loadCollection = useCallback(() => {
     fetch("/api/collections")
       .then((r) => r.json())
@@ -329,7 +327,7 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
 
       {/* --- Sync Section --- */}
       <div className="detail-section">
-        <h3>{isRemote ? "Data" : "Sync"}</h3>
+        <h3>Sync</h3>
         <div className="collection-card-stats">
           <span>{status?.entityCount != null ? formatCount(status.entityCount) : "—"} entities</span>
           {status?.diskSizeBytes != null && status.diskSizeBytes > 0 && (
@@ -337,8 +335,8 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
           )}
           {status?.lastSyncRun && (
             <span>
-              Last {isRemote ? "pull" : "sync"}: {formatTimestamp(status.lastSyncRun.startedAt)}
-              {!isRemote && (
+              Last sync: {formatTimestamp(status.lastSyncRun.startedAt)}
+              {collection?.crawlerType !== "remote" && (
                 <>
                   {" "}
                   <span className={`sync-type-badge sync-type-${status.lastSyncRun.syncType || "incremental"}`}>
@@ -350,9 +348,9 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
           )}
         </div>
         <div className="collection-card-actions" style={{ marginTop: 8 }}>
-          {isRemote ? (
-            <button className="btn btn-sm" onClick={() => handleSync(true)} disabled={syncing}>
-              Pull
+          {collection?.crawlerType === "remote" ? (
+            <button className="btn btn-sm" onClick={() => handleSync(false)} disabled={syncing}>
+              Sync
             </button>
           ) : (
             <>

@@ -29,7 +29,7 @@ const NAV_SECTIONS = [
     title: "Features",
     items: [
       { label: "Managing Collections", href: "/docs/collections" },
-      { label: "Clone & Pull", href: "/docs/clone-pull" },
+      { label: "Cloning", href: "/docs/clone-pull" },
       { label: "Publishing", href: "/docs/publishing" },
     ],
   },

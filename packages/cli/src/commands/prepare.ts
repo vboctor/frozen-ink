@@ -5,7 +5,6 @@ import {
   getCollectionDb,
   getCollectionDbPath,
   listCollections,
-  updateCollection,
   ThemeEngine,
   LocalStorageBackend,
   MetadataStore,
@@ -17,8 +16,7 @@ import {
   computeEntityHash,
 } from "@frozenink/core";
 import { eq, sql } from "drizzle-orm";
-import { createDefaultRegistry } from "@frozenink/crawlers";
-import { generateCollection, createGenerateThemeEngine } from "./generate";
+import { createGenerateThemeEngine } from "./generate";
 
 type Log = (msg: string) => void;
 
@@ -345,23 +343,13 @@ export async function prepareCollection(
     return;
   }
 
-  // Step 3: Mismatch — regenerate all entities
+  // Step 3: Mismatch — warn the user and suggest running generate
   const reasons = [
     titleMismatches > 0 ? `${titleMismatches} title${titleMismatches === 1 ? "" : "s"}` : "",
     markdownMismatches > 0 ? `${markdownMismatches} markdown` : "",
     hashMismatches > 0 ? `${hashMismatches} hash${hashMismatches === 1 ? "" : "es"}` : "",
   ].filter(Boolean).join(", ");
-  log(`  ${reasons} outdated (${totalMismatches}/${sampled} samples) — regenerating all...`);
-  const summary = await generateCollection(col, home, themeEngine);
-  if (summary) {
-    log(`  ${summary}`);
-    // Stamp the current crawler version so subsequent prepare runs skip the check
-    const registry = createDefaultRegistry();
-    const factory = registry.get(col.crawler);
-    if (factory) {
-      updateCollection(col.name, { version: factory().metadata.version ?? "1.0" });
-    }
-  }
+  log(`  Warning: ${reasons} outdated (${totalMismatches}/${sampled} samples). Run: fink generate ${JSON.stringify(col.name)}`);
 }
 
 /**

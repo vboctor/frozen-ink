@@ -134,12 +134,12 @@ fink publish my-vault <span class="flag">--password</span> secure-secret</code><
       <div class="step-body">
         <h4>Users can keep their clones in sync</h4>
         <p>When you re-sync and re-publish, everyone pulls the latest changes incrementally:</p>
-        <pre><code>fink pull my-vault</code></pre>
+        <pre><code>fink sync my-vault</code></pre>
       </div>
     </div>
   </div>
 
-  <p>Cloned collections are fully functional — searchable, browsable, and available to MCP clients. No source credentials needed. See <a href="/docs/clone-pull">Clone &amp; Pull</a> for the full guide.</p>
+  <p>Cloned collections are fully functional — searchable, browsable, and available to MCP clients. No source credentials needed. See <a href="/docs/clone-pull">Cloning</a> for the full guide.</p>
 
   <h2 id="local-ai">Local AI assistant context</h2>
   <p><strong>Situation:</strong> You use an MCP-enabled coding assistant (for example Claude Code or Codex CLI). When working on a feature, you want instant access to your project's GitHub issues, git history, and design notes — without manually pasting content into every conversation.</p>

@@ -86,7 +86,7 @@ fink sync "*"</code></pre>
     <div class="callout-icon">ℹ️</div>
     <div class="callout-body">
       <strong>Alternative: clone a published collection</strong>
-      <p>If someone has already published a Frozen Ink collection, you can skip <code>fink add</code> and <code>fink sync</code> entirely. Just clone it directly: <code>fink clone https://their-site.workers.dev --password secret</code>. See <a href="/docs/clone-pull">Clone &amp; Pull</a> for details.</p>
+      <p>If someone has already published a Frozen Ink collection, you can skip <code>fink add</code> and <code>fink sync</code> entirely. Just clone it directly: <code>fink clone https://their-site.workers.dev --password secret</code>. See <a href="/docs/clone-pull">Cloning</a> for details.</p>
     </div>
   </div>
 

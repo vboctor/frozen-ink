@@ -29,7 +29,6 @@ export const cliReferencePage = renderDocsPage({
     { id: "cmd-publish", title: "publish", indent: true },
     { id: "cmd-unpublish", title: "unpublish", indent: true },
     { id: "cmd-clone", title: "clone", indent: true },
-    { id: "cmd-pull", title: "pull", indent: true },
     { id: "mcp-commands", title: "MCP" },
     { id: "cmd-mcp", title: "mcp", indent: true },
     { id: "other", title: "Other" },
@@ -158,16 +157,20 @@ fink update my-issues <span class="flag">--token</span> ghp_newToken</code></pre
   <h2 id="syncing">Syncing &amp; Indexing</h2>
 
   <h3 id="cmd-sync"><code>fink sync &lt;collection&gt;</code></h3>
-  <p>Synchronize one or more collections with their data sources. Sync is incremental by default.</p>
+  <p>Synchronize one or more collections with their data sources. Works for both local collections (GitHub, Obsidian, Git, MantisHub) and cloned/remote collections. Sync is incremental by default.</p>
   <pre><code><span class="cmt"># Sync a single collection</span>
 fink sync my-vault
 
-<span class="cmt"># Sync all enabled collections</span>
-fink sync "*"</code></pre>
+<span class="cmt"># Sync all enabled collections (including cloned ones)</span>
+fink sync "*"
+
+<span class="cmt"># Preview changes for a cloned collection</span>
+fink sync team-kb <span class="flag">--dry-run</span></code></pre>
   <table>
     <thead><tr><th>Option</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>--full</code></td><td>Force a full sync (ignore cursor, re-fetch everything)</td></tr>
+      <tr><td><code>--dry-run</code></td><td>Show sync plan without making changes (cloned collections only)</td></tr>
       <tr><td><code>--max &lt;count&gt;</code></td><td>Maximum entities to sync in this run</td></tr>
     </tbody>
   </table>
@@ -212,7 +215,7 @@ fink tui    <span class="cmt"># explicit</span></code></pre>
   <pre><code>fink unpublish my-vault</code></pre>
 
   <h3 id="cmd-clone"><code>fink clone &lt;url&gt;</code></h3>
-  <p>Clone a published collection to your local machine. See <a href="/docs/clone-pull">Clone &amp; Pull</a> for details.</p>
+  <p>Clone a published collection to your local machine. After cloning, use <code>fink sync</code> to keep it up to date. See <a href="/docs/clone-pull">Cloning</a> for details.</p>
   <pre><code>fink clone https://my-vault.example.workers.dev <span class="flag">--password</span> secret123</code></pre>
   <table>
     <thead><tr><th>Option</th><th>Description</th></tr></thead>
@@ -220,16 +223,6 @@ fink tui    <span class="cmt"># explicit</span></code></pre>
       <tr><td><code>--name &lt;name&gt;</code></td><td>Local collection name (defaults to remote name)</td></tr>
       <tr><td><code>--password &lt;password&gt;</code></td><td>Password for the published site</td></tr>
       <tr><td><code>--dry-run</code></td><td>Preview without downloading</td></tr>
-    </tbody>
-  </table>
-
-  <h3 id="cmd-pull"><code>fink pull &lt;collection&gt;</code></h3>
-  <p>Pull updates from a remote published site into a cloned collection.</p>
-  <pre><code>fink pull my-vault</code></pre>
-  <table>
-    <thead><tr><th>Option</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>--dry-run</code></td><td>Show what would change without applying</td></tr>
     </tbody>
   </table>
 

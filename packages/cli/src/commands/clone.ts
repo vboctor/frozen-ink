@@ -82,7 +82,7 @@ Examples:
     // Fail if collection already exists
     const existingCol = getCollection(localName);
     if (existingCol !== null) {
-      console.error(`Collection "${localName}" already exists. Use 'fink pull' to update it.`);
+      console.error(`Collection "${localName}" already exists. Use 'fink sync' to update it.`);
       process.exit(1);
     }
 

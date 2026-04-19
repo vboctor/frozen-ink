@@ -18,11 +18,13 @@ import { sql } from "drizzle-orm";
 import { createDefaultRegistry, gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme } from "@frozenink/crawlers";
 import { prepareCollection } from "./prepare";
 import { createGenerateThemeEngine } from "./generate";
+import { pullCollection } from "./pull";
 
 export const syncCommand = new Command("sync")
   .description("Sync collections")
   .argument("<collection>", 'Collection name or "*" for all collections')
   .option("--full", "Full re-sync (ignore cursors)")
+  .option("--dry-run", "Show sync plan without making changes (remote/cloned collections only)")
   .option("--max <count>", "Maximum entities per type to sync (overrides collection config)", parseInt)
   .option("--max-issues <count>", "Maximum issues to sync (overrides collection config)", parseInt)
   .option("--max-prs <count>", "Maximum pull requests to sync (overrides collection config)", parseInt)
@@ -34,13 +36,19 @@ Examples:
   # Sync all collections
   fink sync "*"
 
+  # Sync a cloned (remote) collection
+  fink sync team-kb
+
   # Full re-sync from scratch (ignores cursors)
   fink sync my-repo --full
+
+  # Preview changes for a cloned collection
+  fink sync team-kb --dry-run
 
   # Sync with a limit on entities
   fink sync my-repo --max 100
 `)
-  .action(async (collection: string, opts: { full?: boolean; max?: number; maxIssues?: number; maxPrs?: number }) => {
+  .action(async (collection: string, opts: { full?: boolean; dryRun?: boolean; max?: number; maxIssues?: number; maxPrs?: number }) => {
     ensureInitialized();
 
     const home = getFrozenInkHome();
@@ -74,7 +82,11 @@ Examples:
 
     for (const col of collectionRows) {
       if (col.crawler === "remote") {
-        console.error(`Cannot sync "${col.name}": crawler is "remote". Use 'fink pull' instead.`);
+        try {
+          await pullCollection(col.name, { dryRun: opts.dryRun });
+        } catch (err) {
+          console.error(`  Sync failed for "${col.name}": ${err}`);
+        }
         continue;
       }
 

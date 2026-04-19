@@ -38,6 +38,7 @@ import {
 } from "@frozenink/crawlers";
 import { prepareCollection } from "./prepare";
 import { createGenerateThemeEngine } from "./generate";
+import { pullCollection } from "./pull";
 
 // --- In-memory sync/publish/export progress tracking ---
 
@@ -642,6 +643,25 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
     for (const name of collectionNames) {
       const col = getCollection(name);
       if (!col) continue;
+
+      // Remote/cloned collections use pullCollection — no prepare or crawler needed
+      if (col.crawler === "remote") {
+        syncProgress = { ...syncProgress, collectionName: name, status: `syncing ${name}` };
+        try {
+          const result = await pullCollection(name, {
+            onProgress: (msg) => {
+              syncProgress = { ...syncProgress, status: msg };
+            },
+          });
+          totalCreated += result.created;
+          totalUpdated += result.updated;
+          totalDeleted += result.deleted;
+          syncProgress = { ...syncProgress, created: totalCreated, updated: totalUpdated, deleted: totalDeleted };
+        } catch (err) {
+          console.error(`  Sync failed for "${name}": ${err}`);
+        }
+        continue;
+      }
 
       // Run prepare before incremental sync: schema migrations, folder ymls, stale markdown check
       if (!full) {
