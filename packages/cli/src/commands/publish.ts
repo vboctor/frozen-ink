@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, readdirSync, statSync } from "fs";
 import { join, extname } from "path";
 import { createInterface } from "readline";
 import {
@@ -25,6 +25,8 @@ import type { EntityData } from "@frozenink/core";
 const __moduleDir = getModuleDir(import.meta.url);
 import { assertInitialPublishConfirmation } from "./publish-policy";
 import { createGenerateThemeEngine } from "./generate";
+import { RemoteClient } from "./remote-client";
+import { computeSyncPlan, type LocalEntity, type ManifestEntity } from "./sync-plan";
 
 function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 8);
@@ -67,23 +69,16 @@ function getMimeType(filePath: string): string {
   return MIME_TYPES[extname(filePath).toLowerCase()] || "application/octet-stream";
 }
 
-async function hashDbFiles(dbPath: string): Promise<string> {
-  const files = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`];
-  const chunks: Uint8Array[] = [];
-  for (const file of files) {
-    if (existsSync(file)) chunks.push(readFileSync(file));
+// FNV-1a 32-bit. The published FTS5 schema declares `entity_id UNINDEXED` as
+// the first column; it's only echoed back to clients (used as a React key in
+// the search UI) and not joined against `entities.id`. A deterministic hash
+// of external_id is enough — uniqueness within a result set is what matters.
+function ftsEntityIdFor(externalId: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < externalId.length; i++) {
+    h = Math.imul(h ^ externalId.charCodeAt(i), 16777619);
   }
-  const total = chunks.reduce((n, c) => n + c.length, 0);
-  const combined = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.length;
-  }
-  const hashBuf = await crypto.subtle.digest("SHA-256", combined);
-  return Array.from(new Uint8Array(hashBuf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return h >>> 0;
 }
 
 async function runConcurrent<T>(
@@ -174,7 +169,6 @@ export async function publishCollections(
     createR2Bucket,
     putR2Object,
     putR2String,
-    getR2String,
     deleteR2Objects,
     listR2Objects,
     deployWorker,
@@ -368,7 +362,7 @@ export async function publishCollections(
     if (isUpdate) {
       const allKeys = new Set(fileSizes.keys());
       try {
-        const staleKeys = [...existingR2Objects.keys()].filter((key) => !allKeys.has(key) && !key.endsWith("/db-digest"));
+        const staleKeys = [...existingR2Objects.keys()].filter((key) => !allKeys.has(key));
         if (staleKeys.length > 0) {
           onProgress("r2-cleanup", `Removing ${staleKeys.length} stale file(s)...`);
           await deleteR2Objects(r2BucketName, staleKeys);
@@ -386,38 +380,16 @@ export async function publishCollections(
     onProgress("r2-upload", `${parts.join(", ")} out of ${totalFiles} total`);
   }
 
-  // --- Phase 3: D1 rebuild (destructive — done last to minimize downtime) ---
+  // --- Phase 3: D1 incremental update (manifest-driven delta) ---
 
-  let dbDigest = "";
   if (!workerOnly) {
-    const dbPath = getCollectionDbPath(collectionName);
+    onProgress("d1-build", "Computing incremental plan...");
 
-    // Run migration before hashing so the digest reflects the post-migration schema.
-    // If folder/slug columns were just added (backfilled from data.markdown_path),
-    // the DB content changes and won't match the pre-migration remote digest,
-    // forcing a full D1 rebuild with the correct schema.
-    const colDbForDigest = getCollectionDb(dbPath);
-    dbDigest = await hashDbFiles(dbPath);
-
-    let remoteDigest: string | null = null;
-    if (isUpdate) {
-      try {
-        remoteDigest = await getR2String(r2BucketName, `${collectionName}/db-digest`);
-      } catch { /* ignore — treat as no digest */ }
-    }
-    const skipD1 = isUpdate && remoteDigest === dbDigest;
-
-    if (skipD1) {
-      onProgress("d1-build", `Database unchanged (digest match) — skipping D1 rebuild`);
-    } else {
-      onProgress("d1-build", "Building D1 payload...");
-      const schemaSql: string[] = [];
-
-      schemaSql.push("DROP TABLE IF EXISTS entities_fts;");
-      schemaSql.push("DROP TABLE IF EXISTS entities;");
-      schemaSql.push("DROP TABLE IF EXISTS collections_meta;");
-      schemaSql.push("");
-      schemaSql.push(`CREATE TABLE entities (
+    // Ensure schema exists. Idempotent so first publish creates tables and
+    // re-publish is a no-op. No DROPs — the manifest-driven delta below
+    // brings D1 in sync without wiping it.
+    const schemaInit: string[] = [];
+    schemaInit.push(`CREATE TABLE IF NOT EXISTS entities (
   id INTEGER PRIMARY KEY,
   external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
   title TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
@@ -427,82 +399,148 @@ export async function publishCollections(
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );`);
-      schemaSql.push("CREATE INDEX idx_entities_external ON entities(external_id);");
-      schemaSql.push("CREATE INDEX idx_entities_folder   ON entities(folder, slug);");
-      schemaSql.push("CREATE INDEX idx_entities_type     ON entities(entity_type);");
-      schemaSql.push("CREATE INDEX idx_entities_updated  ON entities(updated_at);");
-      schemaSql.push("CREATE VIRTUAL TABLE entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
-      schemaSql.push("");
+    schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_external ON entities(external_id);");
+    schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_folder   ON entities(folder, slug);");
+    schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_type     ON entities(entity_type);");
+    schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_updated  ON entities(updated_at);");
+    schemaInit.push("CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
+    await executeD1Query(d1DatabaseId, schemaInit.join("\n"));
 
-      const themeEngine = createGenerateThemeEngine();
-      const MAX_FTS_CONTENT = 8000;
+    // Fetch remote manifest (empty on first publish). Manifest endpoint is
+    // behind authMiddleware when PASSWORD_HASH is set; pass the plaintext
+    // password so the request authenticates against the worker we just deployed.
+    let remoteManifest: ManifestEntity[] = [];
+    if (isUpdate) {
+      try {
+        const client = new RemoteClient(workerUrl, plaintextPassword || undefined);
+        const { entries } = await client.getManifest();
+        remoteManifest = entries;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        onProgress("d1-build", `Could not fetch remote manifest (${msg}); treating as empty`);
+      }
+    }
 
-      let entityIdOffset = 0;
+    // Read all local entities once.
+    const themeEngine = createGenerateThemeEngine();
+    const MAX_FTS_CONTENT = 8000;
+    // D1's per-statement SQL length limit is ~100-128 KB. Skip entities whose
+    // serialized data alone exceeds this — their INSERT would fail SQLITE_TOOBIG.
+    const MAX_ENTITY_DATA_BYTES = 80 * 1024;
+    let skippedTooLarge = 0;
 
-      // D1's per-statement SQL length limit appears to be ~100-128 KB. Skip
-      // entities whose serialized data alone exceeds this, since their INSERT
-      // would fail SQLITE_TOOBIG even as a single-statement batch.
-      const MAX_ENTITY_DATA_BYTES = 80 * 1024;
-      let skippedTooLarge = 0;
+    type LocalRow = {
+      entity: typeof entities.$inferSelect;
+      colName: string;
+      colCrawler: string;
+    };
+    const localRows: LocalRow[] = [];
+    for (const colName of collectionNames) {
+      const colDef = getCollection(colName)!;
+      const colDb = getCollectionDb(getCollectionDbPath(colName));
+      for (const entity of colDb.select().from(entities).all()) {
+        localRows.push({ entity, colName, colCrawler: colDef.crawler });
+      }
+    }
 
-      for (const colName of collectionNames) {
-        const col = getCollection(colName)!;
-        const colDb = colName === collectionName ? colDbForDigest : getCollectionDb(getCollectionDbPath(colName));
+    const localForPlan: LocalEntity[] = localRows.map(({ entity }) => ({
+      externalId: entity.externalId,
+      entityType: entity.entityType,
+      title: entity.title,
+      data: entity.data as unknown as Record<string, unknown> | string,
+      contentHash: entity.contentHash ?? null,
+    }));
+    const plan = computeSyncPlan(localForPlan, remoteManifest);
+    const changedExtIds = [
+      ...plan.entities.add.map((e) => e.externalId),
+      ...plan.entities.update.map((e) => e.externalId),
+    ];
+    const deletedExtIds = plan.entities.delete;
 
-        const allEntities = colDb.select().from(entities).all();
+    onProgress(
+      "d1-build",
+      `Incremental plan: +${plan.entities.add.length} ~${plan.entities.update.length} -${deletedExtIds.length}`,
+    );
 
-        for (const entity of allEntities) {
-          const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
-          if (Buffer.byteLength(data, "utf8") > MAX_ENTITY_DATA_BYTES) {
-            skippedTooLarge++;
-            continue;
-          }
-          entityIdOffset++;
-          const folderVal = entity.folder != null ? `'${escapeSQL(entity.folder)}'` : "NULL";
-          const slugVal = entity.slug != null ? `'${escapeSQL(entity.slug)}'` : "NULL";
+    // Build delta SQL.
+    const deltaSql: string[] = [];
 
-          schemaSql.push(`INSERT INTO entities (id, external_id, entity_type, title, data, content_hash, folder, slug, created_at, updated_at) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${folderVal}, ${slugVal}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
+    // Chunk IN(...) lists so each DELETE statement stays under MAX_BATCH_BYTES.
+    const DELETE_CHUNK = 200;
 
-          // FTS inline via theme engine
-          const entityDataParsed: EntityData = typeof entity.data === "object" ? entity.data as EntityData : JSON.parse(entity.data as string);
-          const entityTagNames = (entityDataParsed.tags ?? []).join(" ");
-          let ftsContent = "";
-          const hasMarkdown = entity.folder != null && entity.slug != null;
-          if (hasMarkdown && themeEngine.has(col.crawler)) {
-            try {
-              ftsContent = themeEngine.render({
-                entity: {
-                  externalId: entity.externalId,
-                  entityType: entity.entityType,
-                  title: entity.title,
-                  data: (entityDataParsed.source ?? {}) as Record<string, unknown>,
-                  url: entityDataParsed.url ?? undefined,
-                  tags: entityDataParsed.tags ?? [],
-                },
-                collectionName: colName,
-                crawlerType: col.crawler,
-              });
-            } catch { /* fall back to empty content */ }
-          }
-          if (ftsContent.length > MAX_FTS_CONTENT) ftsContent = ftsContent.slice(0, MAX_FTS_CONTENT);
+    // Deletes: drop FTS rows first (no cascade), then entities rows.
+    for (let i = 0; i < deletedExtIds.length; i += DELETE_CHUNK) {
+      const chunk = deletedExtIds.slice(i, i + DELETE_CHUNK);
+      const inList = chunk.map((id) => `'${escapeSQL(id)}'`).join(",");
+      deltaSql.push(`DELETE FROM entities_fts WHERE external_id IN (${inList});`);
+      deltaSql.push(`DELETE FROM entities WHERE external_id IN (${inList});`);
+    }
 
-          schemaSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${entityIdOffset}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(ftsContent)}', '${escapeSQL(entityTagNames)}');`);
+    if (changedExtIds.length > 0) {
+      // Pre-delete FTS rows for changed entities. FTS5 has no UNIQUE constraint
+      // on external_id, so INSERT OR REPLACE wouldn't dedupe — explicit DELETE
+      // is required before the INSERT below.
+      for (let i = 0; i < changedExtIds.length; i += DELETE_CHUNK) {
+        const chunk = changedExtIds.slice(i, i + DELETE_CHUNK);
+        const inList = chunk.map((id) => `'${escapeSQL(id)}'`).join(",");
+        deltaSql.push(`DELETE FROM entities_fts WHERE external_id IN (${inList});`);
+      }
+
+      const changedSet = new Set(changedExtIds);
+      for (const { entity, colName, colCrawler } of localRows) {
+        if (!changedSet.has(entity.externalId)) continue;
+
+        const data = typeof entity.data === "string" ? entity.data : JSON.stringify(entity.data);
+        if (Buffer.byteLength(data, "utf8") > MAX_ENTITY_DATA_BYTES) {
+          skippedTooLarge++;
+          continue;
         }
+        const folderVal = entity.folder != null ? `'${escapeSQL(entity.folder)}'` : "NULL";
+        const slugVal = entity.slug != null ? `'${escapeSQL(entity.slug)}'` : "NULL";
 
-        onProgress("d1-build", `Built "${colName}": ${allEntities.length} entities`);
-      }
-      if (skippedTooLarge > 0) {
-        onProgress("d1-build", `Skipped ${skippedTooLarge} oversized entit${skippedTooLarge === 1 ? "y" : "ies"} (data > ${MAX_ENTITY_DATA_BYTES / 1024} KB)`);
-      }
+        deltaSql.push(`INSERT OR REPLACE INTO entities (external_id, entity_type, title, data, content_hash, folder, slug, created_at, updated_at) VALUES ('${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(data)}', ${entity.contentHash ? `'${escapeSQL(entity.contentHash)}'` : "NULL"}, ${folderVal}, ${slugVal}, ${entity.createdAt ? `'${escapeSQL(entity.createdAt)}'` : "datetime('now')"}, ${entity.updatedAt ? `'${escapeSQL(entity.updatedAt)}'` : "datetime('now')"});`);
 
-      // Upload in batches bounded by both size (large data blobs) and count (execution time).
+        const entityDataParsed: EntityData = typeof entity.data === "object" ? entity.data as EntityData : JSON.parse(entity.data as string);
+        const entityTagNames = (entityDataParsed.tags ?? []).join(" ");
+        let ftsContent = "";
+        const hasMarkdown = entity.folder != null && entity.slug != null;
+        if (hasMarkdown && themeEngine.has(colCrawler)) {
+          try {
+            ftsContent = themeEngine.render({
+              entity: {
+                externalId: entity.externalId,
+                entityType: entity.entityType,
+                title: entity.title,
+                data: (entityDataParsed.source ?? {}) as Record<string, unknown>,
+                url: entityDataParsed.url ?? undefined,
+                tags: entityDataParsed.tags ?? [],
+              },
+              collectionName: colName,
+              crawlerType: colCrawler,
+            });
+          } catch { /* fall back to empty content */ }
+        }
+        if (ftsContent.length > MAX_FTS_CONTENT) ftsContent = ftsContent.slice(0, MAX_FTS_CONTENT);
+
+        deltaSql.push(`INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES (${ftsEntityIdFor(entity.externalId)}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(ftsContent)}', '${escapeSQL(entityTagNames)}');`);
+      }
+    }
+
+    if (skippedTooLarge > 0) {
+      onProgress("d1-build", `Skipped ${skippedTooLarge} oversized entit${skippedTooLarge === 1 ? "y" : "ies"} (data > ${MAX_ENTITY_DATA_BYTES / 1024} KB)`);
+    }
+
+    if (deltaSql.length === 0) {
+      onProgress("d1-upload", "No D1 changes to apply");
+    } else {
+      // Batch upload bounded by size (large data blobs) and count (execution time).
       // Use Buffer.byteLength for accurate UTF-8 byte count — stmt.length undercounts Unicode.
-      const MAX_BATCH_BYTES = 100 * 1024; // 100 KB — conservative against D1's SQL length limit
+      const MAX_BATCH_BYTES = 100 * 1024;
       const MAX_BATCH_COUNT = 500;
       const batches: string[][] = [];
       let current: string[] = [];
       let currentBytes = 0;
-      for (const stmt of schemaSql) {
+      for (const stmt of deltaSql) {
         const stmtBytes = Buffer.byteLength(stmt, "utf8");
         if (current.length > 0 && (currentBytes + stmtBytes > MAX_BATCH_BYTES || current.length >= MAX_BATCH_COUNT)) {
           batches.push(current);
@@ -515,7 +553,7 @@ export async function publishCollections(
       if (current.length > 0) batches.push(current);
 
       const totalBatches = batches.length;
-      onProgress("d1-upload", `Uploading to D1 (${totalBatches} batches)...`);
+      onProgress("d1-upload", `Uploading to D1 (${totalBatches} batch${totalBatches === 1 ? "" : "es"})...`);
       let batchCount = 0;
       for (const batch of batches) {
         await executeD1Query(d1DatabaseId, batch.join("\n"));
@@ -524,8 +562,7 @@ export async function publishCollections(
           onProgress("d1-upload", `Uploading to D1... ${batchCount}/${totalBatches} batches`);
         }
       }
-      await putR2String(r2BucketName, `${collectionName}/db-digest`, dbDigest);
-    } // else: D1 rebuild
+    }
 
     // Upload collection config YAML to R2 (needed by new worker architecture)
     onProgress("config", "Uploading collection config to R2...");
@@ -560,7 +597,6 @@ export async function publishCollections(
     mcpUrl,
     protected: passwordProtected,
     publishedAt: new Date().toISOString(),
-    ...(dbDigest ? { dbDigest } : {}),
   });
 
   onProgress("done", "Publish completed");
