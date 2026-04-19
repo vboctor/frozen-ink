@@ -1,0 +1,10 @@
+{
+  "collections": [
+    {
+      "title": "MantisBT Issue Tracker",
+      "url": "https://mantisbt.vboctor.workers.dev",
+      "description": "A replica of the public Mantis Bug Tracker issue tracker synced from MantisHub. Useful for AI agents that need grounding in MantisBT core issues.",
+      "crawler": "mantishub"
+    }
+  ]
+}
