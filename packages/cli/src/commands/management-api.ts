@@ -409,10 +409,22 @@ export function handleManagementRequest(req: Request): Response | null {
   if (unpublishColMatch && method === "POST") {
     const name = decodeURIComponent(unpublishColMatch[1]);
     return handleAsync(async () => {
-      const { unpublishCollection } = await import("./unpublish");
-      await unpublishCollection(name, (step, detail) => {
-        console.log(`  [unpublish:${step}] ${detail}`);
-      });
+      // Fire-and-forget so the UI can poll /api/publish/status (which is
+      // shared between publish and unpublish — only one runs at a time).
+      publishProgress = { active: true, step: "starting", detail: `Unpublishing "${name}"...`, error: null, startedAt: Date.now() };
+      void (async () => {
+        const startedAt = publishProgress.startedAt ?? Date.now();
+        try {
+          const { unpublishCollection } = await import("./unpublish");
+          await unpublishCollection(name, (step, detail) => {
+            console.log(`  [unpublish:${step}] ${detail}`);
+            publishProgress = { ...publishProgress, step, detail };
+          });
+          publishProgress = { active: false, step: "done", detail: `Unpublished "${name}"`, error: null, startedAt };
+        } catch (err) {
+          publishProgress = { active: false, step: "failed", detail: "", error: String(err), startedAt };
+        }
+      })();
       return jsonResponse({ ok: true });
     });
   }

@@ -107,24 +107,31 @@ export default function PublishPanel() {
     doPublish(collectionName, {});
   };
 
-  const handleUnpublish = async (collectionName: string) => {
+  const handleUnpublish = (collectionName: string) => {
     const confirmed = window.confirm(
       `Unpublish "${collectionName}"? This will delete its Cloudflare worker, D1 database, and R2 bucket.`,
     );
     if (!confirmed) return;
 
+    setPublishing(true);
+    setProgress(null);
     setError(null);
-    try {
-      const res = await fetch(`/api/collections/${encodeURIComponent(collectionName)}/unpublish`, { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Unpublish failed" }));
-        setError(data.error || "Unpublish failed");
-      } else {
-        fetch("/api/collections").then((r) => r.json()).then(setCollections).catch(() => {});
-      }
-    } catch (err) {
-      setError(String(err));
-    }
+
+    fetch(`/api/collections/${encodeURIComponent(collectionName)}/unpublish`, { method: "POST" })
+      .catch(() => {});
+
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const res = await fetch("/api/publish/status");
+        const data: PublishProgress = await res.json();
+        setProgress(data);
+        if (!data.active) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setPublishing(false);
+          fetch("/api/collections").then((r) => r.json()).then(setCollections).catch(() => {});
+        }
+      } catch {}
+    }, 1000);
   };
 
   return (
@@ -143,20 +150,25 @@ export default function PublishPanel() {
       {authError && <div className="form-error" style={{ whiteSpace: "pre-wrap" }}>{authError}</div>}
       {error && <div className="form-error">{error}</div>}
 
-      {progress && (publishing || progress.error) && (
-        <div className="sync-progress">
-          <div className="sync-progress-header">
-            <span className={`status-badge status-${progress.active ? "running" : progress.error ? "failed" : "completed"}`}>
-              {progress.active ? "Publishing" : progress.error ? "Failed" : "Done"}
-            </span>
-            {progress.startedAt != null && (
-              <span className="sync-progress-elapsed">{formatElapsed(now - progress.startedAt)}</span>
-            )}
+      {progress && (publishing || progress.error) && (() => {
+        const isUnpublish = /unpublish/i.test(progress.detail) || /delet/i.test(progress.detail);
+        const verb = isUnpublish ? "Unpublishing" : "Publishing";
+        const doneVerb = isUnpublish ? "Unpublished" : "Done";
+        return (
+          <div className="sync-progress">
+            <div className="sync-progress-header">
+              <span className={`status-badge status-${progress.active ? "running" : progress.error ? "failed" : "completed"}`}>
+                {progress.active ? verb : progress.error ? "Failed" : doneVerb}
+              </span>
+              {progress.startedAt != null && (
+                <span className="sync-progress-elapsed">{formatElapsed(now - progress.startedAt)}</span>
+              )}
+            </div>
+            <div className="sync-progress-status">{progress.detail || progress.step}</div>
+            {progress.error && <div className="form-error">{progress.error}</div>}
           </div>
-          <div className="sync-progress-status">{progress.detail || progress.step}</div>
-          {progress.error && <div className="form-error">{progress.error}</div>}
-        </div>
-      )}
+        );
+      })()}
 
       {publishedCollections.length > 0 && (
         <div className="preset-list">
