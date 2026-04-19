@@ -10,7 +10,8 @@
  */
 import type { BrowserWindow } from "electron";
 import { app } from "electron";
-import { autoUpdater } from "electron-updater";
+import pkg from "electron-updater";
+const { autoUpdater } = pkg;
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const RELEASES_PAGE = "https://github.com/vboctor/frozen-ink/releases/latest";
