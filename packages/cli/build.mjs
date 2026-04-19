@@ -10,7 +10,7 @@
  */
 import { build } from "esbuild";
 import { execSync } from "child_process";
-import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -56,6 +56,15 @@ async function bundleJS() {
     jsx: "automatic",
     loader: { ".tsx": "tsx", ".ts": "ts" },
   });
+
+  // Strip duplicate shebang — source has #!/usr/bin/env bun which esbuild
+  // preserves alongside the banner's #!/usr/bin/env node.  Only keep the
+  // banner shebang (node) so the npm bundle runs under Node.
+  const outPath = join(distDir, "fink.mjs");
+  let code = readFileSync(outPath, "utf-8");
+  code = code.replace(/^#!\/usr\/bin\/env bun\n/, "");
+  writeFileSync(outPath, code);
+  chmodSync(outPath, 0o755);
 
   console.log("✓ Bundled dist/fink.mjs");
 }
@@ -154,11 +163,21 @@ if (all || bundleOnly) {
   await bundleJS();
   generateDistPackageJson();
 
-  // Copy README for npm
+  // Copy README for npm, stripping maintainer-only sections
   const readmeSrc = join(__dirname, "README.md");
   if (existsSync(readmeSrc)) {
-    copyFileSync(readmeSrc, join(distDir, "README.md"));
-    console.log("✓ Copied README.md to dist/");
+    let readme = readFileSync(readmeSrc, "utf-8");
+    // Remove "Publishing to npm" section (maintainer docs, not for end users)
+    readme = readme.replace(/\n## Publishing to npm\n[\s\S]*?(?=\n## )/m, "");
+    // Collapse any resulting multiple blank lines
+    readme = readme.replace(/\n{3,}/g, "\n\n");
+    writeFileSync(join(distDir, "README.md"), readme);
+    console.log("✓ Copied README.md to dist/ (stripped maintainer sections)");
+  }
+  const licenseSrc = join(__dirname, "LICENSE");
+  if (existsSync(licenseSrc)) {
+    copyFileSync(licenseSrc, join(distDir, "LICENSE"));
+    console.log("✓ Copied LICENSE to dist/");
   }
 }
 

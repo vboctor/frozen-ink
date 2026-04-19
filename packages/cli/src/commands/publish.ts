@@ -586,6 +586,23 @@ export const publishCommand = new Command("publish")
   .option("--public", "Explicitly allow public access on initial publish (skip confirmation prompt)")
   .option("--tool-description <description>", "Tool description advertised to MCP clients")
   .option("--worker-only", "Deploy worker code only (skip D1/R2 data upload)")
+  .addHelpText("after", `
+Examples:
+  # Publish with password protection
+  fink publish my-repo --password secret123
+
+  # Update an existing deployment (reuses stored password)
+  fink publish my-repo
+
+  # Publish without password (public access)
+  fink publish my-repo --public
+
+  # Deploy only the worker code (skip data upload)
+  fink publish my-repo --worker-only
+
+  # Set a description for MCP clients
+  fink publish my-repo --password secret123 --tool-description "Team bug tracker"
+`)
   .action(async (collectionNameArg: string, opts: {
     password?: string;
     removePassword?: boolean;
@@ -653,9 +670,10 @@ export const publishCommand = new Command("publish")
       console.log(`MCP URL: ${result.mcpUrl}`);
       if (opts.password) {
         console.log(`\nMCP Setup (Claude Code):`);
-        console.log(`  claude mcp add frozenink --transport streamable-http \\`);
+        console.log(`  claude mcp add frozenink --http \\`);
         console.log(`    --url ${result.mcpUrl} \\`);
-        console.log(`    --header "Authorization: Bearer <password>"`);
+        console.log(`    --password "<password>"`);
+
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

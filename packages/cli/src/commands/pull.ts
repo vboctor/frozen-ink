@@ -46,6 +46,11 @@ export const pullCommand = new Command("pull")
   .description("Pull updates from a remote published site into a cloned collection")
   .argument("<collection>", "Collection name (must have crawler: remote)")
   .option("--dry-run", "Show sync plan without making changes")
+  .addHelpText("after", `
+Examples:
+  fink pull team-kb
+  fink pull team-kb --dry-run
+`)
   .action(async (collection: string, opts: { dryRun?: boolean }) => {
     ensureInitialized();
     const home = getFrozenInkHome();

@@ -32,6 +32,26 @@ export const addCommand = new Command("add")
   .option("--open-only", "Only sync open issues/PRs, delete closed ones (for github)")
   .option("--sync-entities <types>", "Comma-separated entity types to sync: issues,pages,users (for mantishub)")
   .option("--credentials <name>", "Use a named credential set from ~/.frozenink/credentials.yml")
+  .addHelpText("after", `
+Examples:
+  # Add a GitHub repository
+  fink add github --name my-repo --token ghp_xxx --repo owner/repo
+
+  # Add a GitHub repo with limits (open issues only, max 500)
+  fink add github --name my-repo --token ghp_xxx --repo owner/repo --open-only --max 500
+
+  # Add a local Obsidian vault
+  fink add obsidian --name my-notes --path ~/Documents/MyVault
+
+  # Add a local Git repository
+  fink add git --name my-code --path ~/projects/my-project
+
+  # Add a Git repo with commit diffs included
+  fink add git --name my-code --path ~/projects/my-project --include-diffs
+
+  # Add a MantisHub project
+  fink add mantishub --name bugs --url https://myproject.mantishub.io --token xxx --project-name MyProject
+`)
   .action(async (crawlerType: string, opts: Record<string, string>) => {
     ensureInitialized();
 

@@ -14,6 +14,17 @@ export const updateCommand = new Command("update")
   .option("--max-prs <count>", "Maximum pull requests to sync", parseInt)
   .option("--sync-comments [value]", "Sync comments (true/false)")
   .option("--sync-check-statuses [value]", "Sync check statuses (true/false)")
+  .addHelpText("after", `
+Examples:
+  # Switch to open issues/PRs only
+  fink update my-repo --open-only
+
+  # Set max entities to sync
+  fink update my-repo --max 500
+
+  # Enable comment syncing
+  fink update my-repo --sync-comments true
+`)
   .action(async (collection: string, opts: Record<string, unknown>) => {
     ensureInitialized();
 

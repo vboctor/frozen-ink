@@ -21,6 +21,11 @@ export const indexCommand = new Command("index")
     "Re-index collections (rebuild search index and links from existing markdown)",
   )
   .argument("<collection>", 'Collection name or "*" for all collections')
+  .addHelpText("after", `
+Examples:
+  fink index my-vault
+  fink index "*"
+`)
   .action(async (collection: string) => {
     ensureInitialized();
 

@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("claude-code adapter HTTP transport", () => {
-  it("invokes `claude mcp add --transport http` with the Bearer header", async () => {
+  it("invokes `claude mcp add --http --url` with --password", async () => {
     const { claudeCodeAdapter } = await import("../mcp/tools/claude-code");
 
     await claudeCodeAdapter.addConnection({
@@ -40,15 +40,15 @@ describe("claude-code adapter HTTP transport", () => {
       "mcp",
       "add",
       "fink-my-vault",
-      "--transport",
-      "http",
+      "--http",
+      "--url",
       "https://example.workers.dev/mcp",
-      "--header",
-      "Authorization: Bearer secret",
+      "--password",
+      "secret",
     ]);
   });
 
-  it("omits --header when no bearer token is provided", async () => {
+  it("omits --password when no bearer token is provided", async () => {
     const { claudeCodeAdapter } = await import("../mcp/tools/claude-code");
 
     await claudeCodeAdapter.addConnection({
@@ -64,8 +64,8 @@ describe("claude-code adapter HTTP transport", () => {
       "mcp",
       "add",
       "fink-public",
-      "--transport",
-      "http",
+      "--http",
+      "--url",
       "https://example.workers.dev/mcp",
     ]);
   });

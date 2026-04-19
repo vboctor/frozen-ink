@@ -177,6 +177,15 @@ const updateCommand = new Command("update")
 
 export const collectionsCommand = new Command("collections")
   .description("Manage collections")
+  .addHelpText("after", `
+Examples:
+  fink collections list
+  fink collections remove my-repo
+  fink collections enable my-repo
+  fink collections disable my-repo
+  fink collections rename old-name new-name
+  fink collections update my-repo --title "My Project" --description "Bug tracker"
+`)
   .addCommand(listCommand)
   .addCommand(removeCommand)
   .addCommand(enableCommand)

@@ -90,9 +90,9 @@ export const claudeCodeAdapter: McpToolAdapter = {
 
   async addConnection(spec: ToolConnectionSpec): Promise<void> {
     if (spec.transport === "http") {
-      const args = ["mcp", "add", spec.connectionName, "--transport", "http", spec.httpUrl];
+      const args = ["mcp", "add", spec.connectionName, "--http", "--url", spec.httpUrl];
       if (spec.bearerToken) {
-        args.push("--header", `Authorization: Bearer ${spec.bearerToken}`);
+        args.push("--password", spec.bearerToken);
       }
       if (spec.description) {
         args.push("--description", spec.description);

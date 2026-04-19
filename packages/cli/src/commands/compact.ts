@@ -28,6 +28,11 @@ function formatBytes(bytes: number): string {
 export const compactCommand = new Command("compact")
   .description("Vacuum the SQLite database to reclaim unused space")
   .argument("<collection>", 'Collection name or "*" for all collections')
+  .addHelpText("after", `
+Examples:
+  fink compact my-vault
+  fink compact "*"
+`)
   .action(async (collection: string) => {
     ensureInitialized();
 

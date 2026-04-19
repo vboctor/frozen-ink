@@ -918,6 +918,20 @@ export const serveCommand = new Command("serve")
   .option("--mcp-only", "Start only the MCP server (no REST API)")
   .option("--ui-only", "Start only the REST API server (no MCP)")
   .option("--port <port>", "Port for the REST API server")
+  .addHelpText("after", `
+Examples:
+  # Start API server + web UI for all collections
+  fink serve
+
+  # Serve a single collection
+  fink serve my-vault
+
+  # Start MCP server only (no web UI)
+  fink serve --mcp-only
+
+  # Start on a custom port
+  fink serve --port 8080
+`)
   .action(async (collectionName: string | undefined, opts: { mcpOnly?: boolean; uiOnly?: boolean; port?: string }) => {
     const home = getFrozenInkHome();
 

@@ -171,6 +171,12 @@ const statusSubCommand = new Command("status")
 
 export const daemonCommand = new Command("daemon")
   .description("Manage the background sync daemon")
+  .addHelpText("after", `
+Examples:
+  fink daemon start
+  fink daemon status
+  fink daemon stop
+`)
   .addCommand(startCommand)
   .addCommand(stopCommand)
   .addCommand(statusSubCommand);

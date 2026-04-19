@@ -275,6 +275,11 @@ export const generateCommand = new Command("generate")
     "Re-generate markdown files from existing entity data (re-renders without re-syncing; handles file renames)",
   )
   .argument("<collection>", 'Collection name or "*" for all collections')
+  .addHelpText("after", `
+Examples:
+  fink generate my-vault
+  fink generate "*"
+`)
   .action(async (collection: string) => {
     ensureInitialized();
 
