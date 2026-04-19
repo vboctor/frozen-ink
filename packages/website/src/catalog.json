@@ -5,6 +5,12 @@
       "url": "https://mantisbt.vboctor.workers.dev",
       "description": "A replica of the public Mantis Bug Tracker issue tracker synced from MantisHub. Useful for AI agents that need grounding in MantisBT core issues.",
       "crawler": "mantishub"
+    },
+    {
+      "title": "Sam Altman Blog",
+      "url": "https://sam-altman.vboctor.workers.dev",
+      "description": "Posts from Sam Altman's personal blog, synced from its Atom feed. Useful grounding for agents reasoning about OpenAI history, startup advice, and AI policy.",
+      "crawler": "rss"
     }
   ]
 }

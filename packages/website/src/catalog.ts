@@ -12,6 +12,7 @@ const CRAWLER_COLORS: Record<string, string> = {
   obsidian: "#7c3aed",
   git: "#e36209",
   mantishub: "#cf222e",
+  rss: "#ee802f",
 };
 
 const CONTRIBUTE_URL =
