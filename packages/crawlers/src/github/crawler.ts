@@ -16,25 +16,36 @@ import type {
   GitHubCheckRun,
   GitHubUserProfile,
 } from "./types";
+import { createRateLimitedFetch } from "./rate-limiter";
 
 const PER_PAGE = 100;
 const API_BASE = "https://api.github.com";
+const NUMBER_PAD_WIDTH = 5;
+
+/** Build the file-tree display title: "00001 Raw title". */
+function paddedDisplayTitle(number: number, rawTitle: string): string {
+  return `${String(number).padStart(NUMBER_PAD_WIDTH, "0")} ${rawTitle}`;
+}
 
 interface GitHubSyncCursor extends SyncCursor {
   updatedSince?: string;
   issuesPage?: number;
   pullsPage?: number;
   phase?: "issues" | "pulls" | "users" | "done";
-  /** External IDs collected during the current sync run (openOnly mode). */
+  /** External IDs collected during the current sync run. */
   seenIds?: string[];
-  /** Open IDs from the previous completed sync (openOnly mode). */
-  knownOpenIds?: string[];
   /** Running count of entities fetched per type in this sync run. */
   issuesFetched?: number;
   pullsFetched?: number;
   totalFetched?: number;
   /** User logins collected from issues/PRs to fetch in the users phase. */
   collectedUsers?: string[];
+  /**
+   * ETag cache for list endpoints (issues, pulls). A cache hit returns 304
+   * and costs nothing against the rate-limit budget, short-circuiting an
+   * entire empty sync.
+   */
+  etags?: Record<string, string>;
 }
 
 export class GitHubCrawler implements Crawler {
@@ -69,6 +80,9 @@ export class GitHubCrawler implements Crawler {
   private maxIssues?: number;
   private maxPullRequests?: number;
   private fetchFn: typeof fetch = globalThis.fetch;
+  private fetchOverridden = false;
+  private existingExternalIds?: Set<string>;
+  private etags: Record<string, string> = {};
 
   async initialize(
     config: Record<string, unknown>,
@@ -87,10 +101,20 @@ export class GitHubCrawler implements Crawler {
     this.maxEntities = typeof cfg.maxEntities === "number" ? cfg.maxEntities : undefined;
     this.maxIssues = typeof cfg.maxIssues === "number" ? cfg.maxIssues : undefined;
     this.maxPullRequests = typeof cfg.maxPullRequests === "number" ? cfg.maxPullRequests : undefined;
+    if (!this.fetchOverridden) {
+      this.fetchFn = createRateLimitedFetch(globalThis.fetch, this.token, {
+        debug: process.env.GITHUB_RATE_LIMIT_DEBUG === "1",
+      });
+    }
   }
 
   setFetch(fn: typeof fetch): void {
     this.fetchFn = fn;
+    this.fetchOverridden = true;
+  }
+
+  setExistingExternalIds(ids: Set<string>): void {
+    this.existingExternalIds = ids;
   }
 
   async sync(cursor: SyncCursor | null): Promise<SyncResult> {
@@ -107,6 +131,9 @@ export class GitHubCrawler implements Crawler {
     let pullsFetched = c.pullsFetched ?? 0;
     let totalFetched = c.totalFetched ?? 0;
     const collectedUsers = new Set<string>(c.collectedUsers ?? []);
+    // Seed the ETag cache from the cursor so conditional requests survive
+    // across sync runs.
+    this.etags = { ...(c.etags ?? {}) };
 
     // Check if global limit already reached from previous pages
     if (this.maxEntities && totalFetched >= this.maxEntities) {
@@ -121,7 +148,7 @@ export class GitHubCrawler implements Crawler {
       }
 
       const page = c.issuesPage ?? 1;
-      const since = this.openOnly ? undefined : c.updatedSince;
+      const since = c.updatedSince;
       const state = this.openOnly ? "open" : "all";
       const items = await this.fetchIssues(page, since, state);
 
@@ -163,7 +190,7 @@ export class GitHubCrawler implements Crawler {
       if (!reachedTypeMax && items.length === PER_PAGE) {
         return {
           entities,
-          nextCursor: { ...c, phase: "issues", issuesPage: page + 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+          nextCursor: { ...c, phase: "issues", issuesPage: page + 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers], etags: { ...this.etags } },
           hasMore: true,
           deletedExternalIds: [],
         };
@@ -179,7 +206,7 @@ export class GitHubCrawler implements Crawler {
       }
 
       const page = c.pullsPage ?? 1;
-      const since = this.openOnly ? undefined : c.updatedSince;
+      const since = c.updatedSince;
       const state = this.openOnly ? "open" : "all";
       const items = await this.fetchPullRequests(page, since, state);
 
@@ -218,7 +245,7 @@ export class GitHubCrawler implements Crawler {
       if (!reachedTypeMax && items.length === PER_PAGE) {
         return {
           entities,
-          nextCursor: { ...c, phase: "pulls", pullsPage: page + 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+          nextCursor: { ...c, phase: "pulls", pullsPage: page + 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers], etags: { ...this.etags } },
           hasMore: true,
           deletedExternalIds: [],
         };
@@ -232,6 +259,9 @@ export class GitHubCrawler implements Crawler {
       const userLogins = c.collectedUsers ?? [];
       for (const login of userLogins) {
         if (this.maxEntities && totalFetched >= this.maxEntities) break;
+        // Skip users already in the DB. Profiles rarely change meaningfully
+        // between syncs and each fetch is a separate API call.
+        if (this.existingExternalIds?.has(`user-${login}`)) continue;
         const profile = await this.fetchUserProfile(login);
         if (profile) {
           entities.push(this.mapUserProfile(profile));
@@ -246,7 +276,7 @@ export class GitHubCrawler implements Crawler {
     if (phase === "issues" && !this.syncIssues && this.syncPullRequests) {
       return {
         entities: [],
-        nextCursor: { ...c, phase: "pulls", pullsPage: 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+        nextCursor: { ...c, phase: "pulls", pullsPage: 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers], etags: { ...this.etags } },
         hasMore: true,
         deletedExternalIds: [],
       };
@@ -257,7 +287,7 @@ export class GitHubCrawler implements Crawler {
       if (collectedUsers.size > 0) {
         return {
           entities: [],
-          nextCursor: { ...c, phase: "users", seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+          nextCursor: { ...c, phase: "users", seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers], etags: { ...this.etags } },
           hasMore: true,
           deletedExternalIds: [],
         };
@@ -287,7 +317,7 @@ export class GitHubCrawler implements Crawler {
     if (this.syncPullRequests) {
       return {
         entities,
-        nextCursor: { ...c, phase: "pulls", pullsPage: 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+        nextCursor: { ...c, phase: "pulls", pullsPage: 1, seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers], etags: { ...this.etags } },
         hasMore: true,
         deletedExternalIds: [],
       };
@@ -295,7 +325,7 @@ export class GitHubCrawler implements Crawler {
     if (collectedUsers.size > 0) {
       return {
         entities,
-        nextCursor: { ...c, phase: "users", seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+        nextCursor: { ...c, phase: "users", seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers], etags: { ...this.etags } },
         hasMore: true,
         deletedExternalIds: [],
       };
@@ -316,7 +346,7 @@ export class GitHubCrawler implements Crawler {
     if (collectedUsers.size > 0) {
       return {
         entities,
-        nextCursor: { ...c, phase: "users", seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers] },
+        nextCursor: { ...c, phase: "users", seenIds, issuesFetched, pullsFetched, totalFetched, collectedUsers: [...collectedUsers], etags: { ...this.etags } },
         hasMore: true,
         deletedExternalIds: [],
       };
@@ -325,9 +355,9 @@ export class GitHubCrawler implements Crawler {
   }
 
   /**
-   * Build the final SyncResult after all phases have completed.
-   * In openOnly mode, computes deletedExternalIds by comparing the current
-   * seen set against the previously known open set.
+   * Build the final SyncResult after all phases have completed. Deletion
+   * tracking has been dropped so both full and openOnly modes can use the
+   * incremental `since` filter for speed.
    */
   private finalize(
     cursor: GitHubSyncCursor,
@@ -335,24 +365,18 @@ export class GitHubCrawler implements Crawler {
     seenIds: string[],
     _collectedUsers: Set<string>,
   ): SyncResult {
+    void seenIds;
     const latestUpdated = this.findLatestUpdated(entities);
-    let deletedExternalIds: string[] = [];
-
-    if (this.openOnly) {
-      const seenSet = new Set(seenIds);
-      const previousKnown = cursor.knownOpenIds ?? [];
-      deletedExternalIds = previousKnown.filter((id) => !seenSet.has(id));
-    }
 
     return {
       entities,
       nextCursor: {
         phase: "done",
-        updatedSince: this.openOnly ? undefined : (latestUpdated ?? cursor.updatedSince),
-        knownOpenIds: this.openOnly ? seenIds : undefined,
+        updatedSince: latestUpdated ?? cursor.updatedSince,
+        etags: { ...this.etags },
       },
       hasMore: false,
-      deletedExternalIds,
+      deletedExternalIds: [],
     };
   }
 
@@ -393,14 +417,8 @@ export class GitHubCrawler implements Crawler {
     });
     if (since) params.set("since", since);
 
-    const res = await this.fetchFn(
-      `${API_BASE}/repos/${this.owner}/${this.repo}/issues?${params}`,
-      { headers: this.buildHeaders(this.token) },
-    );
-    if (!res.ok) {
-      throw new Error(`GitHub API error ${res.status}: ${await res.text()}`);
-    }
-    return (await res.json()) as GitHubIssue[];
+    const url = `${API_BASE}/repos/${this.owner}/${this.repo}/issues?${params}`;
+    return (await this.fetchListWithEtag<GitHubIssue[]>(url)) ?? [];
   }
 
   private async fetchPullRequests(
@@ -417,14 +435,28 @@ export class GitHubCrawler implements Crawler {
     });
     if (since) params.set("since", since);
 
-    const res = await this.fetchFn(
-      `${API_BASE}/repos/${this.owner}/${this.repo}/pulls?${params}`,
-      { headers: this.buildHeaders(this.token) },
-    );
+    const url = `${API_BASE}/repos/${this.owner}/${this.repo}/pulls?${params}`;
+    return (await this.fetchListWithEtag<GitHubPullRequest[]>(url)) ?? [];
+  }
+
+  /**
+   * GET a list endpoint with ETag caching. Returns null on 304 (caller
+   * treats as empty page — cursor advances past already-synced items).
+   * 304s don't count against the rate-limit budget.
+   */
+  private async fetchListWithEtag<T>(url: string): Promise<T | null> {
+    const headers = this.buildHeaders(this.token);
+    const cached = this.etags[url];
+    if (cached) headers["If-None-Match"] = cached;
+
+    const res = await this.fetchFn(url, { headers });
+    if (res.status === 304) return null;
     if (!res.ok) {
       throw new Error(`GitHub API error ${res.status}: ${await res.text()}`);
     }
-    return (await res.json()) as GitHubPullRequest[];
+    const newEtag = res.headers.get("etag");
+    if (newEtag) this.etags[url] = newEtag;
+    return (await res.json()) as T;
   }
 
   private async fetchComments(issueNumber: number): Promise<GitHubComment[]> {
@@ -643,10 +675,13 @@ export class GitHubCrawler implements Crawler {
     return {
       externalId: `issue-${issue.number}`,
       entityType: "issue",
-      title: issue.title,
+      // entity.title drives the file-tree display. The raw GitHub title lives
+      // in data.title for rendering the content heading and slug.
+      title: paddedDisplayTitle(issue.number, issue.title),
       url: issue.html_url,
       tags,
       data: {
+        title: issue.title,
         number: issue.number,
         body: issue.body,
         state: issue.state,
@@ -771,10 +806,11 @@ export class GitHubCrawler implements Crawler {
     return {
       externalId: `pr-${pr.number}`,
       entityType: "pull_request",
-      title: pr.title,
+      title: paddedDisplayTitle(pr.number, pr.title),
       url: pr.html_url,
       tags,
       data: {
+        title: pr.title,
         number: pr.number,
         body: pr.body,
         state: pr.state,
