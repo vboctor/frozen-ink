@@ -44,10 +44,11 @@ function preprocessMarkdown(raw: string, collection: string, filePath?: string):
       `![${path}](/api/attachments/${encodeURIComponent(collection)}/${path})`,
   );
 
-  // Rewrite relative attachment paths (../../attachments/...) to API URLs
+  // Rewrite relative attachment paths (../attachments/... or ../../attachments/...) to API URLs
   // so they resolve in the web viewer where files aren't on the local filesystem.
+  // Root-level vault notes produce ../attachments/...; nested notes produce ../../attachments/...
   content = content.replace(
-    /!\[([^\]]*)\]\(\.\.\/\.\.\/attachments\/([^)]+)\)/g,
+    /!\[([^\]]*)\]\((?:\.\.\/)+attachments\/([^)]+)\)/g,
     (_match, alt: string, path: string) =>
       `![${alt}](/api/attachments/${encodeURIComponent(collection)}/${path})`,
   );

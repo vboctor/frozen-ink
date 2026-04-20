@@ -226,7 +226,9 @@ export class ObsidianCrawler implements Crawler {
     const imageRefMap: Record<string, string> = {};
 
     for (const ref of imageRefs) {
-      const attFile = attachmentLookup.get(ref);
+      // Try exact ref, then basename — handles paths like ../attachments/assets/img.png
+      // that embed the output layout rather than the vault-relative path.
+      const attFile = attachmentLookup.get(ref) ?? attachmentLookup.get(basename(ref));
       if (!attFile) continue;
       imageRefMap[ref] = attFile.relativePath;
       if (seenPaths.has(attFile.relativePath)) continue;
