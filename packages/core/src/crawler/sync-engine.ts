@@ -566,6 +566,7 @@ export class SyncEngine {
 
   /** Check if a filename has an allowed image extension. */
   private isAllowedAsset(filename: string): boolean {
+    if (this.allowedExtensions.size === 0) return true;
     const dot = filename.lastIndexOf(".");
     if (dot === -1) return false;
     return this.allowedExtensions.has(filename.slice(dot).toLowerCase());
