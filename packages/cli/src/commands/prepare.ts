@@ -90,6 +90,7 @@ async function writeFolderConfigFiles(
   storage: LocalStorageBackend,
   basePath: string,
   collectionHide: string[] = [],
+  sourceConfigs: Record<string, FolderConfig> = {},
 ): Promise<boolean> {
   const configs = themeEngine.getFolderConfigs(crawlerType);
   let wrote = false;
@@ -116,13 +117,33 @@ async function writeFolderConfigFiles(
     }
   }
 
-  // Write root content.yml merging theme rootConfig with collection-level hide patterns
+  // Write source-derived subdirectory configs (e.g. from vault .folder.yml files).
+  // Keys are content-relative paths; "" is handled below as root.
+  for (const [relPath, srcConfig] of Object.entries(sourceConfigs)) {
+    if (relPath === "") continue; // root handled below
+    const folderName = relPath.split("/").pop()!;
+    const ymlPath = `${basePath}/${relPath}/${folderName}.yml`;
+    const ymlContent = serializeFolderConfig(srcConfig);
+    try {
+      const existing = await storage.read(ymlPath);
+      if (existing === ymlContent) continue;
+    } catch { /* file doesn't exist yet */ }
+    await storage.write(ymlPath, ymlContent);
+    wrote = true;
+  }
+
+  // Write root content.yml merging theme rootConfig, source root config, and collection-level hide patterns.
   const themeRootConfig = themeEngine.getRootConfig(crawlerType);
+  const sourceRootConfig = sourceConfigs[""] ?? {};
   const mergedHide = [
     ...(themeRootConfig.hide ?? []),
     ...collectionHide.filter((p) => !(themeRootConfig.hide ?? []).includes(p)),
   ];
-  const rootConfig = { ...themeRootConfig, ...(mergedHide.length > 0 ? { hide: mergedHide } : {}) };
+  const rootConfig = {
+    ...themeRootConfig,
+    ...sourceRootConfig,
+    ...(mergedHide.length > 0 ? { hide: mergedHide } : {}),
+  };
   const hasRootConfig = Object.keys(rootConfig).length > 0;
   if (hasRootConfig) {
     const rootYmlContent = serializeFolderConfig(rootConfig);
@@ -321,9 +342,12 @@ export async function prepareCollection(
     meta.close();
   }
 
-  // Step 1: Write folder yml files and root content.yml (incorporating collection-level hide)
+  // Step 1: Write folder yml files and root content.yml (incorporating collection-level hide
+  // and any source-directory .folder.yml files, e.g. from an Obsidian vault).
   const collectionHide = col.hide ?? [];
-  const ymlUpdated = await writeFolderConfigFiles(themeEngine, crawlerType, storage, basePath, collectionHide);
+  const credentialsObj = typeof col.credentials === "object" && col.credentials !== null ? col.credentials as Record<string, unknown> : {};
+  const sourceConfigs = themeEngine.getSourceFolderConfigs(crawlerType, col.config ?? {}, credentialsObj);
+  const ymlUpdated = await writeFolderConfigFiles(themeEngine, crawlerType, storage, basePath, collectionHide, sourceConfigs);
   if (ymlUpdated) log(`  Folder config files updated`);
 
   // Step 1b: Always write AGENTS.md and CLAUDE.md (at collection root, outside content/)

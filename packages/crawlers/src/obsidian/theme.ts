@@ -1,4 +1,6 @@
-import type { Theme, ThemeRenderContext } from "@frozenink/core/theme";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { FolderConfig, Theme, ThemeRenderContext } from "@frozenink/core/theme";
 import { wikilink, embed, basename } from "@frozenink/core/theme";
 
 export class ObsidianTheme implements Theme {
@@ -50,6 +52,59 @@ export class ObsidianTheme implements Theme {
 
   labelFilesWithTitle() {
     return false;
+  }
+
+  getSourceFolderConfigs(
+    config: Record<string, unknown>,
+    credentials: Record<string, unknown>,
+  ): Record<string, FolderConfig> {
+    const vaultPath = (credentials.vaultPath ?? config.vaultPath) as string | undefined;
+    if (!vaultPath || !existsSync(vaultPath)) return {};
+    return this.readVaultFolderConfigs(vaultPath, vaultPath, "");
+  }
+
+  private readVaultFolderConfigs(
+    vaultPath: string,
+    dirPath: string,
+    relPath: string,
+  ): Record<string, FolderConfig> {
+    const result: Record<string, FolderConfig> = {};
+
+    const dotyml = join(dirPath, ".folder.yml");
+    if (existsSync(dotyml)) {
+      const cfg = this.parseFolderYml(dotyml);
+      if (Object.keys(cfg).length > 0) result[relPath] = cfg;
+    }
+
+    let entries;
+    try { entries = readdirSync(dirPath, { withFileTypes: true }); } catch { return result; }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith(".")) continue;
+      const childRel = relPath ? `${relPath}/${entry.name}` : entry.name;
+      const childAbs = join(dirPath, entry.name);
+      Object.assign(result, this.readVaultFolderConfigs(vaultPath, childAbs, childRel));
+    }
+
+    return result;
+  }
+
+  private parseFolderYml(ymlPath: string): FolderConfig {
+    try {
+      const cfg: FolderConfig = {};
+      for (const line of readFileSync(ymlPath, "utf-8").split("\n")) {
+        const m = line.match(/^(\w+):\s*(.+)$/);
+        if (!m) continue;
+        const [, key, val] = m;
+        if (key === "sort") cfg.sort = val.trim() === "DESC" ? "DESC" : "ASC";
+        if (key === "visible") cfg.visible = val.trim() !== "false";
+        if (key === "showCount") cfg.showCount = val.trim() === "true";
+        if (key === "expanded") cfg.expanded = val.trim() !== "false";
+      }
+      return cfg;
+    } catch {
+      return {};
+    }
   }
 
   folderConfigs() {

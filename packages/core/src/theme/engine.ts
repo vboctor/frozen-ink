@@ -49,6 +49,16 @@ export class ThemeEngine {
     return theme?.folderConfigs?.() ?? {};
   }
 
+  /** Read folder configs from the source vault/directory (theme-specific). */
+  getSourceFolderConfigs(
+    crawlerType: string,
+    config: Record<string, unknown>,
+    credentials: Record<string, unknown>,
+  ): Record<string, FolderConfig> {
+    const theme = this.themes.get(crawlerType);
+    return theme?.getSourceFolderConfigs?.(config, credentials) ?? {};
+  }
+
   /** Return whether entity titles should label file tree nodes for the given crawler type. */
   labelFilesWithTitle(crawlerType: string): boolean {
     const theme = this.themes.get(crawlerType);
