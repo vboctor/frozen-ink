@@ -31,6 +31,14 @@
       "crawler": "mantishub",
       "entityCount": 4120,
       "sizeInMB": 115
+    },
+    {
+      "title": "Victor Boctor's Blog",
+      "url": "https://victor-blog.vboctor.workers.dev",
+      "description": "A sample blog published from a folder within an Obsidian vault, demonstrating how a sub-vault can be synced and published as its own collection.",
+      "crawler": "obsidian",
+      "entityCount": 2,
+      "sizeInMB": 1
     }
   ]
 }
