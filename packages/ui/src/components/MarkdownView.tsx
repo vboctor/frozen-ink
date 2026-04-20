@@ -52,6 +52,19 @@ function preprocessMarkdown(raw: string, collection: string, filePath?: string):
       `![${alt}](/api/attachments/${encodeURIComponent(collection)}/${path})`,
   );
 
+  // Rewrite MantisBT-style relative asset paths: ![alt](assets/filename)
+  // The file is stored at content/{dir}/assets/{filename} relative to the collection root.
+  if (filePath) {
+    const dir = filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/")) : "";
+    content = content.replace(
+      /!\[([^\]]*)\]\(assets\/([^)]+)\)/g,
+      (_match, alt: string, filename: string) => {
+        const storagePath = dir ? `content/${dir}/assets/${filename}` : `content/assets/${filename}`;
+        return `![${alt}](/api/collections/${encodeURIComponent(collection)}/file/${storagePath})`;
+      },
+    );
+  }
+
   // Replace Obsidian wikilinks: [[target|label]] and [[target]]
   // (backward compatibility for Obsidian vault content)
   content = content.replace(

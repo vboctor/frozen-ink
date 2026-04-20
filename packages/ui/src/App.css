@@ -2214,6 +2214,60 @@ body {
   font-size: 12px;
 }
 
+.mt-attachment-image-wrap {
+  margin: 8px 0;
+}
+.mt-attachment-image {
+  max-width: 100%;
+  max-height: 480px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.mt-attachment-text > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mt-attachment-text > summary::before {
+  content: "▶";
+  font-size: 10px;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.mt-attachment-text[open] > summary::before {
+  transform: rotate(90deg);
+}
+.mt-attachment-content {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.mt-attachment-unavailable {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.mt-attachment-download-link {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.8;
+  margin-left: 4px;
+}
+
 /* Relationships */
 .mt-relationship {
   display: flex;

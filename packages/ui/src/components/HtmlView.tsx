@@ -31,6 +31,24 @@ export default function HtmlView({ html, onWikilinkClick }: HtmlViewProps) {
     for (const block of codeBlocks) {
       hljs.highlightElement(block as HTMLElement);
     }
+
+    // Lazy-load text attachment content when a <details> is toggled open.
+    // (Scripts injected via dangerouslySetInnerHTML don't execute, so we handle it here.)
+    const details = containerRef.current.querySelectorAll<HTMLDetailsElement>(".mt-attachment-text");
+    for (const el of details) {
+      el.addEventListener("toggle", function onToggle() {
+        if (!el.open) return;
+        const pre = el.querySelector<HTMLElement>("pre");
+        if (!pre || pre.dataset.loaded) return;
+        pre.dataset.loaded = "1";
+        const url = el.dataset.url;
+        if (!url) return;
+        fetch(url)
+          .then((r) => r.text())
+          .then((t) => { pre.textContent = t; })
+          .catch(() => { pre.textContent = "(failed to load)"; });
+      });
+    }
   }, [html]);
 
   const handleClick = useCallback(
