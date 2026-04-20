@@ -5,6 +5,8 @@ interface CatalogEntry {
   url: string;
   description: string;
   crawler: string;
+  entityCount?: number;
+  sizeInMB?: number;
 }
 
 const CRAWLER_COLORS: Record<string, string> = {
@@ -34,6 +36,18 @@ const collections: CatalogEntry[] = [
   a.title.localeCompare(b.title, "en", { sensitivity: "base" })
 );
 
+function formatEntityCount(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
+function renderStats(c: CatalogEntry): string {
+  if (c.entityCount === undefined && c.sizeInMB === undefined) return "";
+  const parts: string[] = [];
+  if (c.entityCount !== undefined) parts.push(`${formatEntityCount(c.entityCount)} entities`);
+  if (c.sizeInMB !== undefined) parts.push(`${c.sizeInMB} MB`);
+  return `<div class="catalog-tile-stats">${parts.join(" &bull; ")}</div>`;
+}
+
 function renderTile(c: CatalogEntry): string {
   const color = CRAWLER_COLORS[c.crawler] ?? "#555b6e";
   return `<a class="catalog-tile" href="${escapeHtml(c.url)}" target="_blank" rel="noopener" data-title="${escapeHtml(c.title.toLowerCase())}" data-description="${escapeHtml(c.description.toLowerCase())}">
@@ -45,6 +59,7 @@ function renderTile(c: CatalogEntry): string {
       <svg class="catalog-tile-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
     </h3>
     <p class="catalog-tile-desc">${escapeHtml(c.description)}</p>
+    ${renderStats(c)}
   </a>`;
 }
 
@@ -259,6 +274,10 @@ export const catalogPage = `<!DOCTYPE html>
     .catalog-tile-desc {
       font-size: 14px; color: var(--text-secondary);
       line-height: 1.6; margin: 0; flex: 1;
+    }
+    .catalog-tile-stats {
+      font-size: 12px; color: var(--text-muted);
+      margin-top: 2px;
     }
     .catalog-empty {
       padding: 40px 20px; text-align: center;

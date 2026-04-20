@@ -4,19 +4,33 @@
       "title": "MantisBT Issue Tracker",
       "url": "https://mantisbt.vboctor.workers.dev",
       "description": "A replica of the public Mantis Bug Tracker issue tracker synced from MantisHub. Useful for AI agents that need grounding in MantisBT core issues.",
-      "crawler": "mantishub"
+      "crawler": "mantishub",
+      "entityCount": 24170,
+      "sizeInMB": 687
     },
     {
       "title": "Sam Altman Blog",
       "url": "https://sam-altman.vboctor.workers.dev",
       "description": "Posts from Sam Altman's personal blog, synced from its Atom feed. Useful grounding for agents reasoning about OpenAI history, startup advice, and AI policy.",
-      "crawler": "rss"
+      "crawler": "rss",
+      "entityCount": 30,
+      "sizeInMB": 8
     },
     {
       "title": "Turso / libSQL",
       "url": "https://turso-database-libsql.vboctor.workers.dev",
       "description": "Issues and pull requests from the tursodatabase/libsql repository, synced from GitHub. Useful grounding for agents working with libSQL, Turso, or SQLite-based edge databases.",
-      "crawler": "github"
+      "crawler": "github",
+      "entityCount": 2512,
+      "sizeInMB": 35
+    },
+    {
+      "title": "Xdebug Bug Tracker",
+      "url": "https://xdebug.vboctor.workers.dev",
+      "description": "A replica of the official Xdebug bug tracker synced from its public MantisBT instance. Useful for AI agents that need grounding in Xdebug issues and PHP debugging topics.",
+      "crawler": "mantishub",
+      "entityCount": 4120,
+      "sizeInMB": 115
     }
   ]
 }
