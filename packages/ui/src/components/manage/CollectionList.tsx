@@ -139,8 +139,13 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
 
       {syncing && <SyncProgress onComplete={handleSyncComplete} />}
 
-      <div className="collection-cards">
-        {collections.map((col) => {
+      {(() => {
+        const byName = (a: Collection, b: Collection) =>
+          (a.title || a.name).localeCompare(b.title || b.name);
+        const enabled = collections.filter((c) => c.enabled).sort(byName);
+        const disabled = collections.filter((c) => !c.enabled).sort(byName);
+
+        const renderCard = (col: Collection) => {
           const status = statuses[col.name];
           return (
             <div
@@ -179,13 +184,34 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
               </div>
             </div>
           );
-        })}
-        {collections.length === 0 && (
-          <div className="empty-state-manage">
-            <p>No collections yet. Add your first collection to get started.</p>
-          </div>
-        )}
-      </div>
+        };
+
+        if (collections.length === 0) {
+          return (
+            <div className="collection-cards">
+              <div className="empty-state-manage">
+                <p>No collections yet. Add your first collection to get started.</p>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <>
+            {enabled.length > 0 && (
+              <div className="collection-cards">{enabled.map(renderCard)}</div>
+            )}
+            {disabled.length > 0 && (
+              <>
+                <h2 className="collection-section-heading">Disabled</h2>
+                <div className="collection-cards collection-cards-disabled">
+                  {disabled.map(renderCard)}
+                </div>
+              </>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }

@@ -3118,6 +3118,19 @@ select.form-input { cursor: pointer; }
   flex-direction: column;
   gap: 10px;
 }
+.collection-section-heading {
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted, #888);
+  margin: 24px 0 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.collection-cards-disabled .collection-card {
+  opacity: 0.65;
+}
 .collection-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
