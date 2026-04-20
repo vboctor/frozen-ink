@@ -89,6 +89,17 @@ export interface Theme {
    */
   rootConfig?(): FolderConfig;
   /**
+   * Optional: read folder configs from the source vault/directory at prepare time.
+   * Called with the collection's config and credentials so the theme can locate
+   * the source directory. Returns a map of content-relative directory paths to
+   * FolderConfig; use "" (empty string) for the content root.
+   * These configs are merged on top of the static rootConfig()/folderConfigs() values.
+   */
+  getSourceFolderConfigs?(
+    config: Record<string, unknown>,
+    credentials: Record<string, unknown>,
+  ): Record<string, FolderConfig>;
+  /**
    * Optional: whether to use the entity title as the display label in the
    * file tree. Defaults to true. Set to false for crawlers where the filename
    * is the primary identifier (e.g. Obsidian vaults) so the sidebar always
