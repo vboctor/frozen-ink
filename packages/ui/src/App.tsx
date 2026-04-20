@@ -545,7 +545,7 @@ export default function App() {
         setFileNotFound(true);
       })
       .finally(() => setLoading(false));
-  }, [viewMode, selectedCollection, selectedFile]);
+  }, [viewMode, selectedCollection, selectedFile, refreshKey]);
 
   // Fetch backlinks for the current file (only when links panel is open)
   useEffect(() => {
@@ -618,7 +618,7 @@ export default function App() {
         setHtmlContent(null);
         setHtmlLoading(false);
       });
-  }, [viewMode, htmlAvailable, selectedCollection, selectedFile]);
+  }, [viewMode, htmlAvailable, selectedCollection, selectedFile, refreshKey]);
 
   // Core navigation: open a file, optionally in a new tab.
   // Uses functional state updates throughout to avoid stale closure issues.
