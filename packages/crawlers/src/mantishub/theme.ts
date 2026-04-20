@@ -24,6 +24,38 @@ function assetRef(storagePath: string | undefined): string {
   return `assets/${filename}`;
 }
 
+const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"]);
+
+function isImageFile(filename: string): boolean {
+  const dot = filename.lastIndexOf(".");
+  return dot !== -1 && IMAGE_EXTS.has(filename.slice(dot).toLowerCase());
+}
+
+/**
+ * Render a single attachment in HTML.
+ * Images: inline <img>. Text files: lazy-loading <details> block matching MantisBT UI.
+ * If not downloaded locally, shows a link to download directly from the source.
+ */
+function renderAttachmentHtml(
+  att: { filename: string; storagePath?: string; size: number },
+  collectionName: string,
+  fallbackUrl?: string,
+): string {
+  const sizeKb = Math.round(att.size / 1024) || "<1";
+  if (!att.storagePath) {
+    const link = fallbackUrl
+      ? ` <a class="mt-attachment-download-link" href="${esc(fallbackUrl)}" target="_blank" rel="noopener noreferrer">↓ download</a>`
+      : "";
+    return `<div class="mt-attachment-item mt-attachment-unavailable">${esc(att.filename)} <span class="mt-attachment-size">(${sizeKb} KB — not downloaded${link})</span></div>`;
+  }
+  const fileUrl = `/api/collections/${encodeURIComponent(collectionName)}/file/${att.storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  if (isImageFile(att.filename)) {
+    return `<div class="mt-attachment-item mt-attachment-image-wrap"><img src="${fileUrl}" alt="${esc(att.filename)}" class="mt-attachment-image" loading="lazy"></div>`;
+  }
+  // Text / binary: collapsible block with lazy content load
+  return `<details class="mt-attachment-item mt-attachment-text" data-url="${fileUrl}"><summary>${esc(att.filename)} <span class="mt-attachment-size">(${sizeKb} KB)</span></summary><pre class="mt-attachment-content">Loading…</pre></details>`;
+}
+
 /** Returns the wikilink path (no extension) for an issue by id and summary. */
 function issueFilePath(id: number, summary: string, projectName?: string): string {
   const slug = slugify(summary);
@@ -473,7 +505,7 @@ export class MantisHubTheme implements Theme {
     return {
       issues: { sort: "DESC" as const, showCount: true },
       pages: { showCount: true },
-      users: { showCount: true },
+      users: { showCount: true, expanded: false },
       assets: { visible: false },
     };
   }
@@ -632,13 +664,14 @@ export class MantisHubTheme implements Theme {
     }
 
     // Issue-level attachments
-    const files = d.attachments as Array<{ filename: string; storagePath?: string; size: number }> | undefined;
+    const issueBaseUrl = context.entity.url ? new URL(context.entity.url).origin : "";
+    const files = d.attachments as Array<{ id?: number; filename: string; storagePath?: string; size: number }> | undefined;
     if (files?.length) {
       parts.push(`<h3 class="mt-subsection-title">Attachments</h3>`);
       parts.push(`<div class="mt-attachments">`);
       for (const f of files) {
-        const sizeKb = Math.round(f.size / 1024);
-        parts.push(`<div class="mt-attachment-item">${esc(f.filename)} <span class="mt-attachment-size">(${sizeKb} KB)</span></div>`);
+        const fallback = (issueBaseUrl && f.id) ? `${issueBaseUrl}/file_download.php?file_id=${f.id}&type=bug` : undefined;
+        parts.push(renderAttachmentHtml(f, context.collectionName, fallback));
       }
       parts.push(`</div>`);
     }
@@ -675,7 +708,7 @@ export class MantisHubTheme implements Theme {
       text: string;
       view_state?: { name: string };
       created_at: string;
-      attachments?: Array<{ filename: string; storagePath?: string; size: number }>;
+      attachments?: Array<{ id?: number; filename: string; storagePath?: string; size: number }>;
     }> | undefined;
 
     const history = (d.history ?? []) as Array<{
@@ -731,8 +764,8 @@ export class MantisHubTheme implements Theme {
           if (note.attachments?.length) {
             parts.push(`<div class="mt-note-attachments">`);
             for (const att of note.attachments) {
-              const sizeKb = Math.round(att.size / 1024);
-              parts.push(`<div class="mt-attachment-item">${esc(att.filename)} <span class="mt-attachment-size">(${sizeKb} KB)</span></div>`);
+              const fallback = (issueBaseUrl && att.id) ? `${issueBaseUrl}/file_download.php?file_id=${att.id}&type=bugnote` : undefined;
+              parts.push(renderAttachmentHtml(att, context.collectionName, fallback));
             }
             parts.push(`</div>`);
           }

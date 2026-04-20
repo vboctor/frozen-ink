@@ -73,6 +73,9 @@ const MIME_TYPES: Record<string, string> = {
   ".json": "application/json",
   ".md": "text/markdown",
   ".txt": "text/plain",
+  ".log": "text/plain",
+  ".php": "text/plain",
+  ".csv": "text/plain",
   ".html": "text/html",
   ".css": "text/css",
   ".js": "application/javascript",
@@ -863,6 +866,34 @@ export function createApiServer(
 
         const content = readFileSync(fullPath);
         return new Response(content, {
+          status: 200,
+          headers: { "Content-Type": getMimeType(fullPath) },
+        });
+      }
+
+      // GET /api/collections/:name/file/*storagePath — serve a stored asset by its
+      // storagePath (relative to the collection root, e.g. content/xdebug/issues/assets/981-foo.png).
+      // Used by the HTML theme to render inline images and lazy-load text attachments.
+      const collectionFileMatch = path.match(
+        /^\/api\/collections\/([^/]+)\/file\/(.+)$/,
+      );
+      if (collectionFileMatch && req.method === "GET") {
+        const colName = decodeURIComponent(collectionFileMatch[1]);
+        const filePath = decodeURIComponent(collectionFileMatch[2]);
+        const collectionDir = join(home, "collections", colName);
+        const fullPath = join(collectionDir, filePath);
+
+        // Prevent path traversal
+        if (!join(fullPath, "/").startsWith(join(collectionDir, "/"))) {
+          return errorResponse("Forbidden", 403);
+        }
+
+        if (!existsSync(fullPath)) {
+          return errorResponse("File not found", 404);
+        }
+
+        const fileContent = readFileSync(fullPath);
+        return new Response(fileContent, {
           status: 200,
           headers: { "Content-Type": getMimeType(fullPath) },
         });
