@@ -1,6 +1,6 @@
 {
   "name": "@frozenink/desktop",
-  "version": "0.1.0",
+  "version": "0.10.1",
   "productName": "Frozen Ink",
   "private": true,
   "main": "dist/main/index.mjs",
