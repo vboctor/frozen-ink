@@ -183,8 +183,11 @@ jobs:
         # No NPM_TOKEN needed. npm auto-detects the OIDC context from GitHub Actions.
         # Prerequisite: configure trusted publishing on npmjs.com for @vboctor/fink
         # pointing at this repo + this workflow file.
+        # Note: actions/upload-artifact@v4 strips the common ancestor of the
+        # uploaded paths, so the downloaded artifact contains the files
+        # directly under artifacts/npm-payload/ (not under packages/cli/dist/).
         run: |
-          cd artifacts/npm-payload/packages/cli/dist
+          cd artifacts/npm-payload
           npm publish --access public --provenance
 
       - name: Create GitHub Release
