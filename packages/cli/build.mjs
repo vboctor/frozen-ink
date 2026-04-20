@@ -117,11 +117,11 @@ function generateDistPackageJson() {
     author: "Victor Boctor",
     repository: {
       type: "git",
-      url: "https://github.com/vboctor/fink",
+      url: "https://github.com/vboctor/frozen-ink",
     },
-    homepage: "https://github.com/vboctor/fink#readme",
+    homepage: "https://github.com/vboctor/frozen-ink#readme",
     bugs: {
-      url: "https://github.com/vboctor/fink/issues",
+      url: "https://github.com/vboctor/frozen-ink/issues",
     },
     keywords: [
       "cli",
