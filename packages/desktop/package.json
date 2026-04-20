@@ -8,10 +8,10 @@
     "rebuild-native": "electron-rebuild -m .",
     "compile": "bun build.mjs",
     "start": "bun build.mjs && electron .",
-    "dist": "bun build.mjs && electron-builder",
-    "dist:mac": "bun build.mjs && electron-builder --mac",
-    "dist:win": "bun build.mjs && electron-builder --win",
-    "dist:linux": "bun build.mjs && electron-builder --linux"
+    "dist": "bun build.mjs && electron-builder --publish never",
+    "dist:mac": "bun build.mjs && electron-builder --mac --publish never",
+    "dist:win": "bun build.mjs && electron-builder --win --publish never",
+    "dist:linux": "bun build.mjs && electron-builder --linux --publish never"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",
