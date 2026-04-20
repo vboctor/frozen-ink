@@ -42,6 +42,10 @@ linux:
   maintainer: Victor Boctor <vboctor@gmail.com>
   synopsis: Frozen Ink desktop app
   description: A local-first reader for Frozen Ink collections.
+  # Default artifactName embeds the scoped npm package name ("@frozenink/desktop"),
+  # and fpm interprets the "/" as a directory — which makes the .deb build fail
+  # with "Parent directory does not exist". Use a plain slug instead.
+  artifactName: "frozenink-desktop-${version}-${arch}.${ext}"
   target:
     - target: AppImage
       arch:
