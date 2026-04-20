@@ -186,9 +186,11 @@ jobs:
         # Note: actions/upload-artifact@v4 strips the common ancestor of the
         # uploaded paths, so the downloaded artifact contains the files
         # directly under artifacts/npm-payload/ (not under packages/cli/dist/).
+        # --provenance is not passed: npm rejects it when the source repo is
+        # private (requires public visibility for sigstore verification).
         run: |
           cd artifacts/npm-payload
-          npm publish --access public --provenance
+          npm publish --access public
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
