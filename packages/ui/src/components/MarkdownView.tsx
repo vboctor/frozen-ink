@@ -2,6 +2,7 @@ import { useMemo, type ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
 
 const WIKILINK_PREFIX = "#wikilink/";
 
@@ -93,6 +94,15 @@ function preprocessMarkdown(raw: string, collection: string, filePath?: string):
       }
       return `[${label}](${WIKILINK_PREFIX}${encodeURIComponent(target)})`;
     },
+  );
+
+  // Convert Obsidian inline hashtags (#Tag) to styled spans.
+  // Matches # followed by word characters (no space), not at the start of a line
+  // (which would be a heading). Skips tags inside code spans/blocks.
+  content = content.replace(
+    /(^|\s)(#[A-Za-z][A-Za-z0-9_/-]*)/g,
+    (_match, pre: string, tag: string) =>
+      `${pre}<span class="obs-tag">${tag}</span>`,
   );
 
   return content;
@@ -215,7 +225,7 @@ export default function MarkdownView({
     <article className="markdown-view">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        rehypePlugins={[rehypeRaw, rehypeHighlight]}
         components={components}
       >
         {processed}
