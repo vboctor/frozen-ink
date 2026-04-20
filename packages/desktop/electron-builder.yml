@@ -39,6 +39,9 @@ win:
 linux:
   icon: build/icon.png
   category: Development
+  maintainer: Victor Boctor <vboctor@gmail.com>
+  synopsis: Frozen Ink desktop app
+  description: A local-first reader for Frozen Ink collections.
   target:
     - target: AppImage
       arch:

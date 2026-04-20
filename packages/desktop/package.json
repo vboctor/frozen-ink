@@ -4,6 +4,12 @@
   "productName": "Frozen Ink",
   "private": true,
   "main": "dist/main/index.mjs",
+  "homepage": "https://github.com/vboctor/frozen-ink",
+  "author": {
+    "name": "Victor Boctor",
+    "email": "vboctor@gmail.com"
+  },
+  "description": "Frozen Ink desktop app — a local-first reader for Frozen Ink collections.",
   "scripts": {
     "rebuild-native": "electron-rebuild -m .",
     "compile": "bun build.mjs",
