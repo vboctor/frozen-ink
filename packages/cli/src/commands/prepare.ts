@@ -346,7 +346,12 @@ export async function prepareCollection(
   // and any source-directory .folder.yml files, e.g. from an Obsidian vault).
   const collectionHide = col.hide ?? [];
   const credentialsObj = typeof col.credentials === "object" && col.credentials !== null ? col.credentials as Record<string, unknown> : {};
-  const sourceConfigs = themeEngine.getSourceFolderConfigs(crawlerType, col.config ?? {}, credentialsObj);
+  let sourceConfigs: Record<string, FolderConfig> = {};
+  if (crawlerType === "obsidian") {
+    const { readVaultFolderConfigs } = await import("@frozenink/crawlers/obsidian/vault-folder-configs");
+    const vaultPath = (credentialsObj.vaultPath ?? (col.config as Record<string, unknown> | null)?.vaultPath) as string | undefined;
+    if (vaultPath) sourceConfigs = readVaultFolderConfigs(vaultPath);
+  }
   const ymlUpdated = await writeFolderConfigFiles(themeEngine, crawlerType, storage, basePath, collectionHide, sourceConfigs);
   if (ymlUpdated) log(`  Folder config files updated`);
 
