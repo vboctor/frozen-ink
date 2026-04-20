@@ -21,10 +21,11 @@ jobs:
           - os: ubuntu-latest
             platform: linux
             upload_npm: true
+          # macos-14 is arm64. Bun cross-compiles darwin-x64 from here so we
+          # emit both darwin binaries on a single runner — macos-13 hosted
+          # runners are retired (GH changelog 2025-09-19).
           - os: macos-14
-            platform: darwin-arm64
-          - os: macos-13
-            platform: darwin-x64
+            platform: darwin
           - os: windows-latest
             platform: windows
 
@@ -49,7 +50,7 @@ jobs:
           path: packages/cli/dist/fink-darwin-arm64
 
       - name: Upload darwin-x64 binary
-        if: matrix.os == 'macos-13'
+        if: matrix.os == 'macos-14'
         uses: actions/upload-artifact@v4
         with:
           name: fink-darwin-x64
