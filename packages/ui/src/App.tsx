@@ -73,8 +73,11 @@ function saveCollectionTabs(collection: string, tabs: { file: string }[], active
 }
 
 // --- Server-side preference helpers (survive port changes in desktop mode) ---
+// Only the local/desktop server has /api/preferences; the published worker
+// doesn't expose it, so we skip the calls there to avoid console 404 noise.
 
 function savePreferenceToServer(key: string, value: unknown) {
+  if (isPublishedDeployment()) return;
   fetch("/api/preferences", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -84,6 +87,7 @@ function savePreferenceToServer(key: string, value: unknown) {
 
 /** Load all server-side preferences and hydrate localStorage + return them. */
 async function loadServerPreferences(): Promise<Record<string, unknown>> {
+  if (isPublishedDeployment()) return {};
   try {
     const res = await fetch("/api/preferences");
     if (!res.ok) return {};
