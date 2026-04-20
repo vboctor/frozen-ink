@@ -73,9 +73,8 @@ export function extractWikilinks(markdown: string, sourceFilePath?: string): str
 }
 
 /** Default file extensions allowed for asset downloads. */
-const DEFAULT_ASSET_EXTENSIONS = [
-  ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico", ".avif", ".pdf",
-];
+/** Empty = no extension filter (all file types allowed). */
+const DEFAULT_ASSET_EXTENSIONS: string[] = [];
 
 /** Default max asset size: 10 MB in KB. */
 const DEFAULT_ASSET_MAX_SIZE_KB = 10240;

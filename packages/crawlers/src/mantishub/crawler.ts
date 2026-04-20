@@ -144,9 +144,12 @@ export class MantisHubCrawler implements Crawler {
   /** Returns true if the attachment should be downloaded based on extension and size. */
   private shouldDownloadAttachment(filename: string, sizeBytes: number): boolean {
     if (!this.assetFilter) return true;
+    if (sizeBytes > this.assetFilter.maxSizeBytes) return false;
+    // Empty extension set means no filter — allow all types.
+    if (this.assetFilter.allowedExtensions.size === 0) return true;
     const dot = filename.lastIndexOf(".");
     const ext = dot === -1 ? "" : filename.slice(dot).toLowerCase();
-    return this.assetFilter.allowedExtensions.has(ext) && sizeBytes <= this.assetFilter.maxSizeBytes;
+    return this.assetFilter.allowedExtensions.has(ext);
   }
 
   /** Accept both new field names and legacy field names for backward compat. */
@@ -517,14 +520,31 @@ export class MantisHubCrawler implements Crawler {
         this.reportProgress(`Fetching ${users.length} user profile(s)`);
       }
       let i = 0;
+      let consecutiveForbidden = 0;
+      let allForbidden = false;
       for (const basic of users) {
         i++;
+        if (allForbidden) {
+          // Server denied access to all users — emit shell entities for remaining.
+          entities.push(this.buildUserEntity({ id: basic.id, name: basic.name, email: basic.email }));
+          continue;
+        }
         this.reportProgress(`Fetching user ${basic.name} (${i}/${users.length})`);
         try {
           const profile = await this.fetchUser(basic.id);
           entities.push(this.buildUserEntity(profile));
+          consecutiveForbidden = 0;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
+          if (message.includes("→ 403")) {
+            consecutiveForbidden++;
+            if (consecutiveForbidden >= 10) {
+              console.warn(`  Warning: 10 consecutive 403s fetching users — assuming all user profiles are forbidden. Creating shell entries for remaining ${users.length - i} user(s).`);
+              allForbidden = true;
+            }
+          } else {
+            consecutiveForbidden = 0;
+          }
           console.warn(`  Warning: entity type=user id=${basic.id} name=${basic.name}: ${message}`);
           // Build a minimal user entity from data collected during issue sync.
           entities.push(this.buildUserEntity({
@@ -602,7 +622,35 @@ export class MantisHubCrawler implements Crawler {
       headers["Authorization"] = this.token;
     }
 
-    const response = await this.fetchFn(url, { headers });
+    const MAX_RETRIES = 3;
+    let lastNetworkErr: unknown;
+    let response: Response | undefined;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** (attempt - 1), 8000)));
+      }
+      try {
+        response = await this.fetchFn(url, { headers });
+      } catch (err) {
+        lastNetworkErr = err;
+        continue;
+      }
+      // Retry transient server errors, but not auth/client errors
+      if (response.status >= 500 && response.status < 600 && attempt < MAX_RETRIES) {
+        try { await response.body?.cancel(); } catch { /* ignore */ }
+        lastNetworkErr = new Error(`HTTP ${response.status}`);
+        response = undefined;
+        continue;
+      }
+      break;
+    }
+
+    if (!response) {
+      const message = lastNetworkErr instanceof Error ? lastNetworkErr.message : String(lastNetworkErr);
+      throw new Error(`MantisHub API error: GET ${url} → network failure after ${MAX_RETRIES} retries: ${message}`);
+    }
+
     if (!response.ok) {
       let bodySnippet = "";
       try {
@@ -1146,7 +1194,11 @@ export class MantisHubCrawler implements Crawler {
           content = await this.downloadAttachment(issue.id, file.id, file.download_url, label);
         }
       } else {
-        content = await this.downloadAttachment(issue.id, file.id, file.download_url, label);
+        // Plain MantisBT: use download_url if provided, otherwise construct the
+        // standard file_download.php URL (works on public trackers without auth).
+        const effectiveUrl = file.download_url
+          ?? `${this.baseUrl}/file_download.php?file_id=${file.id}&type=bug`;
+        content = await this.downloadAttachment(issue.id, file.id, effectiveUrl, label);
       }
 
       if (content) {
@@ -1181,7 +1233,11 @@ export class MantisHubCrawler implements Crawler {
             content = await this.downloadAttachment(issue.id, att.id, att.download_url, label);
           }
         } else {
-          content = await this.downloadAttachment(issue.id, att.id, att.download_url, label);
+          // Plain MantisBT: use download_url if provided, otherwise construct the
+          // standard file_download.php URL (works on public trackers without auth).
+          const effectiveUrl = att.download_url
+            ?? `${this.baseUrl}/file_download.php?file_id=${att.id}&type=bugnote`;
+          content = await this.downloadAttachment(issue.id, att.id, effectiveUrl, label);
         }
 
         if (content) {
@@ -1223,6 +1279,7 @@ export class MantisHubCrawler implements Crawler {
         attachments: (issue.attachments ?? []).map((f) => {
           const sp = `${assetPrefix}/${assetFilename(f.id, f.filename)}`;
           return {
+            id: f.id,
             filename: f.filename,
             content_type: f.content_type,
             size: f.size,
