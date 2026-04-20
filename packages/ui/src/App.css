@@ -881,6 +881,16 @@ body {
   color: var(--accent);
 }
 
+.markdown-view .obs-tag {
+  display: inline-block;
+  background: var(--accent-muted, color-mix(in srgb, var(--accent) 15%, transparent));
+  color: var(--accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
 .markdown-view .wikilink-missing {
   color: var(--text-muted, var(--text-secondary));
   opacity: 0.6;
