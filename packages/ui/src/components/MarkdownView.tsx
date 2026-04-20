@@ -2,7 +2,6 @@ import { useMemo, type ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import rehypeRaw from "rehype-raw";
 
 const WIKILINK_PREFIX = "#wikilink/";
 
@@ -96,13 +95,13 @@ function preprocessMarkdown(raw: string, collection: string, filePath?: string):
     },
   );
 
-  // Convert Obsidian inline hashtags (#Tag) to styled spans.
-  // Matches # followed by word characters (no space), not at the start of a line
-  // (which would be a heading). Skips tags inside code spans/blocks.
+  // Convert Obsidian inline hashtags (#Tag) to inline code so the ReactMarkdown
+  // code component can render them as styled tag badges.
+  // Matches # followed by a letter then word chars — avoids heading syntax which
+  // requires a space (# heading) and skips URLs/anchors.
   content = content.replace(
     /(^|\s)(#[A-Za-z][A-Za-z0-9_/-]*)/g,
-    (_match, pre: string, tag: string) =>
-      `${pre}<span class="obs-tag">${tag}</span>`,
+    (_match, pre: string, tag: string) => `${pre}\`${tag}\``,
   );
 
   return content;
@@ -150,6 +149,14 @@ export default function MarkdownView({
 
   const components: ComponentProps<typeof ReactMarkdown>["components"] = useMemo(
     () => ({
+      code({ className, children }) {
+        const text = typeof children === "string" ? children : "";
+        // Inline code with no language class that looks like a hashtag → tag badge
+        if (!className && /^#[A-Za-z]/.test(text) && !text.includes(" ")) {
+          return <span className="obs-tag">{text}</span>;
+        }
+        return <code className={className}>{children}</code>;
+      },
       a({ href, children }) {
         if (href?.startsWith(WIKILINK_PREFIX)) {
           const target = decodeURIComponent(href.slice(WIKILINK_PREFIX.length));
@@ -225,7 +232,7 @@ export default function MarkdownView({
     <article className="markdown-view">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, rehypeHighlight]}
+        rehypePlugins={[rehypeHighlight]}
         components={components}
       >
         {processed}
