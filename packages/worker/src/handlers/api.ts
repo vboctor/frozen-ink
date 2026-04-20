@@ -60,12 +60,19 @@ api.get("/api/app-info", (c) => {
 api.get("/api/collections", async (c) => {
   const collections = await getCollections(c.env.BUCKET);
   const entityCount = await getEntityCount(c.env.DB);
-  const result = collections.map((col) => ({
-    name: col.name,
-    title: col.title || col.name,
-    enabled: true,
-    entityCount,
-  }));
+  // collections.yml only stores names — titles live in per-collection yml.
+  const configs = await Promise.all(
+    collections.map((col) => getCollectionConfig(c.env.BUCKET, col.name)),
+  );
+  const result = collections.map((col, i) => {
+    const cfg = configs[i];
+    return {
+      name: col.name,
+      title: cfg?.title || col.name,
+      enabled: true,
+      entityCount,
+    };
+  });
   return c.json(result);
 });
 
@@ -119,18 +126,28 @@ api.get("/api/collections/:name/tree", async (c) => {
     offset += PAGE_SIZE;
   }
 
+  const labelWithTitle = col?.crawler ? themeEngine.labelFilesWithTitle(col.crawler) : true;
   const titleByPath = new Map<string, string>();
   const mdPaths = allResults
     .map((row) => {
       const rel = row.folder ? `${row.folder}/${row.slug}.md` : `${row.slug}.md`;
-      if (row.title) titleByPath.set(rel, row.title);
+      if (labelWithTitle && row.title) titleByPath.set(rel, row.title);
       return rel;
     })
     .filter((p) => p.endsWith(".md"));
 
-  // Derive folder configs from the theme instead of R2-stored yml files
+  // Derive folder configs from the theme (static defaults) and merge per-collection
+  // overrides that publish wrote to _config/{name}-folders.json (source .folder.yml,
+  // collection hide patterns, etc.).
   const folderConfigs = new Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean; expandFirstN?: number; expanded?: boolean; created_at_prefix?: boolean }>();
   const rootConfig: { hide?: string[]; sort?: "ASC" | "DESC"; expandFirstN?: number } = {};
+
+  let collectionFolderOverrides: Record<string, FolderConfig> = {};
+  try {
+    const obj = await c.env.BUCKET.get(`_config/${name}-folders.json`);
+    if (obj) collectionFolderOverrides = await obj.json<Record<string, FolderConfig>>();
+  } catch { /* no overrides */ }
+
   if (col?.crawler) {
     const themeFolderConfigs = themeEngine.getFolderConfigs(col.crawler);
     const themeRootConfig = themeEngine.getRootConfig(col.crawler);
@@ -152,6 +169,18 @@ api.get("/api/collections/:name/tree", async (c) => {
         folderConfigs.set(folderPath, themeFolderConfigs[folderName]);
       }
     }
+  }
+
+  // Overlay per-collection overrides on top of theme defaults (root and subdirs).
+  const rootOverride = collectionFolderOverrides[""];
+  if (rootOverride) {
+    if (rootOverride.sort) rootConfig.sort = rootOverride.sort;
+    if (rootOverride.hide) rootConfig.hide = rootOverride.hide;
+  }
+  for (const [path, cfg] of Object.entries(collectionFolderOverrides)) {
+    if (path === "") continue;
+    const existing = folderConfigs.get(path) ?? {};
+    folderConfigs.set(path, { ...existing, ...cfg });
   }
 
   // Store root config at "" key so sortTree can apply it at the root level
@@ -194,7 +223,20 @@ api.get("/api/collections/:name/default-file", async (c) => {
 
   if (all.length === 0) return c.json({ file: null });
 
-  const folderConfigs = col?.crawler ? themeEngine.getFolderConfigs(col.crawler) : {};
+  const folderConfigs: Record<string, FolderConfig> = col?.crawler ? { ...themeEngine.getFolderConfigs(col.crawler) } : {};
+  // Overlay per-collection overrides (same JSON the tree endpoint reads). The
+  // root override ("" key) lands in folderConfigs[""] so pickFirstTreeFile
+  // honors the DESC/ASC setting at the content root.
+  try {
+    const obj = await c.env.BUCKET.get(`_config/${name}-folders.json`);
+    if (obj) {
+      const overrides = await obj.json<Record<string, FolderConfig>>();
+      for (const [path, cfg] of Object.entries(overrides)) {
+        const key = path === "" ? "" : (path.includes("/") ? path.split("/").pop()! : path);
+        folderConfigs[key] = { ...(folderConfigs[key] ?? {}), ...cfg };
+      }
+    }
+  } catch { /* no overrides */ }
   const picked = pickFirstTreeFile(all, folderConfigs);
   if (!picked) return c.json({ file: null });
   const filePath = picked.folder ? `${picked.folder}/${picked.slug}.md` : `${picked.slug}.md`;

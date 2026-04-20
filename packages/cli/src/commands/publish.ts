@@ -23,6 +23,7 @@ import {
 } from "@frozenink/core";
 import { getPublishCredentialKey } from "./publish-credentials";
 import type { EntityData } from "@frozenink/core";
+import type { FolderConfig } from "@frozenink/core/theme";
 
 const __moduleDir = getModuleDir(import.meta.url);
 import { assertInitialPublishConfirmation } from "./publish-policy";
@@ -56,6 +57,56 @@ function collectFiles(dir: string, base: string = ""): Array<{ relativePath: str
     }
   }
   return files;
+}
+
+/** Walk `content/` and collect every folder yml (content.yml at root, and
+ * `{folder}/{folder}.yml` inside each subdir) into a map keyed by the
+ * content-relative folder path ("" for root). */
+function collectFolderYmls(
+  dir: string,
+  relPath: string,
+  out: Record<string, FolderConfig>,
+): void {
+  // Root uses "content.yml"; subdirs use "{folderName}.yml"
+  const folderName = relPath ? relPath.split("/").pop()! : "";
+  const ymlPath = relPath
+    ? join(dir, `${folderName}.yml`)
+    : join(dir, "content.yml");
+  if (existsSync(ymlPath)) {
+    const cfg = parseFolderYml(ymlPath);
+    if (Object.keys(cfg).length > 0) out[relPath] = cfg;
+  }
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith(".")) continue;
+    const childRel = relPath ? `${relPath}/${entry.name}` : entry.name;
+    collectFolderYmls(join(dir, entry.name), childRel, out);
+  }
+}
+
+function parseFolderYml(ymlPath: string): FolderConfig {
+  const cfg: FolderConfig = {};
+  try {
+    for (const line of readFileSync(ymlPath, "utf-8").split("\n")) {
+      const m = line.match(/^(\w+):\s*(.+)$/);
+      if (!m) continue;
+      const [, key, val] = m;
+      const v = val.trim();
+      if (key === "sort") cfg.sort = v === "DESC" ? "DESC" : "ASC";
+      else if (key === "visible") cfg.visible = v !== "false";
+      else if (key === "showCount") cfg.showCount = v === "true";
+      else if (key === "expanded") cfg.expanded = v !== "false";
+      else if (key === "hide") {
+        const arr = v.match(/^\[(.+)\]$/);
+        if (arr) {
+          cfg.hide = arr[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+        }
+      }
+    }
+  } catch { /* best effort */ }
+  return cfg;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -424,13 +475,16 @@ export async function publishCollections(
       });
     }
   } else {
-    // Fetch existing R2 objects once — used for both upload skipping and stale cleanup
-    const existingR2Objects = new Map<string, number>();
+    // Fetch existing R2 objects once — used for both upload skipping and stale cleanup.
+    // We track both size and etag (MD5): size alone can't detect content changes when
+    // length is coincidentally identical (e.g. an index.html whose asset hash string
+    // changes but stays the same byte length).
+    const existingR2Objects = new Map<string, { size: number; etag: string }>();
     if (isUpdate) {
       try {
         onProgress("r2-list", "Listing existing R2 objects...");
         const remoteObjects = await listR2Objects(r2BucketName);
-        for (const obj of remoteObjects) existingR2Objects.set(obj.key, obj.size);
+        for (const obj of remoteObjects) existingR2Objects.set(obj.key, { size: obj.size, etag: obj.etag });
       } catch {
         // Treat as empty on error; all files will be uploaded
       }
@@ -442,6 +496,15 @@ export async function publishCollections(
       for (const file of collectFiles(join(collectionDir, "content"))) {
         if (file.relativePath.endsWith(".md") || file.relativePath.endsWith(".yml")) continue;
         uploads.push({ r2Key: `${colName}/content/${file.relativePath}`, fullPath: file.fullPath });
+      }
+      // Upload the sibling attachments/ directory — the worker serves these at
+      // /api/attachments/{name}/* and the UI rewrites markdown image paths to
+      // that endpoint. Without this, embedded images 404 on the published site.
+      const attachmentsDir = join(collectionDir, "attachments");
+      if (existsSync(attachmentsDir)) {
+        for (const file of collectFiles(attachmentsDir)) {
+          uploads.push({ r2Key: `${colName}/attachments/${file.relativePath}`, fullPath: file.fullPath });
+        }
       }
     }
     if (existsSync(uiDistDir)) {
@@ -455,11 +518,14 @@ export async function publishCollections(
     for (const { r2Key, fullPath } of uploads) {
       const localSize = statSync(fullPath).size;
       fileSizes.set(r2Key, localSize);
-      if (existingR2Objects.get(r2Key) === localSize) {
-        skippedCount++;
-      } else {
-        toUpload.push({ r2Key, fullPath });
+      const existing = existingR2Objects.get(r2Key);
+      let skip = false;
+      if (existing && existing.size === localSize) {
+        const localMd5 = createHash("md5").update(readFileSync(fullPath)).digest("hex");
+        if (localMd5 === existing.etag) skip = true;
       }
+      if (skip) skippedCount++;
+      else toUpload.push({ r2Key, fullPath });
     }
     if (skippedCount > 0) {
       onProgress("r2-upload", `${skippedCount} unchanged files skipped, uploading ${toUpload.length}...`);
@@ -780,6 +846,21 @@ export async function publishCollections(
       lines.push(`crawler: ${colConfig.crawler}`);
       if (colConfig.description) lines.push(`description: ${colConfig.description}`);
       await putR2String(r2BucketName, `_config/${colName}.yml`, lines.join("\n") + "\n", "text/yaml");
+
+      // Aggregate all content/*.yml folder configs (content.yml + per-subdir yml)
+      // into a single JSON the worker can read in one R2 fetch when building the
+      // tree. Worker has no `node:fs` and we want to avoid N+1 reads per request.
+      const contentDir = join(home, "collections", colName, "content");
+      const folderConfigs: Record<string, FolderConfig> = {};
+      if (existsSync(contentDir)) {
+        collectFolderYmls(contentDir, "", folderConfigs);
+      }
+      await putR2String(
+        r2BucketName,
+        `_config/${colName}-folders.json`,
+        JSON.stringify(folderConfigs),
+        "application/json",
+      );
     }
   }
 

@@ -382,8 +382,8 @@ export async function deleteR2Bucket(name: string): Promise<void> {
   await runWrangler(["r2", "bucket", "delete", name], { allowFailure: true });
 }
 
-export async function listR2Objects(bucket: string, prefix?: string): Promise<Array<{ key: string; size: number }>> {
-  const objects: Array<{ key: string; size: number }> = [];
+export async function listR2Objects(bucket: string, prefix?: string): Promise<Array<{ key: string; size: number; etag: string }>> {
+  const objects: Array<{ key: string; size: number; etag: string }> = [];
   let cursor: string | undefined;
   for (;;) {
     const pageCursor = cursor;
@@ -400,8 +400,8 @@ export async function listR2Objects(bucket: string, prefix?: string): Promise<Ar
       };
     });
     if (!res.ok) break;
-    const data = await res.json() as { result: Array<{ key: string; size: number }>; result_info?: { cursor?: string } };
-    for (const obj of data.result ?? []) objects.push({ key: obj.key, size: obj.size ?? 0 });
+    const data = await res.json() as { result: Array<{ key: string; size: number; etag?: string }>; result_info?: { cursor?: string } };
+    for (const obj of data.result ?? []) objects.push({ key: obj.key, size: obj.size ?? 0, etag: (obj.etag ?? "").replace(/"/g, "") });
     cursor = data.result_info?.cursor;
     if (!cursor || (data.result ?? []).length === 0) break;
   }
