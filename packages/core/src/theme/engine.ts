@@ -49,6 +49,12 @@ export class ThemeEngine {
     return theme?.folderConfigs?.() ?? {};
   }
 
+  /** Return whether entity titles should label file tree nodes for the given crawler type. */
+  labelFilesWithTitle(crawlerType: string): boolean {
+    const theme = this.themes.get(crawlerType);
+    return theme?.labelFilesWithTitle?.() ?? true;
+  }
+
   /** Return the root config for the given crawler type, or empty object if none defined. */
   getRootConfig(crawlerType: string): FolderConfig {
     const theme = this.themes.get(crawlerType);

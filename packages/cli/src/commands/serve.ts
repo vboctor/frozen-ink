@@ -240,6 +240,7 @@ function buildFileTree(
   basePath: string = "",
   themeConfigs: Record<string, FolderConfig> = {},
   themeRootConfig: FolderConfig = {},
+  labelFilesWithTitle: boolean = true,
 ): object[] {
   if (!existsSync(dirPath)) return [];
 
@@ -268,7 +269,7 @@ function buildFileTree(
       const childYmlCfg = readFolderConfig(childDirPath);
       const childMerged: FolderConfig = { ...childThemeCfg, ...childYmlCfg };
       if (childMerged.visible === false) continue;
-      const children = buildFileTree(childDirPath, titleByPath, relativePath, themeConfigs, themeRootConfig);
+      const children = buildFileTree(childDirPath, titleByPath, relativePath, themeConfigs, themeRootConfig, labelFilesWithTitle);
       // Hide directories with no (visible) files in their subtree so stale
       // empty folders on disk don't leak into the tree.
       if (countFiles(children) === 0) continue;
@@ -295,9 +296,9 @@ function buildFileTree(
       };
       if (merged.created_at_prefix) {
         const datePrefix = entry.name.slice(0, 8);
-        const stored = titleByPath.get(relativePath);
+        const stored = labelFilesWithTitle ? titleByPath.get(relativePath) : undefined;
         node.title = stored ? `${datePrefix} ${stored}` : entry.name.replace(/\.md$/, "");
-      } else {
+      } else if (labelFilesWithTitle) {
         const title = titleByPath.get(relativePath);
         if (title) node.title = title;
       }
@@ -430,7 +431,8 @@ export function createApiServer(
         const crawlerType = effectiveCrawlerType(col, dbPath);
         const themeConfigs = themeEngine.getFolderConfigs(crawlerType);
         const themeRootConfig = themeEngine.getRootConfig(crawlerType);
-        const tree = buildFileTree(contentDir, titleByPath, "", themeConfigs, themeRootConfig);
+        const labelWithTitle = themeEngine.labelFilesWithTitle(crawlerType);
+        const tree = buildFileTree(contentDir, titleByPath, "", themeConfigs, themeRootConfig, labelWithTitle);
         return jsonResponse(tree);
       }
 

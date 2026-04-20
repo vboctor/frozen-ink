@@ -48,6 +48,10 @@ export class ObsidianTheme implements Theme {
     return result;
   }
 
+  labelFilesWithTitle() {
+    return false;
+  }
+
   folderConfigs() {
     return {
       assets: { visible: false },

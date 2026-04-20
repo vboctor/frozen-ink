@@ -89,6 +89,13 @@ export interface Theme {
    */
   rootConfig?(): FolderConfig;
   /**
+   * Optional: whether to use the entity title as the display label in the
+   * file tree. Defaults to true. Set to false for crawlers where the filename
+   * is the primary identifier (e.g. Obsidian vaults) so the sidebar always
+   * shows the filename rather than the H1 heading.
+   */
+  labelFilesWithTitle?(): boolean;
+  /**
    * Optional: generate the body of AGENTS.md for this collection.
    * Called during prepare to create/update the AI guidance file.
    */
