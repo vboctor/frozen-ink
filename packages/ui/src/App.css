@@ -2154,6 +2154,7 @@ body {
 .mt-main-col {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .mt-sidebar-col {
@@ -2206,6 +2207,17 @@ body {
 .mt-description {
   color: var(--text);
   word-break: break-word;
+}
+
+.mt-code-block {
+  background: var(--code-bg);
+  border-radius: var(--radius);
+  padding: 16px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 8px 0;
 }
 
 /* Attachments */
