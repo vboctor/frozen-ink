@@ -25,14 +25,6 @@
       "sizeInMB": 35
     },
     {
-      "title": "Xdebug Bug Tracker",
-      "url": "https://xdebug.vboctor.workers.dev",
-      "description": "A replica of the official Xdebug bug tracker synced from its public MantisBT instance. Useful for AI agents that need grounding in Xdebug issues and PHP debugging topics.",
-      "crawler": "mantishub",
-      "entityCount": 4120,
-      "sizeInMB": 115
-    },
-    {
       "title": "Victor Boctor's Blog",
       "url": "https://victor-blog.vboctor.workers.dev",
       "description": "A sample blog published from a folder within an Obsidian vault, demonstrating how a sub-vault can be synced and published as its own collection.",
