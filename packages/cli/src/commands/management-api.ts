@@ -369,6 +369,9 @@ export function handleManagementRequest(req: Request): Response | null {
   const syncOneMatch = path.match(/^\/api\/sync\/([^/]+)$/);
   if (syncOneMatch && method === "POST") {
     const name = decodeURIComponent(syncOneMatch[1]);
+    // Mark active synchronously before any await so that status polls arriving
+    // during body-read don't see the stale idle state and prematurely complete.
+    syncProgress = { active: true, collectionName: name, status: "starting", created: 0, updated: 0, deleted: 0, error: null };
     return handleAsync(async () => {
       const body = await readBody(req);
       const full = !!body.full;
@@ -379,6 +382,9 @@ export function handleManagementRequest(req: Request): Response | null {
 
   // POST /api/sync (sync all)
   if (path === "/api/sync" && method === "POST") {
+    // Mark active synchronously before any await so that status polls arriving
+    // during body-read don't see the stale idle state and prematurely complete.
+    syncProgress = { active: true, collectionName: null, status: "starting", created: 0, updated: 0, deleted: 0, error: null };
     return handleAsync(async () => {
       const body = await readBody(req);
       const full = !!body.full;
