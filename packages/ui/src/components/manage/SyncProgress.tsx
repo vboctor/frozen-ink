@@ -15,6 +15,11 @@ interface SyncProgressProps {
 export default function SyncProgress({ onComplete }: SyncProgressProps) {
   const [progress, setProgress] = useState<SyncProgressType | null>(null);
   const intervalRef = useRef<number | null>(null);
+  // Guard against the race where the first poll returns active:false (initial
+  // idle state) before the server has marked the sync as started.  Only fire
+  // onComplete after we have seen at least one active:true response so we know
+  // a real sync run has begun and then finished.
+  const hasSeenActiveRef = useRef(false);
 
   useEffect(() => {
     const poll = () => {
@@ -22,7 +27,10 @@ export default function SyncProgress({ onComplete }: SyncProgressProps) {
         .then((r) => r.json())
         .then((data: SyncProgressType) => {
           setProgress(data);
-          if (!data.active) {
+          if (data.active) {
+            hasSeenActiveRef.current = true;
+          }
+          if (!data.active && hasSeenActiveRef.current) {
             if (intervalRef.current) clearInterval(intervalRef.current);
             onComplete({
               created: data.created,

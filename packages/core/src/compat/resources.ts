@@ -81,7 +81,9 @@ const WRANGLER_INSTALL_URL = "https://developers.cloudflare.com/workers/wrangler
  * Search order:
  * 1. User-configured path (from frozenink.yml "wranglerPath")
  * 2. Monorepo dev: node_modules/.bin/wrangler
- * 3. System PATH: "wrangler" (via `which`)
+ * 3. Well-known absolute paths (macOS packaged app: Dock-launched apps have a
+ *    minimal PATH that omits Homebrew's /opt/homebrew/bin and nvm/volta dirs)
+ * 4. System PATH: "wrangler" (via `which` / `where`)
  *
  * Returns the path, or throws with install instructions.
  */
@@ -101,7 +103,29 @@ export async function resolveWrangler(moduleDir: string, configuredPath?: string
     if (existsSync(rootBin)) return rootBin;
   }
 
-  // 3. System PATH
+  // 3. Well-known absolute locations that packaged Electron apps miss because
+  //    Dock-launched processes inherit a minimal PATH.
+  const home = process.env.HOME ?? "";
+  const candidates: string[] = [];
+  if (process.platform === "darwin") {
+    candidates.push(
+      "/opt/homebrew/bin/wrangler",         // Homebrew on Apple Silicon
+      "/usr/local/bin/wrangler",            // Homebrew on Intel / classic npm global
+      join(home, ".volta/bin/wrangler"),    // Volta
+      join(home, ".bun/bin/wrangler"),      // Bun global
+    );
+  } else if (process.platform === "linux") {
+    candidates.push(
+      "/usr/local/bin/wrangler",
+      join(home, ".volta/bin/wrangler"),
+      join(home, ".bun/bin/wrangler"),
+    );
+  }
+  for (const p of candidates) {
+    if (p && existsSync(p)) return p;
+  }
+
+  // 4. System PATH
   try {
     const { stdout, exitCode } = await spawnProcess(["which", "wrangler"]);
     if (exitCode === 0 && stdout.trim()) return stdout.trim();

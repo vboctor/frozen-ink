@@ -130,12 +130,10 @@ export function invalidateCredentials(): void {
 }
 
 export async function checkWranglerAuth(): Promise<void> {
-  try {
-    await getCredentials();
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  }
+  // Throws on auth failure. Callers in CLI commands catch and exit; callers in
+  // the desktop management API catch and surface the error in publishProgress
+  // rather than crashing the process.
+  await getCredentials();
 }
 
 // --- Retry helper for transient Cloudflare/network errors ---
