@@ -770,11 +770,19 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
 
       if (getCollectionPublishState(name)) {
         console.log(`[sync:${name}] collection is published — republishing`);
-        syncProgress = { ...syncProgress, status: `republishing ${name}` };
+        syncProgress = { ...syncProgress, status: `republishing ${name}: starting` };
         try {
-          await triggerPublish({ collectionName: name });
+          await triggerPublish({ collectionName: name }, (step, detail) => {
+            // Mirror publish progress into syncProgress so the SyncProgress UI
+            // (which polls /api/sync/status, not /api/publish/status) shows
+            // step-by-step updates during the post-sync republish instead of
+            // appearing frozen on "republishing ${name}".
+            const label = detail || step;
+            syncProgress = { ...syncProgress, status: `republishing ${name}: ${label}` };
+          });
         } catch (err) {
           console.error(`[sync:${name}] republish failed: ${err}`);
+          syncProgress = { ...syncProgress, status: `republish failed: ${String(err)}` };
         }
       }
     }
@@ -802,7 +810,10 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
 
 // --- Publish logic ---
 
-async function triggerPublish(opts: Record<string, unknown>): Promise<void> {
+async function triggerPublish(
+  opts: Record<string, unknown>,
+  onExtraProgress?: (step: string, detail: string) => void,
+): Promise<void> {
   const startedAt = publishProgress.startedAt ?? Date.now();
   publishProgress = { active: true, step: "starting", detail: "Starting publish...", error: null, startedAt };
   try {
@@ -819,11 +830,13 @@ async function triggerPublish(opts: Record<string, unknown>): Promise<void> {
       (step, detail) => {
         publishProgress = { ...publishProgress, step, detail };
         console.log(`[publish:${collectionName}] ${step}: ${detail}`);
+        onExtraProgress?.(step, detail);
       },
     );
 
     publishProgress = { active: false, step: "done", detail: "Publish completed", error: null, startedAt };
   } catch (err) {
     publishProgress = { active: false, step: "failed", detail: "", error: String(err), startedAt };
+    throw err;
   }
 }
