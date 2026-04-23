@@ -367,7 +367,7 @@ function priorityIndicator(name: string): string {
     urgent: "#e74c3c",
     immediate: "#c0392b",
   };
-  const color = colors[name.toLowerCase()] ?? "#999";
+  const color = colors[(name ?? "").toLowerCase()] ?? "#999";
   return `<span class="mt-priority-dash" style="color:${color}">&mdash;</span>`;
 }
 
