@@ -147,6 +147,7 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
 
         const renderCard = (col: Collection) => {
           const status = statuses[col.name];
+          const showCollectionName = !!col.title && col.title !== col.name;
           return (
             <div
               key={col.name}
@@ -163,7 +164,10 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
                   {!col.enabled && <span className="status-badge status-failed">Disabled</span>}
                 </div>
               </div>
-              <h3 className="collection-card-name">{col.title || col.name}</h3>
+              <div className="collection-card-title-row">
+                <h3 className="collection-card-name">{col.title || col.name}</h3>
+                {showCollectionName && <span className="collection-card-id">{col.name}</span>}
+              </div>
               {col.description && (
                 <p className="collection-card-desc">{col.description}</p>
               )}
