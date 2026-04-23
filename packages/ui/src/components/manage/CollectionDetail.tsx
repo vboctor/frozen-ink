@@ -344,6 +344,7 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
 
   // Filter MCP tools to only those relevant for this collection
   const hasCloud = !!collection.publish;
+  const showCollectionName = !!collection.title && collection.title !== collection.name;
 
   return (
     <div className="manage-panel">
@@ -353,7 +354,10 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
           <button className="btn btn-sm" onClick={onBack} title="Back to collections">
             &larr; Back
           </button>
-          <h2>{collection.title || collection.name}</h2>
+          <div className="manage-panel-title-row">
+            <h2>{collection.title || collection.name}</h2>
+            {showCollectionName && <span className="manage-panel-collection-name">{collection.name}</span>}
+          </div>
           <span className="collection-card-type">
             <CrawlerIcon type={collection.crawlerType} />
             {CRAWLER_LABELS[collection.crawlerType] ?? collection.crawlerType}

@@ -2978,6 +2978,16 @@ body {
   margin: 0;
   color: var(--text);
 }
+.manage-panel-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.manage-panel-collection-name {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 .manage-panel-subtitle {
   color: var(--text-secondary);
   margin: 0 0 16px;
@@ -3167,10 +3177,21 @@ select.form-input { cursor: pointer; }
 .collection-card-type svg {
   flex-shrink: 0;
 }
+.collection-card-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
 .collection-card-name {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 15px;
   font-weight: 500;
+}
+.collection-card-id {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 .collection-card-stats {
   display: flex;
