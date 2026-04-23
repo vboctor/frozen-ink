@@ -930,7 +930,7 @@ export class GitHubTheme implements Theme {
         // Skip reviews with no body and no review comments (nothing to show)
         if (!r.body && reviewComments.length === 0) continue;
 
-        parts.push(`<div class="gh-review-box gh-review-${r.state.toLowerCase()}">`);
+        parts.push(`<div class="gh-review-box gh-review-${(r.state ?? "").toLowerCase()}">`);
         parts.push(`<div class="gh-comment-header">`);
         parts.push(`${avatarImg(r.user, 32, resolve)} ${userLink(r.user, true, resolve)} <span class="gh-review-state">${stateLabel}</span> <span class="gh-comment-date">on ${formatDate(r.submittedAt)}</span>`);
         parts.push(`</div>`);
