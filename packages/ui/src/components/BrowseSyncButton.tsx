@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import type { SyncProgress as SyncProgressType } from "../types";
+import type { SyncJob } from "../types";
 
 interface BrowseSyncButtonProps {
   collectionName: string;
@@ -9,8 +9,9 @@ interface BrowseSyncButtonProps {
 export default function BrowseSyncButton({ collectionName, onSyncComplete }: BrowseSyncButtonProps) {
   const [open, setOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [progress, setProgress] = useState<SyncProgressType | null>(null);
+  const [progress, setProgress] = useState<SyncJob | null>(null);
   const intervalRef = useRef<number | null>(null);
+  const hasSeenActiveRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -22,6 +23,7 @@ export default function BrowseSyncButton({ collectionName, onSyncComplete }: Bro
     setOpen(true);
     setSyncing(true);
     setProgress(null);
+    hasSeenActiveRef.current = false;
 
     fetch(`/api/sync/${encodeURIComponent(collectionName)}`, {
       method: "POST",
@@ -30,11 +32,14 @@ export default function BrowseSyncButton({ collectionName, onSyncComplete }: Bro
     }).catch(console.error);
 
     const poll = () => {
-      fetch("/api/sync/status")
+      fetch("/api/sync/jobs")
         .then((r) => r.json())
-        .then((data: SyncProgressType) => {
-          setProgress(data);
-          if (!data.active) {
+        .then((jobs: SyncJob[]) => {
+          const job = jobs.find((j) => j.collectionName === collectionName);
+          if (!job) return;
+          setProgress(job);
+          if (job.active) hasSeenActiveRef.current = true;
+          if (!job.active && hasSeenActiveRef.current) {
             if (intervalRef.current) clearInterval(intervalRef.current);
             setSyncing(false);
             onSyncComplete?.();
@@ -87,6 +92,7 @@ export default function BrowseSyncButton({ collectionName, onSyncComplete }: Bro
                     <span className={`status-badge status-${progress.active ? "running" : progress.error ? "failed" : "completed"}`}>
                       {progress.active ? "Syncing" : progress.error ? "Failed" : "Done"}
                     </span>
+                    <span className="sync-progress-collection">{progress.collectionName}</span>
                   </div>
                   <div className="sync-progress-counters">
                     <span className="counter counter-created">{progress.created} created</span>

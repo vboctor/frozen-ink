@@ -418,7 +418,7 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
             </>
           )}
         </div>
-        {syncing && <SyncProgress onComplete={handleSyncComplete} />}
+        {syncing && <SyncProgress collectionName={name} onComplete={handleSyncComplete} />}
         {!syncing && lastSyncResult && (
           <div className="sync-result" style={{ marginTop: 8 }}>
             {lastSyncResult.error ? (

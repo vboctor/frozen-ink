@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import type { SyncProgress as SyncProgressType } from "../../types";
+import type { SyncJob } from "../../types";
 
 export interface SyncResult {
   created: number;
@@ -9,34 +9,96 @@ export interface SyncResult {
 }
 
 interface SyncProgressProps {
+  /** When provided, only track this collection's job. When omitted, aggregate across all jobs. */
+  collectionName?: string;
   onComplete: (result: SyncResult) => void;
 }
 
-export default function SyncProgress({ onComplete }: SyncProgressProps) {
-  const [progress, setProgress] = useState<SyncProgressType | null>(null);
+interface AggregateView {
+  active: boolean;
+  collectionName: string | null;
+  status: string;
+  created: number;
+  updated: number;
+  deleted: number;
+  error: string | null;
+}
+
+function aggregate(jobs: SyncJob[]): AggregateView {
+  if (jobs.length === 0) {
+    return { active: false, collectionName: null, status: "idle", created: 0, updated: 0, deleted: 0, error: null };
+  }
+  const active = jobs.filter((j) => j.active);
+  const totals = jobs.reduce(
+    (acc, j) => ({
+      created: acc.created + j.created,
+      updated: acc.updated + j.updated,
+      deleted: acc.deleted + j.deleted,
+    }),
+    { created: 0, updated: 0, deleted: 0 },
+  );
+  if (active.length > 0) {
+    return {
+      active: true,
+      collectionName: active.length === 1 ? active[0].collectionName : null,
+      status: active.length === 1 ? active[0].status : `syncing ${active.length} collections`,
+      created: totals.created,
+      updated: totals.updated,
+      deleted: totals.deleted,
+      error: null,
+    };
+  }
+  const firstError = jobs.find((j) => j.error)?.error ?? null;
+  return {
+    active: false,
+    collectionName: null,
+    status: firstError ? "failed" : "completed",
+    created: totals.created,
+    updated: totals.updated,
+    deleted: totals.deleted,
+    error: firstError,
+  };
+}
+
+function singleJobView(job: SyncJob): AggregateView {
+  return {
+    active: job.active,
+    collectionName: job.collectionName,
+    status: job.status,
+    created: job.created,
+    updated: job.updated,
+    deleted: job.deleted,
+    error: job.error,
+  };
+}
+
+export default function SyncProgress({ collectionName, onComplete }: SyncProgressProps) {
+  const [view, setView] = useState<AggregateView | null>(null);
   const intervalRef = useRef<number | null>(null);
-  // Guard against the race where the first poll returns active:false (initial
-  // idle state) before the server has marked the sync as started.  Only fire
-  // onComplete after we have seen at least one active:true response so we know
-  // a real sync run has begun and then finished.
+  // Guard against the race where the first poll returns no active jobs
+  // (idle initial state) before the server has registered the new job.
   const hasSeenActiveRef = useRef(false);
 
   useEffect(() => {
     const poll = () => {
-      fetch("/api/sync/status")
+      fetch("/api/sync/jobs")
         .then((r) => r.json())
-        .then((data: SyncProgressType) => {
-          setProgress(data);
-          if (data.active) {
-            hasSeenActiveRef.current = true;
-          }
-          if (!data.active && hasSeenActiveRef.current) {
+        .then((jobs: SyncJob[]) => {
+          const scoped = collectionName
+            ? jobs.filter((j) => j.collectionName === collectionName)
+            : jobs;
+          const next = collectionName && scoped.length > 0
+            ? singleJobView(scoped[0])
+            : aggregate(scoped);
+          setView(next);
+          if (next.active) hasSeenActiveRef.current = true;
+          if (!next.active && hasSeenActiveRef.current) {
             if (intervalRef.current) clearInterval(intervalRef.current);
             onComplete({
-              created: data.created,
-              updated: data.updated,
-              deleted: data.deleted,
-              error: data.error,
+              created: next.created,
+              updated: next.updated,
+              deleted: next.deleted,
+              error: next.error,
             });
           }
         })
@@ -49,30 +111,30 @@ export default function SyncProgress({ onComplete }: SyncProgressProps) {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [onComplete]);
+  }, [collectionName, onComplete]);
 
-  if (!progress) return null;
+  if (!view) return null;
 
   return (
     <div className="sync-progress">
       <div className="sync-progress-header">
-        <span className={`status-badge status-${progress.active ? "running" : progress.error ? "failed" : "completed"}`}>
-          {progress.active ? "Syncing" : progress.error ? "Failed" : "Done"}
+        <span className={`status-badge status-${view.active ? "running" : view.error ? "failed" : "completed"}`}>
+          {view.active ? "Syncing" : view.error ? "Failed" : "Done"}
         </span>
-        {progress.collectionName && (
-          <span className="sync-progress-collection">{progress.collectionName}</span>
+        {view.collectionName && (
+          <span className="sync-progress-collection">{view.collectionName}</span>
         )}
       </div>
       <div className="sync-progress-counters">
-        <span className="counter counter-created">{progress.created} created</span>
-        <span className="counter counter-updated">{progress.updated} updated</span>
-        <span className="counter counter-deleted">{progress.deleted} deleted</span>
+        <span className="counter counter-created">{view.created} created</span>
+        <span className="counter counter-updated">{view.updated} updated</span>
+        <span className="counter counter-deleted">{view.deleted} deleted</span>
       </div>
-      {progress.status && progress.status !== "idle" && (
-        <div className="sync-progress-status">{progress.status}</div>
+      {view.status && view.status !== "idle" && (
+        <div className="sync-progress-status">{view.status}</div>
       )}
-      {progress.error && (
-        <div className="form-error">{progress.error}</div>
+      {view.error && (
+        <div className="form-error">{view.error}</div>
       )}
     </div>
   );
