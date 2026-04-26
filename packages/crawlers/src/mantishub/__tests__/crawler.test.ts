@@ -157,6 +157,18 @@ describe("MantisHubCrawler", () => {
     expect(result.entities[0].externalId).toBe("issue:9");
   });
 
+  it("rejects issues missing the required summary field with entity context", async () => {
+    crawler.setFetch(routingFetch(async () => {
+      return jsonResponse({
+        issues: [sampleIssue({ id: 7, summary: "" })],
+      });
+    }));
+
+    await expect(crawler.sync(null)).rejects.toThrow(
+      'Invalid issue entity id=7: missing required field "summary"',
+    );
+  });
+
   it("ignores legacy page-only cursor and restarts from page 1", async () => {
     let requestedUrl = "";
     crawler.setFetch(async (input: string | URL | Request) => {

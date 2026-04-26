@@ -152,6 +152,48 @@ describe("SyncEngine", () => {
     expect(row.contentHash!.length).toBe(64);
   });
 
+  it("adds entity context to per-entity processing errors", async () => {
+    themeEngine = new ThemeEngine();
+    themeEngine.register({
+      crawlerType: "mock",
+      render(): string {
+        throw new Error("render failed");
+      },
+      getFilePath(ctx: ThemeRenderContext): string {
+        return `${ctx.entity.entityType}/${ctx.entity.externalId}.md`;
+      },
+    });
+
+    const crawler = createMockCrawler([
+      {
+        entities: [
+          {
+            externalId: "item-404",
+            entityType: "issue",
+            title: "Broken",
+            data: { body: "bad" },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+        deletedExternalIds: [],
+      },
+    ]);
+
+    const engine = new SyncEngine({
+      crawler,
+      dbPath: join(TEST_DIR, "entity-context.db"),
+      collectionName: "test",
+      themeEngine,
+      storage,
+      markdownBasePath: "md",
+    });
+
+    await expect(engine.run()).rejects.toThrow(
+      "Failed to process entity type=issue id=item-404: render failed",
+    );
+  });
+
   it("skips re-render when content hash is unchanged", async () => {
     const entityData = {
       externalId: "skip-1",
