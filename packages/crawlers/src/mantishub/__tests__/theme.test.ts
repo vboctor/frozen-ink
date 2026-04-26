@@ -112,6 +112,46 @@ describe("MantisHubTheme HTML issue-ref linkification", () => {
   });
 });
 
+describe("MantisHubTheme HTML page rendering", () => {
+  function makePageContext(content: string): ThemeRenderContext {
+    return {
+      entity: {
+        externalId: "page:1:getting-started",
+        entityType: "page",
+        title: "Getting Started",
+        data: {
+          id: 99,
+          name: "getting-started",
+          title: "Getting Started",
+          project: { id: 1, name: "TestProject" },
+          content,
+          files: [],
+        },
+      },
+      collectionName: "test",
+      crawlerType: "mantishub",
+      lookupEntityPath: lookup,
+    };
+  }
+
+  it("renders page content as markdown (headings)", () => {
+    const html = theme.renderHtml!(makePageContext("## Section\n\nParagraph text."));
+    expect(html).toContain("<h2");
+    expect(html).toContain("Section");
+  });
+
+  it("renders page content as markdown (bold)", () => {
+    const html = theme.renderHtml!(makePageContext("This is **important**."));
+    expect(html).toContain("<strong>important</strong>");
+  });
+
+  it("linkifies #N issue references in page content", () => {
+    const html = theme.renderHtml!(makePageContext("See #100 for details."));
+    expect(html).toContain('class="mt-issue-ref"');
+    expect(html).toContain("#wikilink/issues%2F00100-linked-issue");
+  });
+});
+
 describe("MantisHubTheme getFilePath", () => {
   it("places issues under <project-slug>/issues/", () => {
     const ctx = makeIssueContext();
