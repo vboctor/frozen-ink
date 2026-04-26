@@ -1016,7 +1016,7 @@ export class MantisHubTheme implements Theme {
     if (content) {
       parts.push(`<div class="mt-section">`);
       parts.push(`<div class="mt-section-body">`);
-      parts.push(`<div class="mt-description">${textToHtml(content, lookup, projectId)}</div>`);
+      parts.push(`<div class="mt-description">${markdownToHtml(content, lookup, projectId)}</div>`);
       parts.push(`</div>`);
       parts.push(`</div>`);
     }
