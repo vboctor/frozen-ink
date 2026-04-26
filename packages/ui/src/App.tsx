@@ -17,6 +17,7 @@ import ManageNav, { type ManageSection } from "./components/manage/ManageNav";
 import CollectionList from "./components/manage/CollectionList";
 import CollectionForm from "./components/manage/CollectionForm";
 import CollectionDetail from "./components/manage/CollectionDetail";
+import ActiveSyncs from "./components/manage/ActiveSyncs";
 import type { Collection, TreeNode, AppInfo, UIMode } from "./types";
 
 function loadTheme(): ThemeId {
@@ -922,13 +923,16 @@ export default function App() {
         </>
       )}
       {uiMode === "manage" && canManage && (
-        <ManageNav active={manageSection} onSelect={(section) => {
-          setManageSection(section);
-          // Close any open forms when navigating between manage pages
-          setEditingCollection(null);
-          setAddingCollection(false);
-          setViewingCollection(null);
-        }} />
+        <>
+          <ManageNav active={manageSection} onSelect={(section) => {
+            setManageSection(section);
+            // Close any open forms when navigating between manage pages
+            setEditingCollection(null);
+            setAddingCollection(false);
+            setViewingCollection(null);
+          }} />
+          <ActiveSyncs onJobComplete={triggerRefresh} />
+        </>
       )}
     </>
   );

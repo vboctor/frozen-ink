@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import {
   ensureInitialized,
@@ -8,6 +8,7 @@ import { CollectionList } from "./CollectionList.js";
 import { SyncView } from "./SyncView.js";
 import { SettingsView } from "./SettingsView.js";
 import { SearchView } from "./SearchView.js";
+import { listJobs, subscribe, type TuiSyncJob } from "../sync-jobs.js";
 
 export type Screen =
   | "home"
@@ -30,6 +31,44 @@ const ALL_MENU_ITEMS: MenuItem[] = [
   { key: "f", label: "Search", description: "Full-text search across all synced content", screen: "search", requiresCollections: true },
   { key: "g", label: "Settings", description: "Configure sync interval, concurrency, and logging", screen: "settings" },
 ];
+
+function SyncJobsFooter(): React.ReactElement | null {
+  const [jobs, setJobs] = useState<TuiSyncJob[]>(() => listJobs());
+  useEffect(() => subscribe(() => setJobs(listJobs())), []);
+  useEffect(() => {
+    const id = setInterval(() => setJobs(listJobs()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  if (jobs.length === 0) return null;
+  const active = jobs.filter((j) => j.active);
+  if (active.length === 0) {
+    // Surface the most recently finished job as a one-liner until it's pruned.
+    const last = jobs[jobs.length - 1];
+    const color = last.error ? "red" : "green";
+    return (
+      <Box paddingX={1}>
+        <Text color={color}>
+          ● {last.collectionName}: {last.error ? `failed — ${last.error}` : `done (+${last.created} ~${last.updated} -${last.deleted})`}
+        </Text>
+      </Box>
+    );
+  }
+  return (
+    <Box paddingX={1} flexDirection="column">
+      <Text color="cyan">● {active.length} sync{active.length === 1 ? "" : "s"} running</Text>
+      {active.map((job) => (
+        <Box key={job.collectionName} marginLeft={2} gap={1}>
+          <Text color="cyan">•</Text>
+          <Text bold>{job.collectionName}</Text>
+          <Text dimColor>
+            +{job.created} ~{job.updated} -{job.deleted}
+          </Text>
+          <Text dimColor>— {job.status}</Text>
+        </Box>
+      ))}
+    </Box>
+  );
+}
 
 export function App(): React.ReactElement {
   const { exit } = useApp();
@@ -102,6 +141,7 @@ export function App(): React.ReactElement {
         <Box paddingX={1} marginTop={1}>
           <Text dimColor>↑↓ navigate  Enter select  q quit</Text>
         </Box>
+        <SyncJobsFooter />
       </Box>
     );
   }
@@ -124,6 +164,7 @@ export function App(): React.ReactElement {
       <Box paddingX={1}>
         <Text dimColor>ESC back to menu</Text>
       </Box>
+      <SyncJobsFooter />
     </Box>
   );
 }

@@ -103,6 +103,19 @@ export interface SyncProgress {
   error: string | null;
 }
 
+export interface SyncJob {
+  collectionName: string;
+  active: boolean;
+  status: string;
+  created: number;
+  updated: number;
+  deleted: number;
+  error: string | null;
+  startedAt: number;
+  completedAt: number | null;
+  full: boolean;
+}
+
 export interface ExportRequest {
   collections: string[];
   outputDir: string;

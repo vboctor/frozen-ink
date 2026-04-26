@@ -1,31 +1,25 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
-import { existsSync, rmSync } from "fs";
-import { join } from "path";
+import { existsSync } from "fs";
 import {
   ensureInitialized,
   listCollections,
   getCollectionDb,
   getCollectionDbPath,
   getCollectionSyncState,
-  getFrozenInkHome,
   entities,
-  SyncEngine,
-  ThemeEngine,
-  LocalStorageBackend,
 } from "@frozenink/core";
-import {
-  createDefaultRegistry,
-  gitHubTheme,
-  obsidianTheme,
-  gitTheme,
-  mantisHubTheme,
-  rssTheme,
-} from "@frozenink/crawlers";
 import { sql } from "drizzle-orm";
+import {
+  listJobs,
+  startSync,
+  subscribe,
+  isActive,
+  type TuiSyncJob,
+} from "../sync-jobs.js";
 
 type SyncMode = "skip" | "incremental" | "full";
-type ViewMode = "select" | "syncing" | "done";
+type ViewMode = "select" | "syncing";
 
 const W_CHECK = 6;
 const W_NAME = 20;
@@ -79,25 +73,23 @@ function getEntityCount(name: string): string {
   }
 }
 
+/** Subscribe to the shared store and re-render when jobs change. */
+function useJobs(): TuiSyncJob[] {
+  const [snapshot, setSnapshot] = useState<TuiSyncJob[]>(() => listJobs());
+  useEffect(() => subscribe(() => setSnapshot(listJobs())), []);
+  // Tick every second so the elapsed time updates in the UI.
+  useEffect(() => {
+    const id = setInterval(() => setSnapshot(listJobs()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return snapshot;
+}
+
 export function SyncView(): React.ReactElement {
   const [cursor, setCursor] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("select");
-  const [progress, setProgress] = useState<string[]>([]);
   const [syncModes, setSyncModes] = useState<Map<string, SyncMode>>(new Map());
-  const [totalStats, setTotalStats] = useState<{ created: number; updated: number; deleted: number; total: number } | null>(null);
-  const [fetchedCount, setFetchedCount] = useState(0);
-  const [syncingCollection, setSyncingCollection] = useState(false);
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const [syncStartTime, setSyncStartTime] = useState<number | null>(null);
-
-  // Tick elapsed time every second while syncing
-  useEffect(() => {
-    if (syncStartTime === null) return;
-    const interval = setInterval(() => {
-      setElapsedMs(Date.now() - syncStartTime);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [syncStartTime]);
+  const jobs = useJobs();
 
   ensureInitialized();
   const collections = listCollections().filter((c: { enabled: boolean }) => c.enabled);
@@ -128,115 +120,20 @@ export function SyncView(): React.ReactElement {
     });
   }, []);
 
-  const startSync = useCallback(async () => {
+  const startAll = useCallback(() => {
     const toSync = collections.filter((c: { name: string }) => {
       const m = syncModes.get(c.name);
       return m === "incremental" || m === "full";
     });
-
     if (toSync.length === 0) return;
-
+    for (const c of toSync) {
+      if (isActive(c.name)) continue;
+      startSync(c.name, syncModes.get(c.name) === "full" ? "full" : "incremental");
+    }
     setViewMode("syncing");
-    setProgress([]);
-    setTotalStats(null);
-    setFetchedCount(0);
-    const syncStart = Date.now();
-    setSyncStartTime(syncStart);
-
-    const home = getFrozenInkHome();
-    const registry = createDefaultRegistry();
-    const themeEngine = new ThemeEngine();
-    themeEngine.register(gitHubTheme);
-    themeEngine.register(obsidianTheme);
-    themeEngine.register(gitTheme);
-    themeEngine.register(mantisHubTheme);
-    themeEngine.register(rssTheme);
-
-    let totalCreated = 0;
-    let totalUpdated = 0;
-    let totalDeleted = 0;
-    let totalEntities = 0;
-
-    for (const col of toSync) {
-      const isFullSync = syncModes.get(col.name) === "full";
-      const label = isFullSync ? "full sync" : "sync";
-      setProgress((p) => [...p, `${label}: "${col.name}" (${col.crawler})...`]);
-      setFetchedCount(0);
-      setSyncingCollection(true);
-
-      const factory = registry.get(col.crawler);
-      if (!factory) {
-        setProgress((p) => [...p, `  No crawler for ${col.crawler}, skipping`]);
-        setSyncingCollection(false);
-        continue;
-      }
-
-      const crawler = factory();
-      await crawler.initialize(
-        col.config as Record<string, unknown>,
-        col.credentials as Record<string, unknown>,
-      );
-
-      const dbPath = getCollectionDbPath(col.name);
-      const collectionDir = join(home, "collections", col.name);
-
-      if (isFullSync) {
-        const contentDir = join(collectionDir, "content");
-        const dbDir = join(collectionDir, "db");
-        if (existsSync(contentDir)) rmSync(contentDir, { recursive: true, force: true });
-        if (existsSync(dbDir)) rmSync(dbDir, { recursive: true, force: true });
-        setProgress((p) => [...p, "  Cleared data for full re-sync"]);
-      }
-      const storage = new LocalStorageBackend(collectionDir);
-
-      const engine = new SyncEngine({
-        crawler,
-        dbPath,
-        collectionName: col.name,
-        themeEngine,
-        storage,
-        markdownBasePath: "content",
-        assetConfig: col.assets as { extensions?: string[]; maxSize?: number } | undefined,
-        onBatchFetched: ({ externalIds }: { externalIds: string[] }) => {
-          if (externalIds.length > 0) {
-            setFetchedCount((c) => c + externalIds.length);
-          }
-        },
-        onProgress: (msg: string) => {
-          setProgress((p) => [...p, `  ${msg}`]);
-        },
-      });
-
-      try {
-        const stats = await engine.run();
-        setSyncingCollection(false);
-        const colDb = getCollectionDb(dbPath);
-        const [{ total }] = colDb.select({ total: sql<number>`count(*)` }).from(entities).all();
-        totalCreated += stats.created;
-        totalUpdated += stats.updated;
-        totalDeleted += stats.deleted;
-        totalEntities += total;
-        const colElapsed = formatElapsed(Date.now() - syncStart);
-        setProgress((p) => [...p, `  +${stats.created} ~${stats.updated} -${stats.deleted} (${total} total) in ${colElapsed}`]);
-      } catch (err) {
-        setSyncingCollection(false);
-        const msg = err instanceof Error ? err.message : String(err);
-        setProgress((p) => [...p, `  Error: ${msg}`]);
-      }
-
-      await crawler.dispose();
-    }
-
-    const totalElapsed = Date.now() - syncStart;
-    setElapsedMs(totalElapsed);
-    setSyncStartTime(null); // stop the timer
-
-    // Only show combined totals when multiple collections were synced
-    if (toSync.length > 1) {
-      setTotalStats({ created: totalCreated, updated: totalUpdated, deleted: totalDeleted, total: totalEntities });
-    }
-    setViewMode("done");
-  }, [collections, syncModes]);
+    // Reset selections so a second round starts from a clean slate.
+    setAllMode("skip");
+  }, [collections, syncModes, setAllMode]);
 
   useInput((input, key) => {
     if (viewMode === "select") {
@@ -257,16 +154,11 @@ export function SyncView(): React.ReactElement {
       if (input === "S") setAllMode("incremental");
       if (input === "F") setAllMode("full");
       if (input === "N") setAllMode("skip");
-      if (key.return) startSync();
-    }
-    if (viewMode === "done") {
-      if (key.return || key.escape) {
-        setViewMode("select");
-        setProgress([]);
-        setTotalStats(null);
-        // Reset all to skip
-        setAllMode("skip");
-      }
+      if (key.return) startAll();
+      if (input === "v" && jobs.length > 0) setViewMode("syncing");
+    } else if (viewMode === "syncing") {
+      // [b]ack to selection — jobs keep running in the background.
+      if (input === "b" || key.escape) setViewMode("select");
     }
   });
 
@@ -278,34 +170,60 @@ export function SyncView(): React.ReactElement {
     );
   }
 
-  if (viewMode === "syncing" || viewMode === "done") {
+  if (viewMode === "syncing") {
+    const activeCount = jobs.filter((j) => j.active).length;
     return (
       <Box flexDirection="column" paddingY={1}>
-        <Text bold>{viewMode === "syncing" ? "Syncing..." : "Sync Complete"}</Text>
+        <Text bold>
+          Sync Jobs {activeCount > 0 ? `(${activeCount} running)` : "(all complete)"}
+        </Text>
         <Box flexDirection="column" marginLeft={1} marginTop={1}>
-          {progress.map((line, i) => (
-            <Text key={i} dimColor={viewMode === "done"}>{line}</Text>
-          ))}
-          {syncingCollection && fetchedCount > 0 && (
-            <Text dimColor>  Fetched {fetchedCount} entities... ({formatElapsed(elapsedMs)})</Text>
-          )}
+          {jobs.length === 0 && <Text dimColor>No jobs.</Text>}
+          {jobs.map((job) => {
+            const elapsed = job.active
+              ? Date.now() - job.startedAt
+              : (job.completedAt ?? Date.now()) - job.startedAt;
+            const state = job.active ? "running" : job.error ? "failed" : "done";
+            const stateColor = state === "running" ? "cyan" : state === "failed" ? "red" : "green";
+            return (
+              <Box key={job.collectionName} flexDirection="column" marginBottom={1}>
+                <Box gap={1}>
+                  <Text color={stateColor} bold>●</Text>
+                  <Text bold>{job.collectionName}</Text>
+                  <Text dimColor>({job.crawler}, {job.mode})</Text>
+                  <Text dimColor>{formatElapsed(elapsed)}</Text>
+                </Box>
+                <Box marginLeft={2} gap={2}>
+                  <Text color="green">+{job.created}</Text>
+                  <Text color="yellow">~{job.updated}</Text>
+                  <Text color="red">-{job.deleted}</Text>
+                  {job.fetched > 0 && job.active && (
+                    <Text dimColor>fetched {job.fetched}</Text>
+                  )}
+                </Box>
+                {job.status && (
+                  <Box marginLeft={2}>
+                    <Text dimColor>{job.status}</Text>
+                  </Box>
+                )}
+                {job.error && (
+                  <Box marginLeft={2}>
+                    <Text color="red">{job.error}</Text>
+                  </Box>
+                )}
+              </Box>
+            );
+          })}
         </Box>
-        {totalStats && (
-          <Box marginTop={1} gap={2}>
-            <Text color="green">+{totalStats.created}</Text>
-            <Text color="yellow">~{totalStats.updated}</Text>
-            <Text color="red">-{totalStats.deleted}</Text>
-            <Text dimColor>({totalStats.total} total)</Text>
-          </Box>
-        )}
-        {viewMode === "done" && (
-          <Box marginTop={1}><Text dimColor>Press Enter to continue</Text></Box>
-        )}
+        <Box marginTop={1}>
+          <Text dimColor>[b/ESC] back to selection — jobs keep running</Text>
+        </Box>
       </Box>
     );
   }
 
   const selectedCount = [...syncModes.values()].filter((m) => m !== "skip").length;
+  const activeJobsCount = jobs.filter((j) => j.active).length;
 
   return (
     <Box flexDirection="column" paddingY={1}>
@@ -328,8 +246,9 @@ export function SyncView(): React.ReactElement {
         {collections.map((col: { name: string; title?: string; crawler: string; enabled: boolean }, i: number) => {
           const mode = syncModes.get(col.name) || "skip";
           const selected = i === cursor;
-          const checkbox = mode === "skip" ? "[ ] " : mode === "incremental" ? "[s] " : "[f] ";
-          const checkColor = mode === "skip" ? "gray" : mode === "incremental" ? "green" : "yellow";
+          const running = isActive(col.name);
+          const checkbox = running ? "[~] " : mode === "skip" ? "[ ] " : mode === "incremental" ? "[s] " : "[f] ";
+          const checkColor = running ? "cyan" : mode === "skip" ? "gray" : mode === "incremental" ? "green" : "yellow";
           return (
             <Box key={col.name}>
               <Text color={selected ? "cyan" : undefined}>{selected ? "❯ " : "  "}</Text>
@@ -351,6 +270,11 @@ export function SyncView(): React.ReactElement {
         <Text dimColor>[n] Skip</Text>
         <Text dimColor>[S/F/N] All</Text>
         <Text dimColor>[Enter] Start{selectedCount > 0 ? ` (${selectedCount})` : ""}</Text>
+        {jobs.length > 0 && (
+          <Text color={activeJobsCount > 0 ? "cyan" : "green"}>
+            [v] View jobs ({activeJobsCount > 0 ? `${activeJobsCount} running` : `${jobs.length} recent`})
+          </Text>
+        )}
       </Box>
     </Box>
   );

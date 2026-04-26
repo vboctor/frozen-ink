@@ -44,6 +44,11 @@ import { pullCollection } from "./pull";
 
 // --- In-memory sync/publish/export progress tracking ---
 
+/**
+ * Legacy shape retained for the /api/sync/status endpoint. Derived from the
+ * per-collection jobs map so existing consumers keep working while the new
+ * /api/sync/jobs endpoint exposes the full list for parallel tracking.
+ */
 export interface SyncProgress {
   active: boolean;
   collectionName: string | null;
@@ -52,6 +57,19 @@ export interface SyncProgress {
   updated: number;
   deleted: number;
   error: string | null;
+}
+
+export interface SyncJob {
+  collectionName: string;
+  active: boolean;
+  status: string;
+  created: number;
+  updated: number;
+  deleted: number;
+  error: string | null;
+  startedAt: number;
+  completedAt: number | null;
+  full: boolean;
 }
 
 export interface PublishProgress {
@@ -71,15 +89,64 @@ export interface ExportProgress {
   error: string | null;
 }
 
-let syncProgress: SyncProgress = {
-  active: false,
-  collectionName: null,
-  status: "idle",
-  created: 0,
-  updated: 0,
-  deleted: 0,
-  error: null,
-};
+const syncJobs = new Map<string, SyncJob>();
+/** Keep finished jobs around briefly so the UI can render their final state. */
+const JOB_RETENTION_MS = 60_000;
+
+function pruneJobs(): void {
+  const now = Date.now();
+  for (const [name, job] of syncJobs) {
+    if (!job.active && job.completedAt && now - job.completedAt > JOB_RETENTION_MS) {
+      syncJobs.delete(name);
+    }
+  }
+}
+
+function listSyncJobs(): SyncJob[] {
+  pruneJobs();
+  return [...syncJobs.values()].sort((a, b) => a.startedAt - b.startedAt);
+}
+
+/** Derive the legacy singleton shape from the jobs map. */
+function derivedSyncProgress(): SyncProgress {
+  const jobs = listSyncJobs();
+  const active = jobs.filter((j) => j.active);
+  if (active.length > 0) {
+    // Aggregate counts across all active jobs so "Sync All" sees totals.
+    const totals = active.reduce(
+      (acc, j) => ({
+        created: acc.created + j.created,
+        updated: acc.updated + j.updated,
+        deleted: acc.deleted + j.deleted,
+      }),
+      { created: 0, updated: 0, deleted: 0 },
+    );
+    const primary = active[active.length - 1];
+    return {
+      active: true,
+      collectionName: active.length === 1 ? primary.collectionName : null,
+      status: active.length === 1 ? primary.status : `syncing ${active.length} collections`,
+      created: totals.created,
+      updated: totals.updated,
+      deleted: totals.deleted,
+      error: null,
+    };
+  }
+  // No active jobs — surface the most recently completed as the "last result".
+  if (jobs.length === 0) {
+    return { active: false, collectionName: null, status: "idle", created: 0, updated: 0, deleted: 0, error: null };
+  }
+  const last = jobs.reduce((a, b) => ((b.completedAt ?? 0) > (a.completedAt ?? 0) ? b : a));
+  return {
+    active: false,
+    collectionName: last.collectionName,
+    status: last.error ? "failed" : "completed",
+    created: last.created,
+    updated: last.updated,
+    deleted: last.deleted,
+    error: last.error,
+  };
+}
 
 let publishProgress: PublishProgress = {
   active: false,
@@ -365,39 +432,41 @@ export function handleManagementRequest(req: Request): Response | null {
 
   // --- Sync ---
 
-  // POST /api/sync/:name (sync single collection)
+  // POST /api/sync/:name (sync single collection — fire-and-forget)
   const syncOneMatch = path.match(/^\/api\/sync\/([^/]+)$/);
   if (syncOneMatch && method === "POST") {
     const name = decodeURIComponent(syncOneMatch[1]);
-    // Mark active synchronously before any await so that status polls arriving
-    // during body-read don't see the stale idle state and prematurely complete.
-    syncProgress = { active: true, collectionName: name, status: "starting", created: 0, updated: 0, deleted: 0, error: null };
+    // Seed an "active" job synchronously so status polls between the HTTP
+    // response and the actual sync start don't see an idle state.
+    ensureSyncJob(name, false);
     return handleAsync(async () => {
       const body = await readBody(req);
       const full = !!body.full;
-      await triggerSync([name], full);
+      void startSyncJob(name, full);
       return jsonResponse({ ok: true });
     });
   }
 
-  // POST /api/sync (sync all)
+  // POST /api/sync (sync all enabled collections — in parallel)
   if (path === "/api/sync" && method === "POST") {
-    // Mark active synchronously before any await so that status polls arriving
-    // during body-read don't see the stale idle state and prematurely complete.
-    syncProgress = { active: true, collectionName: null, status: "starting", created: 0, updated: 0, deleted: 0, error: null };
+    const enabled = listCollections().filter((c) => c.enabled);
+    for (const c of enabled) ensureSyncJob(c.name, false);
     return handleAsync(async () => {
       const body = await readBody(req);
       const full = !!body.full;
-      const collections = listCollections().filter((c) => c.enabled);
-      const names = collections.map((c) => c.name);
-      await triggerSync(names, full);
-      return jsonResponse({ ok: true });
+      for (const c of enabled) void startSyncJob(c.name, full);
+      return jsonResponse({ ok: true, started: enabled.map((c) => c.name) });
     });
   }
 
-  // GET /api/sync/status
+  // GET /api/sync/status — legacy aggregate view (derived from the jobs map)
   if (path === "/api/sync/status" && method === "GET") {
-    return jsonResponse(syncProgress);
+    return jsonResponse(derivedSyncProgress());
+  }
+
+  // GET /api/sync/jobs — list all active + recently completed sync jobs
+  if (path === "/api/sync/jobs" && method === "GET") {
+    return jsonResponse(listSyncJobs());
   }
 
   // GET /api/collections/:name/sync-runs (returns last sync state wrapped in an array for backward compat)
@@ -650,66 +719,83 @@ function handleAsync(fn: () => Promise<Response>): Response {
 
 // --- Sync logic ---
 
-async function triggerSync(collectionNames: string[], full: boolean): Promise<void> {
-  const home = getFrozenInkHome();
-  const registry = createDefaultRegistry();
-  const themeEngine = createThemeEngine();
-  const prepareThemeEngine = createGenerateThemeEngine();
-
-  syncProgress = {
+/**
+ * Ensure a job slot exists for `name`, seeded in an active/starting state.
+ * Returns null if a sync is already running for this collection (caller
+ * should not start another).
+ */
+function ensureSyncJob(name: string, full: boolean): SyncJob | null {
+  const existing = syncJobs.get(name);
+  if (existing && existing.active) return null;
+  const job: SyncJob = {
+    collectionName: name,
     active: true,
-    collectionName: null,
     status: "starting",
     created: 0,
     updated: 0,
     deleted: 0,
     error: null,
+    startedAt: Date.now(),
+    completedAt: null,
+    full,
   };
+  syncJobs.set(name, job);
+  return job;
+}
 
-  let totalCreated = 0;
-  let totalUpdated = 0;
-  let totalDeleted = 0;
+/**
+ * Serialize post-sync republishes so concurrent sync completions don't
+ * clobber each other's Cloudflare deploys (and the shared publishProgress).
+ */
+let publishChain: Promise<unknown> = Promise.resolve();
+function queuePublish(fn: () => Promise<void>): Promise<void> {
+  const next = publishChain.then(fn, fn);
+  publishChain = next.catch(() => {});
+  return next;
+}
+
+/**
+ * Run a sync for a single collection as a background task. Safe to call
+ * multiple times in parallel with different collection names.
+ */
+async function startSyncJob(name: string, full: boolean): Promise<void> {
+  const job = ensureSyncJob(name, full);
+  if (!job) return; // already running
+  job.full = full;
+
+  const home = getFrozenInkHome();
+  const registry = createDefaultRegistry();
+  const themeEngine = createThemeEngine();
+  const prepareThemeEngine = createGenerateThemeEngine();
 
   try {
-    for (const name of collectionNames) {
-      const col = getCollection(name);
-      if (!col) continue;
+    const col = getCollection(name);
+    if (!col) throw new Error(`Collection "${name}" not found`);
 
-      // Remote/cloned collections use pullCollection — no prepare or crawler needed
-      if (col.crawler === "remote") {
-        syncProgress = { ...syncProgress, collectionName: name, status: `syncing ${name}` };
-        console.log(`[sync:${name}] starting (remote/cloned)`);
-        try {
-          const result = await pullCollection(name, {
-            onProgress: (msg) => {
-              syncProgress = { ...syncProgress, status: msg };
-              console.log(`[sync:${name}] ${msg}`);
-            },
-          });
-          totalCreated += result.created;
-          totalUpdated += result.updated;
-          totalDeleted += result.deleted;
-          syncProgress = { ...syncProgress, created: totalCreated, updated: totalUpdated, deleted: totalDeleted };
-        } catch (err) {
-          console.error(`  Sync failed for "${name}": ${err}`);
-        }
-        continue;
-      }
-
+    // Remote/cloned collections use pullCollection — no prepare or crawler needed
+    if (col.crawler === "remote") {
+      job.status = `syncing ${name}`;
+      console.log(`[sync:${name}] starting (remote/cloned)`);
+      const result = await pullCollection(name, {
+        onProgress: (msg) => {
+          job.status = msg;
+          console.log(`[sync:${name}] ${msg}`);
+        },
+      });
+      job.created = result.created;
+      job.updated = result.updated;
+      job.deleted = result.deleted;
+    } else {
       // Run prepare before incremental sync: schema migrations, folder ymls, stale markdown check
       if (!full) {
-        syncProgress = { ...syncProgress, collectionName: name, status: `preparing ${name}` };
+        job.status = `preparing ${name}`;
         await prepareCollection(col, home, prepareThemeEngine, (msg) => console.log(`[prepare:${name}]`, msg));
       }
 
-      syncProgress = {
-        ...syncProgress,
-        collectionName: name,
-        status: `syncing ${name}`,
-      };
+      job.status = `syncing ${name}`;
 
       const factory = registry.get(col.crawler);
-      if (!factory) continue;
+      if (!factory) throw new Error(`No crawler registered for "${col.crawler}"`);
 
       const crawler = factory();
       try {
@@ -726,7 +812,6 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
         mkdirSync(join(collectionDir, "content"), { recursive: true });
         const storage = new LocalStorageBackend(collectionDir);
 
-        // Full re-sync should match CLI behavior: clear content + DB to start clean.
         if (full) {
           const contentDir = join(collectionDir, "content");
           const dbDir = join(collectionDir, "db");
@@ -734,7 +819,7 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
           if (existsSync(dbDir)) rmSync(dbDir, { recursive: true, force: true });
           mkdirSync(join(collectionDir, "content"), { recursive: true });
           updateCollectionSyncState(getCollectionDbPath(name), { cursor: null });
-          syncProgress = { ...syncProgress, status: `${name}: cleared local data for full re-sync` };
+          job.status = `${name}: cleared local data for full re-sync`;
         }
 
         const engine = new SyncEngine({
@@ -746,65 +831,49 @@ async function triggerSync(collectionNames: string[], full: boolean): Promise<vo
           markdownBasePath: "content",
           assetConfig: col.assets as { extensions?: string[]; maxSize?: number } | undefined,
           onEntityProcessed: (info) => {
-            if (info.created) totalCreated++;
-            if (info.updated) totalUpdated++;
-            syncProgress = {
-              ...syncProgress,
-              created: totalCreated,
-              updated: totalUpdated,
-            };
+            if (info.created) job.created++;
+            if (info.updated) job.updated++;
           },
           onProgress: (msg) => {
-            syncProgress = { ...syncProgress, status: `${name}: ${msg}` };
+            job.status = `${name}: ${msg}`;
             console.log(`[sync:${name}] ${msg}`);
           },
         });
 
         const result = await engine.run({ syncType: full ? "full" : "incremental" });
-        totalDeleted += result.deleted;
-        syncProgress = { ...syncProgress, deleted: totalDeleted };
+        job.deleted = result.deleted;
         console.log(`[sync:${name}] done: +${result.created} ~${result.updated} -${result.deleted}`);
       } finally {
         await crawler.dispose();
       }
+    }
 
-      if (getCollectionPublishState(name)) {
-        console.log(`[sync:${name}] collection is published — republishing`);
-        syncProgress = { ...syncProgress, status: `republishing ${name}: starting` };
+    // Post-sync republish (serialized across collections via queuePublish)
+    if (getCollectionPublishState(name)) {
+      console.log(`[sync:${name}] collection is published — queueing republish`);
+      job.status = `waiting to republish ${name}`;
+      await queuePublish(async () => {
+        job.status = `republishing ${name}: starting`;
         try {
           await triggerPublish({ collectionName: name }, (step, detail) => {
-            // Mirror publish progress into syncProgress so the SyncProgress UI
-            // (which polls /api/sync/status, not /api/publish/status) shows
-            // step-by-step updates during the post-sync republish instead of
-            // appearing frozen on "republishing ${name}".
             const label = detail || step;
-            syncProgress = { ...syncProgress, status: `republishing ${name}: ${label}` };
+            job.status = `republishing ${name}: ${label}`;
           });
         } catch (err) {
           console.error(`[sync:${name}] republish failed: ${err}`);
-          syncProgress = { ...syncProgress, status: `republish failed: ${String(err)}` };
+          job.status = `republish failed: ${String(err)}`;
         }
-      }
+      });
     }
 
-    syncProgress = {
-      active: false,
-      collectionName: null,
-      status: "completed",
-      created: totalCreated,
-      updated: totalUpdated,
-      deleted: totalDeleted,
-      error: null,
-    };
-    console.log(`[sync] completed: +${totalCreated} ~${totalUpdated} -${totalDeleted} across ${collectionNames.length} collection(s)`);
+    job.status = "completed";
   } catch (err) {
-    syncProgress = {
-      ...syncProgress,
-      active: false,
-      status: "failed",
-      error: String(err),
-    };
-    console.error(`[sync] failed: ${err}`);
+    job.error = String(err);
+    job.status = "failed";
+    console.error(`[sync:${name}] failed: ${err}`);
+  } finally {
+    job.active = false;
+    job.completedAt = Date.now();
   }
 }
 

@@ -3291,6 +3291,73 @@ select.form-input { cursor: pointer; }
 }
 .sync-collection-info strong { font-size: 13px; }
 
+/* Active Syncs (sidebar tracker for parallel sync jobs in Manage mode) */
+.active-syncs {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+.active-syncs-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.active-syncs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.active-sync-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.active-sync-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.active-sync-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.active-sync-counters {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  align-items: center;
+}
+.active-sync-elapsed {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.active-sync-status {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.active-sync-error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--callout-danger-border);
+  word-break: break-word;
+}
+
 /* Sync Progress */
 .sync-progress {
   background: var(--bg-secondary);
