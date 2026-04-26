@@ -806,8 +806,12 @@ function queuePublish(fn: () => Promise<void>): Promise<void> {
  * multiple times in parallel with different collection names.
  */
 async function startSyncJob(name: string, full: boolean): Promise<void> {
-  const job = ensureSyncJob(name, full);
-  if (!job) return; // already running
+  // The HTTP handler seeded the job entry synchronously (status: "starting")
+  // so status polls don't see an idle window. Pick that entry up here rather
+  // than calling ensureSyncJob again — the second call would see active=true
+  // and return null, which would silently skip the actual sync.
+  const job = syncJobs.get(name);
+  if (!job || job.status !== "starting") return; // gone, or already running
   job.full = full;
 
   const home = getFrozenInkHome();
@@ -821,7 +825,7 @@ async function startSyncJob(name: string, full: boolean): Promise<void> {
 
     // Remote/cloned collections use pullCollection — no prepare or crawler needed
     if (col.crawler === "remote") {
-      job.status = `syncing ${name}`;
+      job.status = "syncing";
       console.log(`[sync:${name}] starting (remote/cloned)`);
       const result = await pullCollection(name, {
         onProgress: (msg) => {
@@ -835,11 +839,11 @@ async function startSyncJob(name: string, full: boolean): Promise<void> {
     } else {
       // Run prepare before incremental sync: schema migrations, folder ymls, stale markdown check
       if (!full) {
-        job.status = `preparing ${name}`;
+        job.status = "preparing";
         await prepareCollection(col, home, prepareThemeEngine, (msg) => console.log(`[prepare:${name}]`, msg));
       }
 
-      job.status = `syncing ${name}`;
+      job.status = "syncing";
 
       const factory = registry.get(col.crawler);
       if (!factory) throw new Error(`No crawler registered for "${col.crawler}"`);
@@ -866,7 +870,7 @@ async function startSyncJob(name: string, full: boolean): Promise<void> {
           if (existsSync(dbDir)) rmSync(dbDir, { recursive: true, force: true });
           mkdirSync(join(collectionDir, "content"), { recursive: true });
           updateCollectionSyncState(getCollectionDbPath(name), { cursor: null });
-          job.status = `${name}: cleared local data for full re-sync`;
+          job.status = "cleared local data for full re-sync";
         }
 
         const engine = new SyncEngine({
@@ -882,7 +886,10 @@ async function startSyncJob(name: string, full: boolean): Promise<void> {
             if (info.updated) job.updated++;
           },
           onProgress: (msg) => {
-            job.status = `${name}: ${msg}`;
+            // UI already shows the collection name in the progress card —
+            // don't double up with a "name:" prefix in the status text.
+            // The console log keeps the prefix for log correlation.
+            job.status = msg;
             console.log(`[sync:${name}] ${msg}`);
           },
         });
@@ -903,13 +910,13 @@ async function startSyncJob(name: string, full: boolean): Promise<void> {
     // Post-sync republish (serialized across collections via queuePublish)
     if (getCollectionPublishState(name)) {
       console.log(`[sync:${name}] collection is published — queueing republish`);
-      job.status = `waiting to republish ${name}`;
+      job.status = "waiting to republish";
       await queuePublish(async () => {
-        job.status = `republishing ${name}: starting`;
+        job.status = "republishing: starting";
         try {
           await triggerPublish({ collectionName: name }, (step, detail) => {
             const label = detail || step;
-            job.status = `republishing ${name}: ${label}`;
+            job.status = `republishing: ${label}`;
           });
         } catch (err) {
           console.error(`[sync:${name}] republish failed: ${err}`);

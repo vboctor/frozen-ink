@@ -3388,7 +3388,8 @@ select.form-input { cursor: pointer; }
 }
 .counter-created { color: #1a7f37; }
 .counter-updated { color: #0969da; }
-.counter-deleted { color: #cf222e; }
+.counter-deleted { color: #6e7781; }
+.counter-failed  { color: #cf222e; }
 .sync-progress-status {
   font-size: 12px;
   color: var(--text-secondary);
