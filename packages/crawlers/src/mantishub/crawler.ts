@@ -5,6 +5,7 @@ import type {
   SyncCursor,
   SyncResult,
   AssetFilter,
+  FailedEntity,
 } from "@frozenink/core";
 import { createCryptoHasher } from "@frozenink/core";
 import type {
@@ -33,6 +34,14 @@ interface MantisHubSyncCursor extends SyncCursor {
   repeatedPageCount?: number;
   /** Current sync phase. Undefined / missing means "issues". */
   phase?: "issues" | "pages" | "users";
+  /**
+   * Frozen "as-of" timestamp for the in-progress full sync. Pinned at the
+   * start of an initial sync so DESC pagination is stable across resumes —
+   * new activity after this time doesn't shift pages mid-flight. Cleared
+   * when the issues phase finishes; subsequent incremental syncs use
+   * `updatedSince` as the watermark instead.
+   */
+  snapshotCeiling?: string;
   /** User data accumulated across issue pages (serialized in cursor). */
   _users?: Record<number, { id: number; name: string; email?: string }>;
   /** Project data accumulated across issue pages (serialized in cursor). */
@@ -43,9 +52,24 @@ interface MantisHubSyncCursor extends SyncCursor {
   _pagesBrowsePage?: number;
   /** Issue IDs to fetch during incremental sync (populated by lightweight scan). */
   _incrementalIds?: number[];
+  /**
+   * Issue IDs from the previous run's failure journal that should be retried
+   * before resuming normal pagination. Drained as fetches succeed/fail.
+   */
+  _retryIds?: number[];
 }
 
-const PAGE_SIZE = 25;
+/**
+ * Full-sync list pages are large (100): cheap list calls, fewer round trips
+ * across a 10k-issue initial sync. Each listed issue still gets its own
+ * detail fetch sequentially, so the per-batch wall time stays modest.
+ *
+ * Incremental fetch pages are smaller (25): the scan already produced a
+ * targeted ID list, so smaller batches mean more frequent cursor
+ * checkpoints and progress updates without increasing total work.
+ */
+const FULL_SYNC_PAGE_SIZE = 100;
+const INCREMENTAL_PAGE_SIZE = 25;
 const SCAN_PAGE_SIZE = 100;
 const PAGE_DELAY_MS = 100;
 const SCAN_PAGE_DELAY_MS = 20;
@@ -142,6 +166,18 @@ export class MantisHubCrawler implements Crawler {
     this.progressCallback = callback;
   }
 
+  private retryExternalIds: Set<string> | null = null;
+  private retriesInitialized = false;
+
+  setRetryExternalIds(ids: Set<string>): void {
+    this.retryExternalIds = ids;
+    this.retriesInitialized = false;
+  }
+
+  private issueExternalId(id: number): string {
+    return `issue:${id}`;
+  }
+
   private reportProgress(msg: string): void {
     this.progressCallback?.(msg);
   }
@@ -229,6 +265,38 @@ export class MantisHubCrawler implements Crawler {
   async sync(cursor: SyncCursor | null): Promise<SyncResult> {
     const c = (cursor as MantisHubSyncCursor) ?? {};
 
+    // Initial-sync snapshot ceiling: when this is the very first sync (no
+    // prior cursor at all), pin the dataset to a single point in time. The
+    // issue list endpoint is paginated DESC by updated_at — without a
+    // ceiling, new updates that arrive mid-sync shift every later page by
+    // one slot, so the saved cursor on resume points at the wrong content.
+    // The ceiling makes pagination idempotent for the duration of the
+    // initial sync. Subsequent incremental syncs don't need it (they use
+    // `updatedSince` instead) and won't set it.
+    if (cursor === null && !c.updatedSince) {
+      c.snapshotCeiling = new Date().toISOString().replace("T", " ").replace(/\..+$/, "");
+    }
+
+    // Drain pending retries from the journal before normal pagination, so
+    // a flood of new activity doesn't starve previously-failed entities.
+    // Done on the first sync() call of the run regardless of whether this is
+    // an initial or incremental run.
+    if (!this.retriesInitialized) {
+      this.retriesInitialized = true;
+      if (this.retryExternalIds && this.retryExternalIds.size > 0) {
+        const retryIds = Array.from(this.retryExternalIds)
+          .map((id) => id.startsWith("issue:") ? id.slice("issue:".length) : id)
+          .map((id) => Number(id))
+          .filter((n) => Number.isFinite(n));
+        if (retryIds.length > 0) {
+          c._retryIds = retryIds;
+        }
+      }
+    }
+    if (c._retryIds && c._retryIds.length > 0) {
+      return this.fetchRetryBatch(c);
+    }
+
     // Restore accumulated user/project data from cursor (survives across pages).
     if (cursor === null) {
       this.collectedUsers.clear();
@@ -285,14 +353,32 @@ export class MantisHubCrawler implements Crawler {
     }
 
     this.reportProgress(`Full sync: fetching issues page ${page} (${fetched} synced so far)`);
-    let url = `${this.baseUrl}/api/rest/issues?page_size=${PAGE_SIZE}&page=${page}`;
+    let url = `${this.baseUrl}/api/rest/issues?page_size=${FULL_SYNC_PAGE_SIZE}&page=${page}`;
     if (this.projectId) {
       url += `&project_id=${this.projectId}`;
+    }
+    // Pin the dataset to the snapshot ceiling so concurrent updates after
+    // sync started don't shift later pages. MantisBT supports `filter_updated_before`.
+    if (c.snapshotCeiling) {
+      url += `&filter_updated_before=${encodeURIComponent(c.snapshotCeiling)}`;
     }
 
     const response = await this.apiFetch(url);
     const data = (await response.json()) as { issues: MantisHubIssue[] };
-    const issues = data.issues ?? [];
+    let issues = data.issues ?? [];
+
+    // Belt-and-suspenders: if the server doesn't honor filter_updated_before,
+    // drop items above the ceiling client-side. With DESC ordering, items
+    // newer than the ceiling appear at the front of the page.
+    if (c.snapshotCeiling) {
+      const ceilingTs = parseTimestamp(c.snapshotCeiling);
+      if (ceilingTs !== null) {
+        issues = issues.filter((i) => {
+          const ts = parseTimestamp(i.updated_at);
+          return ts === null || ts <= ceilingTs;
+        });
+      }
+    }
 
     issues.sort(
       (a, b) =>
@@ -325,7 +411,7 @@ export class MantisHubCrawler implements Crawler {
       issuesToProcess = issuesToProcess.slice(0, remaining);
     }
 
-    const apiHasMore = issues.length === PAGE_SIZE;
+    const apiHasMore = issues.length === FULL_SYNC_PAGE_SIZE;
     const reachedMax = this.maxEntities ? (fetched + issuesToProcess.length) >= this.maxEntities : false;
     const issuesHaveMore = apiHasMore && !reachedMax;
     const finalUpdatedSince = maxTimestamp(c.updatedSince, newestSeenUpdatedAt);
@@ -345,16 +431,23 @@ export class MantisHubCrawler implements Crawler {
 
     // Fetch full issue data individually — the list endpoint omits attachments
     // and note attachments. Sequential to avoid overwhelming the server.
+    // Per-issue failures are reported to the engine via failedEntities rather
+    // than thrown, so one bad issue doesn't abort a 10k-issue sync. Auth/list
+    // failures still surface above; this only handles per-record errors.
     const entities: CrawlerEntityData[] = [];
+    const failedEntities: FailedEntity[] = [];
     for (const issue of issuesToProcess) {
-      let fullIssue: MantisHubIssue;
       try {
-        fullIssue = await this.fetchIssue(issue.id);
+        const fullIssue = await this.fetchIssue(issue.id);
+        entities.push(await this.buildIssueEntity(fullIssue));
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        throw new Error(`Failed to sync entity type=issue id=${issue.id}: ${message}`);
+        failedEntities.push({
+          externalId: this.issueExternalId(issue.id),
+          entityType: "issue",
+          error: message,
+        });
       }
-      entities.push(await this.buildIssueEntity(fullIssue));
     }
 
     const newFetched = fetched + issuesToProcess.length;
@@ -366,12 +459,14 @@ export class MantisHubCrawler implements Crawler {
     if (issuesHaveMore) {
       return {
         entities,
+        failedEntities,
         nextCursor: {
           page: page + 1,
           fetched: newFetched,
           newestSeenUpdatedAt,
           lastPageSignature: pageSignature,
           repeatedPageCount,
+          snapshotCeiling: c.snapshotCeiling,
           ...serializedCollected,
         },
         hasMore: true,
@@ -383,6 +478,7 @@ export class MantisHubCrawler implements Crawler {
     const transition = this.transitionFromIssues(finalUpdatedSince);
     return {
       entities,
+      failedEntities,
       ...transition,
     };
   }
@@ -466,26 +562,30 @@ export class MantisHubCrawler implements Crawler {
 
   /**
    * Fetch phase of incremental sync: fetch full issue data for IDs
-   * identified during the scan phase, in batches of PAGE_SIZE.
+   * identified during the scan phase, in batches of INCREMENTAL_PAGE_SIZE.
    */
   private async fetchIncrementalBatch(c: MantisHubSyncCursor): Promise<SyncResult> {
     const ids = c._incrementalIds ?? [];
-    const batch = ids.slice(0, PAGE_SIZE);
-    const remaining = ids.slice(PAGE_SIZE);
+    const batch = ids.slice(0, INCREMENTAL_PAGE_SIZE);
+    const remaining = ids.slice(INCREMENTAL_PAGE_SIZE);
 
     const entities: CrawlerEntityData[] = [];
+    const failedEntities: FailedEntity[] = [];
     for (let i = 0; i < batch.length; i++) {
       const id = batch[i];
       this.reportProgress(`Fetching issue #${id} (${i + 1}/${batch.length} in batch, ${remaining.length + batch.length - i - 1} remaining)`);
-      let fullIssue: MantisHubIssue;
       try {
-        fullIssue = await this.fetchIssue(id);
+        const fullIssue = await this.fetchIssue(id);
+        this.collectUsersAndProjects(fullIssue);
+        entities.push(await this.buildIssueEntity(fullIssue));
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        throw new Error(`Failed to sync entity type=issue id=${id}: ${message}`);
+        failedEntities.push({
+          externalId: this.issueExternalId(id),
+          entityType: "issue",
+          error: message,
+        });
       }
-      this.collectUsersAndProjects(fullIssue);
-      entities.push(await this.buildIssueEntity(fullIssue));
     }
 
     const serializedCollected = {
@@ -496,6 +596,7 @@ export class MantisHubCrawler implements Crawler {
     if (remaining.length > 0) {
       return {
         entities,
+        failedEntities,
         nextCursor: {
           updatedSince: c.updatedSince,
           newestSeenUpdatedAt: c.newestSeenUpdatedAt,
@@ -511,7 +612,55 @@ export class MantisHubCrawler implements Crawler {
     const finalUpdatedSince = maxTimestamp(c.updatedSince, c.newestSeenUpdatedAt);
     return {
       entities,
+      failedEntities,
       ...this.transitionFromIssues(finalUpdatedSince),
+    };
+  }
+
+  /**
+   * Drain the retry queue passed in via setRetryExternalIds(). Runs first
+   * (before normal pagination) so a continuous stream of new activity doesn't
+   * starve previously-failed entities. Per-issue failures are journaled
+   * again with an incremented attempt counter; successes are removed from
+   * the journal by the SyncEngine.
+   */
+  private async fetchRetryBatch(c: MantisHubSyncCursor): Promise<SyncResult> {
+    const ids = c._retryIds ?? [];
+    const batch = ids.slice(0, INCREMENTAL_PAGE_SIZE);
+    const remaining = ids.slice(INCREMENTAL_PAGE_SIZE);
+
+    const entities: CrawlerEntityData[] = [];
+    const failedEntities: FailedEntity[] = [];
+    for (let i = 0; i < batch.length; i++) {
+      const id = batch[i];
+      this.reportProgress(`Retrying previously-failed issue #${id} (${i + 1}/${batch.length}, ${remaining.length} more queued)`);
+      try {
+        const fullIssue = await this.fetchIssue(id);
+        this.collectUsersAndProjects(fullIssue);
+        entities.push(await this.buildIssueEntity(fullIssue));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        failedEntities.push({
+          externalId: this.issueExternalId(id),
+          entityType: "issue",
+          error: message,
+        });
+      }
+    }
+
+    // After the retry queue is drained, fall back to whatever the cursor
+    // would otherwise drive (initial-page pagination, incremental scan, etc.)
+    // by clearing _retryIds and passing through the rest of the cursor.
+    const nextCursor: MantisHubSyncCursor = {
+      ...c,
+      _retryIds: remaining.length > 0 ? remaining : undefined,
+    };
+    return {
+      entities,
+      failedEntities,
+      nextCursor,
+      hasMore: true,
+      deletedExternalIds: [],
     };
   }
 
@@ -524,13 +673,20 @@ export class MantisHubCrawler implements Crawler {
       if (users.length > 0) {
         this.reportProgress(`Fetching ${users.length} user profile(s)`);
       }
+      // MantisHub commonly denies access to other users' profiles (the
+      // signed-in account often only has visibility into its own user record).
+      // Once we've seen enough failures we stop trying to fetch user profiles
+      // entirely and emit shell entities (id + name + email collected from
+      // issues) for the rest. User fetch failures are NEVER added to the
+      // sync_errors journal — there's no value in retrying a profile the
+      // current credentials cannot see.
+      const MAX_USER_FETCH_FAILURES = 10;
       let i = 0;
-      let consecutiveForbidden = 0;
-      let allForbidden = false;
+      let userFailureCount = 0;
+      let abortUserFetch = false;
       for (const basic of users) {
         i++;
-        if (allForbidden) {
-          // Server denied access to all users — emit shell entities for remaining.
+        if (abortUserFetch) {
           entities.push(this.buildUserEntity({ id: basic.id, name: basic.name, email: basic.email }));
           continue;
         }
@@ -538,19 +694,14 @@ export class MantisHubCrawler implements Crawler {
         try {
           const profile = await this.fetchUser(basic.id);
           entities.push(this.buildUserEntity(profile));
-          consecutiveForbidden = 0;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          if (message.includes("→ 403")) {
-            consecutiveForbidden++;
-            if (consecutiveForbidden >= 10) {
-              console.warn(`  Warning: 10 consecutive 403s fetching users — assuming all user profiles are forbidden. Creating shell entries for remaining ${users.length - i} user(s).`);
-              allForbidden = true;
-            }
-          } else {
-            consecutiveForbidden = 0;
-          }
+          userFailureCount++;
           console.warn(`  Warning: entity type=user id=${basic.id} name=${basic.name}: ${message}`);
+          if (userFailureCount >= MAX_USER_FETCH_FAILURES) {
+            console.warn(`  Warning: ${MAX_USER_FETCH_FAILURES} user fetch failures — stopping user sync. Creating shell entries for remaining ${users.length - i} user(s) from data collected during issue sync.`);
+            abortUserFetch = true;
+          }
           // Build a minimal user entity from data collected during issue sync.
           entities.push(this.buildUserEntity({
             id: basic.id,

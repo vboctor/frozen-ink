@@ -401,6 +401,11 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
               )}
             </span>
           )}
+          {status?.lastSyncRun?.errorCount != null && status.lastSyncRun.errorCount > 0 && (
+            <span className="sync-error-count">
+              {status.lastSyncRun.errorCount} failed (will retry up to 3 attempts)
+            </span>
+          )}
         </div>
         <div className="collection-card-actions" style={{ marginTop: 8 }}>
           {collection?.crawlerType === "remote" ? (

@@ -157,16 +157,25 @@ describe("MantisHubCrawler", () => {
     expect(result.entities[0].externalId).toBe("issue:9");
   });
 
-  it("rejects issues missing the required summary field with entity context", async () => {
+  it("journals issues missing the required summary field with entity context", async () => {
     crawler.setFetch(routingFetch(async () => {
       return jsonResponse({
         issues: [sampleIssue({ id: 7, summary: "" })],
       });
     }));
 
-    await expect(crawler.sync(null)).rejects.toThrow(
-      'Invalid issue entity id=7: missing required field "summary"',
-    );
+    // Per-entity validation errors are reported via failedEntities so the
+    // sync can continue and the SyncEngine can journal them for retry,
+    // rather than aborting the whole batch on one malformed issue.
+    const result = await crawler.sync(null);
+    expect(result.entities.filter((e) => e.entityType === "issue")).toHaveLength(0);
+    expect(result.failedEntities).toEqual([
+      {
+        externalId: "issue:7",
+        entityType: "issue",
+        error: 'Invalid issue entity id=7: missing required field "summary"',
+      },
+    ]);
   });
 
   it("ignores legacy page-only cursor and restarts from page 1", async () => {
@@ -242,7 +251,8 @@ describe("MantisHubCrawler", () => {
 
   it("advances to page 2 with in-run cursor state", async () => {
     const listUrls: string[] = [];
-    const repeatedPage = Array.from({ length: 25 }, (_, i) =>
+    // Full sync uses page_size=100 — return a full page to trigger pagination.
+    const repeatedPage = Array.from({ length: 100 }, (_, i) =>
       sampleIssue({
         id: i + 1,
         updated_at: "2024-03-01T00:00:00Z",

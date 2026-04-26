@@ -23,6 +23,7 @@ import {
   ThemeEngine,
   LocalStorageBackend,
   entities,
+  syncErrors,
   resolveCredentials,
   listNamedCredentials,
   getNamedCredentials,
@@ -57,6 +58,10 @@ export interface SyncProgress {
   updated: number;
   deleted: number;
   error: string | null;
+  /** Per-entity recoverable failures from the sync_errors journal. */
+  errorCount?: number;
+  /** Reason a sync ended unsuccessfully (rate_limit / fatal). */
+  failureReason?: string | null;
 }
 
 export interface SyncJob {
@@ -70,6 +75,10 @@ export interface SyncJob {
   startedAt: number;
   completedAt: number | null;
   full: boolean;
+  /** Per-entity recoverable failures from the sync_errors journal. */
+  errorCount?: number;
+  /** Reason a sync ended unsuccessfully (rate_limit / fatal). */
+  failureReason?: string | null;
 }
 
 export interface PublishProgress {
@@ -118,8 +127,9 @@ function derivedSyncProgress(): SyncProgress {
         created: acc.created + j.created,
         updated: acc.updated + j.updated,
         deleted: acc.deleted + j.deleted,
+        errorCount: acc.errorCount + (j.errorCount ?? 0),
       }),
-      { created: 0, updated: 0, deleted: 0 },
+      { created: 0, updated: 0, deleted: 0, errorCount: 0 },
     );
     const primary = active[active.length - 1];
     return {
@@ -130,6 +140,8 @@ function derivedSyncProgress(): SyncProgress {
       updated: totals.updated,
       deleted: totals.deleted,
       error: null,
+      errorCount: totals.errorCount,
+      failureReason: active.length === 1 ? primary.failureReason ?? null : null,
     };
   }
   // No active jobs — surface the most recently completed as the "last result".
@@ -145,6 +157,8 @@ function derivedSyncProgress(): SyncProgress {
     updated: last.updated,
     deleted: last.deleted,
     error: last.error,
+    errorCount: last.errorCount ?? 0,
+    failureReason: last.failureReason ?? null,
   };
 }
 
@@ -426,6 +440,8 @@ export function handleManagementRequest(req: Request): Response | null {
         entitiesUpdated: sync.lastUpdated ?? 0,
         entitiesDeleted: sync.lastDeleted ?? 0,
         errors: sync.lastErrors ?? null,
+        errorCount: sync.errorCount ?? 0,
+        failureReason: sync.failureReason ?? null,
       } : null,
     });
   }
@@ -467,6 +483,35 @@ export function handleManagementRequest(req: Request): Response | null {
   // GET /api/sync/jobs — list all active + recently completed sync jobs
   if (path === "/api/sync/jobs" && method === "GET") {
     return jsonResponse(listSyncJobs());
+  }
+
+  // GET /api/collections/:name/sync-errors — list per-entity failures from the journal
+  const syncErrorsMatch = path.match(/^\/api\/collections\/([^/]+)\/sync-errors$/);
+  if (syncErrorsMatch && method === "GET") {
+    const name = decodeURIComponent(syncErrorsMatch[1]);
+    const col = getCollection(name);
+    if (!col) return jsonResponse([]);
+    const dbPath = getCollectionDbPath(name);
+    if (!existsSync(dbPath)) return jsonResponse([]);
+    const colDb = getCollectionDb(dbPath);
+    const rows = colDb.select().from(syncErrors).all() as Array<{
+      externalId: string;
+      entityType: string;
+      error: string;
+      attempts: number;
+      firstSeenAt: string;
+      lastSeenAt: string;
+    }>;
+    return jsonResponse(
+      rows.map((r) => ({
+        externalId: r.externalId,
+        entityType: r.entityType,
+        error: r.error,
+        attempts: r.attempts,
+        firstSeenAt: r.firstSeenAt,
+        lastSeenAt: r.lastSeenAt,
+      })),
+    );
   }
 
   // GET /api/collections/:name/sync-runs (returns last sync state wrapped in an array for backward compat)
@@ -738,6 +783,8 @@ function ensureSyncJob(name: string, full: boolean): SyncJob | null {
     startedAt: Date.now(),
     completedAt: null,
     full,
+    errorCount: 0,
+    failureReason: null,
   };
   syncJobs.set(name, job);
   return job;
@@ -842,7 +889,12 @@ async function startSyncJob(name: string, full: boolean): Promise<void> {
 
         const result = await engine.run({ syncType: full ? "full" : "incremental" });
         job.deleted = result.deleted;
-        console.log(`[sync:${name}] done: +${result.created} ~${result.updated} -${result.deleted}`);
+        // Surface the per-entity error journal so the UI can show "N failed"
+        // without having to query the collection DB.
+        const finalState = getCollectionSyncState(getCollectionDbPath(name));
+        job.errorCount = finalState.errorCount ?? 0;
+        job.failureReason = finalState.failureReason ?? null;
+        console.log(`[sync:${name}] done: +${result.created} ~${result.updated} -${result.deleted} (errors=${job.errorCount})`);
       } finally {
         await crawler.dispose();
       }

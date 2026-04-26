@@ -52,6 +52,19 @@ export function getCollectionDb(dbPath: string) {
   sqlite.exec("CREATE INDEX IF NOT EXISTS idx_entities_type     ON entities(entity_type);");
   sqlite.exec("CREATE INDEX IF NOT EXISTS idx_entities_updated  ON entities(updated_at);")
 
+  // Per-entity sync failure journal. Created lazily on first DB open so existing
+  // collections gain it without an explicit migration step.
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS sync_errors (
+      external_id    TEXT PRIMARY KEY,
+      entity_type    TEXT NOT NULL,
+      error          TEXT NOT NULL,
+      attempts       INTEGER NOT NULL DEFAULT 1,
+      first_seen_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   // One-time backfill: populate folder/slug from data.markdown_path for existing rows
   const needsBackfill = sqlite.prepare(
     "SELECT id, json_extract(data, '$.markdown_path') as mp FROM entities WHERE folder IS NULL AND json_extract(data, '$.markdown_path') IS NOT NULL LIMIT 500",

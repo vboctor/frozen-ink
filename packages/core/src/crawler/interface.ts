@@ -29,11 +29,24 @@ export interface CrawlerEntityData {
   }[];
 }
 
+export interface FailedEntity {
+  externalId: string;
+  entityType: string;
+  error: string;
+}
+
 export interface SyncResult {
   entities: CrawlerEntityData[];
   nextCursor: SyncCursor | null;
   hasMore: boolean;
   deletedExternalIds: string[];
+  /**
+   * Per-entity fetch/parse failures that the crawler chose to skip rather than
+   * abort the batch. The SyncEngine records these in the sync_errors journal,
+   * applies the circuit breaker, and feeds them back via setRetryExternalIds()
+   * on the next sync.
+   */
+  failedEntities?: FailedEntity[];
 }
 
 export interface CrawlerMetadata {
@@ -76,4 +89,10 @@ export interface Crawler {
    * profiles whose bios rarely change).
    */
   setExistingExternalIds?(ids: Set<string>): void;
+  /**
+   * Optional: hand the crawler a set of externalIds that previously failed
+   * and should be retried on this run. Crawlers should attempt these before
+   * normal pagination so a fresh set of failures doesn't starve the backlog.
+   */
+  setRetryExternalIds?(ids: Set<string>): void;
 }

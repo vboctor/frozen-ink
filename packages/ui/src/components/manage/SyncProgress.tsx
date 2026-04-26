@@ -22,11 +22,13 @@ interface AggregateView {
   updated: number;
   deleted: number;
   error: string | null;
+  errorCount: number;
+  failureReason: string | null;
 }
 
 function aggregate(jobs: SyncJob[]): AggregateView {
   if (jobs.length === 0) {
-    return { active: false, collectionName: null, status: "idle", created: 0, updated: 0, deleted: 0, error: null };
+    return { active: false, collectionName: null, status: "idle", created: 0, updated: 0, deleted: 0, error: null, errorCount: 0, failureReason: null };
   }
   const active = jobs.filter((j) => j.active);
   const totals = jobs.reduce(
@@ -34,8 +36,9 @@ function aggregate(jobs: SyncJob[]): AggregateView {
       created: acc.created + j.created,
       updated: acc.updated + j.updated,
       deleted: acc.deleted + j.deleted,
+      errorCount: acc.errorCount + (j.errorCount ?? 0),
     }),
-    { created: 0, updated: 0, deleted: 0 },
+    { created: 0, updated: 0, deleted: 0, errorCount: 0 },
   );
   if (active.length > 0) {
     return {
@@ -46,9 +49,12 @@ function aggregate(jobs: SyncJob[]): AggregateView {
       updated: totals.updated,
       deleted: totals.deleted,
       error: null,
+      errorCount: totals.errorCount,
+      failureReason: active.length === 1 ? active[0].failureReason ?? null : null,
     };
   }
   const firstError = jobs.find((j) => j.error)?.error ?? null;
+  const firstFailureReason = jobs.find((j) => j.failureReason)?.failureReason ?? null;
   return {
     active: false,
     collectionName: null,
@@ -57,6 +63,8 @@ function aggregate(jobs: SyncJob[]): AggregateView {
     updated: totals.updated,
     deleted: totals.deleted,
     error: firstError,
+    errorCount: totals.errorCount,
+    failureReason: firstFailureReason,
   };
 }
 
@@ -69,6 +77,8 @@ function singleJobView(job: SyncJob): AggregateView {
     updated: job.updated,
     deleted: job.deleted,
     error: job.error,
+    errorCount: job.errorCount ?? 0,
+    failureReason: job.failureReason ?? null,
   };
 }
 
@@ -129,9 +139,17 @@ export default function SyncProgress({ collectionName, onComplete }: SyncProgres
         <span className="counter counter-created">{view.created} created</span>
         <span className="counter counter-updated">{view.updated} updated</span>
         <span className="counter counter-deleted">{view.deleted} deleted</span>
+        {view.errorCount > 0 && (
+          <span className="counter counter-failed">{view.errorCount} failed</span>
+        )}
       </div>
       {view.status && view.status !== "idle" && (
         <div className="sync-progress-status">{view.status}</div>
+      )}
+      {view.failureReason === "rate_limit" && (
+        <div className="form-warning">
+          Sync paused by upstream rate limit. Click Sync again to resume from where it stopped.
+        </div>
       )}
       {view.error && (
         <div className="form-error">{view.error}</div>

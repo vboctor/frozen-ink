@@ -13,6 +13,13 @@ export interface SyncStateSnapshot {
   lastUpdated?: number;
   lastDeleted?: number;
   lastErrors?: unknown[];
+  /** Number of per-entity recoverable errors recorded in sync_errors. */
+  errorCount?: number;
+  /**
+   * Reason the last sync ended, when not "completed". One of:
+   * "rate_limit" | "fatal".
+   */
+  failureReason?: string;
 }
 
 /**
@@ -27,6 +34,8 @@ export interface SyncStateUpdate {
   lastUpdated?: number;
   lastDeleted?: number;
   lastErrors?: unknown[] | null;
+  errorCount?: number;
+  failureReason?: string | null;
 }
 
 /** Metadata key namespace. All keys are implicitly scoped to the collection. */
@@ -38,6 +47,8 @@ const K = {
   syncLastUpdated: "sync.last_updated",
   syncLastDeleted: "sync.last_deleted",
   syncLastErrors: "sync.last_errors",
+  syncErrorCount: "sync.error_count",
+  syncFailureReason: "sync.failure_reason",
   title: "title",
   description: "description",
   version: "version",
@@ -122,6 +133,12 @@ export class MetadataStore {
       try { snapshot.lastErrors = JSON.parse(lastErrors); } catch { /* ignore */ }
     }
 
+    const errorCount = this.getOptional(K.syncErrorCount);
+    if (errorCount !== null) snapshot.errorCount = Number(errorCount);
+
+    const failureReason = this.getOptional(K.syncFailureReason);
+    if (failureReason !== null) snapshot.failureReason = failureReason;
+
     return snapshot;
   }
 
@@ -141,6 +158,11 @@ export class MetadataStore {
       } else {
         this.set(K.syncLastErrors, JSON.stringify(updates.lastErrors));
       }
+    }
+    if (updates.errorCount !== undefined) this.set(K.syncErrorCount, String(updates.errorCount));
+    if ("failureReason" in updates) {
+      if (updates.failureReason == null) this.delete(K.syncFailureReason);
+      else this.set(K.syncFailureReason, updates.failureReason);
     }
   }
 
