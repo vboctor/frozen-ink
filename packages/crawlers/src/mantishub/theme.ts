@@ -9,6 +9,12 @@ function slugify(text: string): string {
     .slice(0, 60);
 }
 
+function requiredDataString(context: ThemeRenderContext, field: string): string {
+  const value = context.entity.data[field];
+  if (typeof value === "string" && value.trim()) return value;
+  throw new Error(`Missing required field "${field}"`);
+}
+
 function padId(id: number): string {
   return String(id).padStart(5, "0");
 }
@@ -544,26 +550,26 @@ export class MantisHubTheme implements Theme {
     const d = context.entity.data;
 
     if (context.entity.entityType === "user") {
-      const name = d.name as string;
+      const name = requiredDataString(context, "name");
       return `users/${slugify(name)}.md`;
     }
 
     if (context.entity.entityType === "project") {
-      const name = d.name as string;
-      const slug = slugify(name) || "unnamed";
+      const name = requiredDataString(context, "name");
+      const slug = slugify(name);
       // Project entity lives inside its own project folder so every project's
       // issues/pages/metadata nest together under one subtree.
       return `${slug}/${slug}.md`;
     }
 
     if (context.entity.entityType === "page") {
-      const name = d.name as string;
+      const name = requiredDataString(context, "name");
       const projectName = (d.project as { name: string })?.name;
       return `${pageFilePath(name, projectName)}.md`;
     }
 
     const id = d.id as number;
-    const summary = d.summary as string;
+    const summary = requiredDataString(context, "summary");
     const projectName = (d.project as { name: string })?.name;
     return `${issueFilePath(id, summary, projectName)}.md`;
   }
@@ -579,18 +585,18 @@ export class MantisHubTheme implements Theme {
     const d = context.entity.data;
     switch (context.entity.entityType) {
       case "issue":
-        return d.id != null && d.summary != null
-          ? `${padId(d.id as number)}: ${d.summary as string}`
+        return d.id != null
+          ? `${padId(d.id as number)}: ${requiredDataString(context, "summary")}`
           : undefined;
       case "page":
-        return ((d.title || d.name) as string) || undefined;
+        return ((d.title as string | undefined)?.trim() || requiredDataString(context, "name"));
       case "user": {
         const realName = d.realName as string | null;
-        const name = d.name as string;
+        const name = requiredDataString(context, "name");
         return realName ? `${realName} (@${name})` : name;
       }
       case "project":
-        return (d.name as string) || undefined;
+        return requiredDataString(context, "name");
       default:
         return undefined;
     }

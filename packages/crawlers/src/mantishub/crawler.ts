@@ -81,6 +81,11 @@ function slugify(text: string): string {
     .slice(0, 60);
 }
 
+function requiredString(value: unknown, entityType: string, id: string | number, field: string): string {
+  if (typeof value === "string" && value.trim()) return value;
+  throw new Error(`Invalid ${entityType} entity id=${id}: missing required field "${field}"`);
+}
+
 /** Detect MantisHub instances by URL pattern. */
 function isMantisHub(baseUrl: string): boolean {
   return baseUrl.includes(".mantishub.");
@@ -712,17 +717,18 @@ export class MantisHubCrawler implements Crawler {
   }
 
   private buildUserEntity(user: MantisHubUser): CrawlerEntityData {
+    const username = requiredString(user.name, "user", user.id, "name");
     const avatarUrl = user.avatar?.attr?.src ?? null;
-    const displayName = user.real_name ? `${user.real_name} (@${user.name})` : user.name;
+    const displayName = user.real_name ? `${user.real_name} (@${username})` : username;
     return {
-      externalId: `user:${user.name}`,
+      externalId: `user:${username}`,
       entityType: "user",
       title: displayName,
-      url: `${this.baseUrl}/user_summary_page.php?username=${encodeURIComponent(user.name)}`,
+      url: `${this.baseUrl}/user_summary_page.php?username=${encodeURIComponent(username)}`,
       tags: ["user"],
       data: {
         id: user.id,
-        name: user.name,
+        name: username,
         realName: user.real_name ?? null,
         email: user.email ?? null,
         avatarUrl,
@@ -731,15 +737,16 @@ export class MantisHubCrawler implements Crawler {
   }
 
   private buildProjectEntity(project: { id: number; name: string; categories: string[] }): CrawlerEntityData {
+    const name = requiredString(project.name, "project", project.id, "name");
     return {
       externalId: `project:${project.id}`,
       entityType: "project",
-      title: project.name,
+      title: name,
       url: `${this.baseUrl}/set_project.php?project_id=${project.id}`,
       tags: ["project"],
       data: {
         id: project.id,
-        name: project.name,
+        name,
         categories: project.categories,
       },
     };
@@ -963,6 +970,7 @@ export class MantisHubCrawler implements Crawler {
     page: MantisHubPage,
     files: MantisHubPageFile[],
   ): Promise<CrawlerEntityData> {
+    const pageName = requiredString(page.name, "page", page.id, "name");
     const hasher = createCryptoHasher("sha256");
     hasher.update(JSON.stringify({ page, files }));
     const contentHash = hasher.digest("hex");
@@ -1006,18 +1014,17 @@ export class MantisHubCrawler implements Crawler {
     }
 
     const projectId = page.project?.id;
-    const pageName = page.name;
     const pageUrl = `${this.baseUrl}/plugin.php?page=Pages/view&project_id=${projectId}&name=${encodeURIComponent(pageName)}`;
 
     return {
       externalId: `page:${projectId}:${pageName}`,
       entityType: "page",
-      title: page.title || page.name,
+      title: page.title || pageName,
       contentHash,
       url: pageUrl,
       data: {
         id: page.id,
-        name: page.name,
+        name: pageName,
         title: page.title,
         content: page.content ?? "",
         project: page.project,
@@ -1130,6 +1137,7 @@ export class MantisHubCrawler implements Crawler {
   }
 
   private async buildIssueEntity(issue: MantisHubIssue): Promise<CrawlerEntityData> {
+    const summary = requiredString(issue.summary, "issue", issue.id, "summary");
     const hasher = createCryptoHasher("sha256");
     hasher.update(JSON.stringify(issue));
     const contentHash = hasher.digest("hex");
@@ -1255,12 +1263,12 @@ export class MantisHubCrawler implements Crawler {
     return {
       externalId: `issue:${issue.id}`,
       entityType: "issue",
-      title: `${padId(issue.id)}: ${issue.summary}`,
+      title: `${padId(issue.id)}: ${summary}`,
       contentHash,
       url: `${this.baseUrl}/view.php?id=${issue.id}`,
       data: {
         id: issue.id,
-        summary: issue.summary,
+        summary,
         description: issue.description ?? "",
         stepsToReproduce: issue.steps_to_reproduce ?? "",
         additionalInformation: issue.additional_information ?? "",

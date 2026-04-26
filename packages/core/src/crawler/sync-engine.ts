@@ -29,6 +29,21 @@ function isToolPath(filePath: string): boolean {
   return filePath.split("/").some((segment) => segment.startsWith("."));
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function withEntityContext(err: unknown, entity: Pick<CrawlerEntityData, "entityType" | "externalId">): Error {
+  const context = `entity type=${entity.entityType} id=${entity.externalId}`;
+  const message = errorMessage(err);
+  if (message.includes(context)) {
+    return err instanceof Error ? err : new Error(message);
+  }
+  const wrapped = new Error(`Failed to process ${context}: ${message}`);
+  (wrapped as Error & { cause?: unknown }).cause = err;
+  return wrapped;
+}
+
 
 /**
  * Extract internal link targets from rendered markdown.
@@ -241,9 +256,20 @@ export class SyncEngine {
         });
 
         // Process entities (links are deferred until all entities exist)
-        const deferredLinks: Array<{ entityId: number; markdown: string; markdownPath?: string }> = [];
+        const deferredLinks: Array<{
+          entityId: number;
+          entityType: string;
+          externalId: string;
+          markdown: string;
+          markdownPath?: string;
+        }> = [];
         for (const entityData of result.entities) {
-          const counts = await this.upsertEntity(entityData, crawlerType, deferredLinks);
+          let counts: { created: number; updated: number };
+          try {
+            counts = await this.upsertEntity(entityData, crawlerType, deferredLinks);
+          } catch (err) {
+            throw withEntityContext(err, entityData);
+          }
           created += counts.created;
           updated += counts.updated;
           this.onEntityProcessed?.({
@@ -255,9 +281,13 @@ export class SyncEngine {
         }
 
         // Sync links now that all entities in the batch exist
-        for (const { entityId, markdown, markdownPath } of deferredLinks) {
-          this.syncLinks(entityId, markdown, markdownPath);
-          this.recomputeHash(entityId);
+        for (const { entityId, entityType, externalId, markdown, markdownPath } of deferredLinks) {
+          try {
+            this.syncLinks(entityId, markdown, markdownPath);
+            this.recomputeHash(entityId);
+          } catch (err) {
+            throw withEntityContext(err, { entityType, externalId });
+          }
         }
 
         // Handle deletions
@@ -356,7 +386,13 @@ export class SyncEngine {
   private async upsertEntity(
     entityData: CrawlerEntityData,
     crawlerType: string,
-    deferredLinks?: Array<{ entityId: number; markdown: string; markdownPath?: string }>,
+    deferredLinks?: Array<{
+      entityId: number;
+      entityType: string;
+      externalId: string;
+      markdown: string;
+      markdownPath?: string;
+    }>,
   ): Promise<{ created: number; updated: number }> {
     // Build initial EntityData with source from the crawler
     const initialData: EntityData = {
@@ -474,7 +510,13 @@ export class SyncEngine {
 
       // Defer link syncing until all entities in the batch exist
       if (deferredLinks) {
-        deferredLinks.push({ entityId: existing.id, markdown, markdownPath: filePath });
+        deferredLinks.push({
+          entityId: existing.id,
+          entityType: entityData.entityType,
+          externalId: entityData.externalId,
+          markdown,
+          markdownPath: filePath,
+        });
       } else {
         this.syncLinks(existing.id, markdown, filePath);
         this.recomputeHash(existing.id);
@@ -535,7 +577,13 @@ export class SyncEngine {
 
     // Defer link syncing until all entities in the batch exist
     if (deferredLinks) {
-      deferredLinks.push({ entityId: inserted.id, markdown, markdownPath: filePath });
+      deferredLinks.push({
+        entityId: inserted.id,
+        entityType: entityData.entityType,
+        externalId: entityData.externalId,
+        markdown,
+        markdownPath: filePath,
+      });
     } else {
       this.syncLinks(inserted.id, markdown, filePath);
       this.recomputeHash(inserted.id);
@@ -780,64 +828,68 @@ export class SyncEngine {
   private async reRenderAllEntities(crawlerType: string): Promise<void> {
     const allEntities = this.db.select().from(entities).all();
     for (const row of allEntities) {
-      const rowData = (row.data as EntityData) ?? { source: {} };
-      // Re-derive title from stored data via the theme (no API call needed).
-      const derivedTitle = this.themeEngine.getTitle({
-        entity: {
+      try {
+        const rowData = (row.data as EntityData) ?? { source: {} };
+        // Re-derive title from stored data via the theme (no API call needed).
+        const derivedTitle = this.themeEngine.getTitle({
+          entity: {
+            externalId: row.externalId,
+            entityType: row.entityType,
+            title: row.title,
+            data: rowData.source,
+            url: rowData.url ?? undefined,
+          },
+          collectionName: this.collectionName,
+          crawlerType,
+        });
+        const title = derivedTitle ?? row.title;
+
+        const entityData: CrawlerEntityData = {
           externalId: row.externalId,
           entityType: row.entityType,
-          title: row.title,
+          title,
           data: rowData.source,
           url: rowData.url ?? undefined,
-        },
-        collectionName: this.collectionName,
-        crawlerType,
-      });
-      const title = derivedTitle ?? row.title;
+        };
+        const markdown = this.renderMarkdown(entityData, crawlerType);
+        const filePath = this.getMarkdownPath(entityData, crawlerType);
+        const storagePath = this.toStoragePath(filePath);
+        await this.storage.write(storagePath, markdown);
 
-      const entityData: CrawlerEntityData = {
-        externalId: row.externalId,
-        entityType: row.entityType,
-        title,
-        data: rowData.source,
-        url: rowData.url ?? undefined,
-      };
-      const markdown = this.renderMarkdown(entityData, crawlerType);
-      const filePath = this.getMarkdownPath(entityData, crawlerType);
-      const storagePath = this.toStoragePath(filePath);
-      await this.storage.write(storagePath, markdown);
+        const lastSlashR = filePath.lastIndexOf("/");
+        const reFolder = lastSlashR >= 0 ? filePath.slice(0, lastSlashR) : "";
+        const reSlug = filePath.slice(lastSlashR + 1).replace(/\.md$/, "");
 
-      const lastSlashR = filePath.lastIndexOf("/");
-      const reFolder = lastSlashR >= 0 ? filePath.slice(0, lastSlashR) : "";
-      const reSlug = filePath.slice(lastSlashR + 1).replace(/\.md$/, "");
+        // Delete old file if path changed
+        const oldPath = row.folder != null && row.slug != null
+          ? (row.folder ? `${row.folder}/${row.slug}.md` : `${row.slug}.md`)
+          : null;
+        if (oldPath && oldPath !== filePath) {
+          try { await this.storage.delete(this.toStoragePath(oldPath)); } catch { /* ignore */ }
+        }
 
-      // Delete old file if path changed
-      const oldPath = row.folder != null && row.slug != null
-        ? (row.folder ? `${row.folder}/${row.slug}.md` : `${row.slug}.md`)
-        : null;
-      if (oldPath && oldPath !== filePath) {
-        try { await this.storage.delete(this.toStoragePath(oldPath)); } catch { /* ignore */ }
+        this.db
+          .update(entities)
+          .set({ title, folder: reFolder, slug: reSlug })
+          .where(eq(entities.id, row.id))
+          .run();
+
+        // Re-sync wikilinks
+        this.syncLinks(row.id, markdown, filePath);
+        this.recomputeHash(row.id);
+
+        // Update search index
+        this.searchIndexer.updateIndex({
+          id: row.id,
+          externalId: row.externalId,
+          entityType: row.entityType,
+          title,
+          content: markdown,
+          tags: [],
+        });
+      } catch (err) {
+        throw withEntityContext(err, { entityType: row.entityType, externalId: row.externalId });
       }
-
-      this.db
-        .update(entities)
-        .set({ title, folder: reFolder, slug: reSlug })
-        .where(eq(entities.id, row.id))
-        .run();
-
-      // Re-sync wikilinks
-      this.syncLinks(row.id, markdown, filePath);
-      this.recomputeHash(row.id);
-
-      // Update search index
-      this.searchIndexer.updateIndex({
-        id: row.id,
-        externalId: row.externalId,
-        entityType: row.entityType,
-        title,
-        content: markdown,
-        tags: [],
-      });
     }
   }
 
