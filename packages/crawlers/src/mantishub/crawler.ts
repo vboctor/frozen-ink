@@ -60,19 +60,49 @@ interface MantisHubSyncCursor extends SyncCursor {
 }
 
 /**
- * Full-sync list pages are large (100): cheap list calls, fewer round trips
- * across a 10k-issue initial sync. Each listed issue still gets its own
- * detail fetch sequentially, so the per-batch wall time stays modest.
- *
- * Incremental fetch pages are smaller (25): the scan already produced a
- * targeted ID list, so smaller batches mean more frequent cursor
- * checkpoints and progress updates without increasing total work.
+ * Page size for both full-sync list calls and the incremental fetch batches.
+ * Detail fetches dominate wall time (one HTTP call per issue), so smaller
+ * pages give more frequent cursor checkpoints and progress updates without
+ * meaningfully changing total work. The scan-only endpoint stays at 100
+ * because its payload is tiny (id + updated_at) and not RTT-bound per row.
  */
-const FULL_SYNC_PAGE_SIZE = 100;
-const INCREMENTAL_PAGE_SIZE = 25;
+const PAGE_SIZE = 25;
 const SCAN_PAGE_SIZE = 100;
 const PAGE_DELAY_MS = 100;
 const SCAN_PAGE_DELAY_MS = 20;
+
+/**
+ * Number of per-issue detail fetches in flight at once. The list endpoint
+ * is throttled by PAGE_DELAY_MS between pages, but the individual issue
+ * fetches inside a page are RTT-bound — going from serial to 5-way
+ * concurrent cuts a 25-issue batch from ~25 sequential RTTs to ~5 rounds
+ * without overloading the server.
+ */
+const ISSUE_FETCH_CONCURRENCY = 5;
+
+/**
+ * Map `items` to results in input order, running at most `concurrency`
+ * promises in flight at any time. Results from `fn` are placed at the
+ * same index as their input. Errors are caught by `fn`'s try/catch in
+ * the call sites — this helper does not handle rejections.
+ */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 
 function parseTimestamp(value: string | undefined): number | null {
   if (!value) return null;
@@ -352,8 +382,12 @@ export class MantisHubCrawler implements Crawler {
       await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
     }
 
-    this.reportProgress(`Full sync: fetching issues page ${page} (${fetched} synced so far)`);
-    let url = `${this.baseUrl}/api/rest/issues?page_size=${FULL_SYNC_PAGE_SIZE}&page=${page}`;
+    this.reportProgress(`Fetching issues page ${page}`);
+    // Use select=id,updated_at — the list call only needs IDs to drive the
+    // detail fetches and updated_at for pagination/snapshot bookkeeping.
+    // Skipping the full payload here saves bandwidth on every page; the per
+    // -issue detail fetch returns the full record anyway.
+    let url = `${this.baseUrl}/api/rest/issues?select=id,updated_at&page_size=${PAGE_SIZE}&page=${page}`;
     if (this.projectId) {
       url += `&project_id=${this.projectId}`;
     }
@@ -364,7 +398,7 @@ export class MantisHubCrawler implements Crawler {
     }
 
     const response = await this.apiFetch(url);
-    const data = (await response.json()) as { issues: MantisHubIssue[] };
+    const data = (await response.json()) as { issues: Array<{ id: number; updated_at: string }> };
     let issues = data.issues ?? [];
 
     // Belt-and-suspenders: if the server doesn't honor filter_updated_before,
@@ -411,7 +445,7 @@ export class MantisHubCrawler implements Crawler {
       issuesToProcess = issuesToProcess.slice(0, remaining);
     }
 
-    const apiHasMore = issues.length === FULL_SYNC_PAGE_SIZE;
+    const apiHasMore = issues.length === PAGE_SIZE;
     const reachedMax = this.maxEntities ? (fetched + issuesToProcess.length) >= this.maxEntities : false;
     const issuesHaveMore = apiHasMore && !reachedMax;
     const finalUpdatedSince = maxTimestamp(c.updatedSince, newestSeenUpdatedAt);
@@ -423,31 +457,44 @@ export class MantisHubCrawler implements Crawler {
       };
     }
 
-    // Collect users + projects from ALL fetched issues (not just processed ones)
-    // so we capture every user/project even in incremental syncs.
-    for (const issue of issues) {
-      this.collectUsersAndProjects(issue);
-    }
+    // The list call uses select=id,updated_at, so the slim payload doesn't
+    // carry user/project/category/notes data. Collection happens in the
+    // detail-fetch loop below where the full issue payload is available.
 
-    // Fetch full issue data individually — the list endpoint omits attachments
-    // and note attachments. Sequential to avoid overwhelming the server.
-    // Per-issue failures are reported to the engine via failedEntities rather
-    // than thrown, so one bad issue doesn't abort a 10k-issue sync. Auth/list
-    // failures still surface above; this only handles per-record errors.
+    // Fetch full issue data individually. The list endpoint is tiny now
+    // (id+updated_at only); the per-issue calls return the full record
+    // including attachments and notes. Run up to ISSUE_FETCH_CONCURRENCY in
+    // parallel to hide RTT. Per-issue failures are reported via
+    // failedEntities so one bad issue doesn't abort the run; auth/list
+    // failures still surface above.
+    type IssueOutcome =
+      | { kind: "ok"; entity: CrawlerEntityData }
+      | { kind: "fail"; failure: FailedEntity };
+    const outcomes = await mapWithConcurrency<typeof issuesToProcess[number], IssueOutcome>(
+      issuesToProcess,
+      ISSUE_FETCH_CONCURRENCY,
+      async (issue) => {
+        try {
+          const fullIssue = await this.fetchIssue(issue.id);
+          this.collectUsersAndProjects(fullIssue);
+          return { kind: "ok", entity: await this.buildIssueEntity(fullIssue) };
+        } catch (err) {
+          return {
+            kind: "fail",
+            failure: {
+              externalId: this.issueExternalId(issue.id),
+              entityType: "issue",
+              error: err instanceof Error ? err.message : String(err),
+            },
+          };
+        }
+      },
+    );
     const entities: CrawlerEntityData[] = [];
     const failedEntities: FailedEntity[] = [];
-    for (const issue of issuesToProcess) {
-      try {
-        const fullIssue = await this.fetchIssue(issue.id);
-        entities.push(await this.buildIssueEntity(fullIssue));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        failedEntities.push({
-          externalId: this.issueExternalId(issue.id),
-          entityType: "issue",
-          error: message,
-        });
-      }
+    for (const o of outcomes) {
+      if (o.kind === "ok") entities.push(o.entity);
+      else failedEntities.push(o.failure);
     }
 
     const newFetched = fetched + issuesToProcess.length;
@@ -501,7 +548,7 @@ export class MantisHubCrawler implements Crawler {
         await new Promise((resolve) => setTimeout(resolve, SCAN_PAGE_DELAY_MS));
       }
 
-      this.reportProgress(`Scanning issues: page ${page} (${ids.length} updated so far)`);
+      this.reportProgress(`Scanning issues: page ${page}`);
       let url = `${this.baseUrl}/api/rest/issues?select=id,updated_at&page_size=${SCAN_PAGE_SIZE}&page=${page}`;
       if (this.projectId) url += `&project_id=${this.projectId}`;
 
@@ -562,30 +609,35 @@ export class MantisHubCrawler implements Crawler {
 
   /**
    * Fetch phase of incremental sync: fetch full issue data for IDs
-   * identified during the scan phase, in batches of INCREMENTAL_PAGE_SIZE.
+   * identified during the scan phase, in batches of PAGE_SIZE.
    */
   private async fetchIncrementalBatch(c: MantisHubSyncCursor): Promise<SyncResult> {
     const ids = c._incrementalIds ?? [];
-    const batch = ids.slice(0, INCREMENTAL_PAGE_SIZE);
-    const remaining = ids.slice(INCREMENTAL_PAGE_SIZE);
+    const batch = ids.slice(0, PAGE_SIZE);
+    const remaining = ids.slice(PAGE_SIZE);
 
-    const entities: CrawlerEntityData[] = [];
-    const failedEntities: FailedEntity[] = [];
-    for (let i = 0; i < batch.length; i++) {
-      const id = batch[i];
-      this.reportProgress(`Fetching issue #${id} (${i + 1}/${batch.length} in batch, ${remaining.length + batch.length - i - 1} remaining)`);
+    this.reportProgress(`Fetching ${batch.length} issue(s), ${remaining.length} more queued`);
+    const outcomes = await mapWithConcurrency(batch, ISSUE_FETCH_CONCURRENCY, async (id) => {
       try {
         const fullIssue = await this.fetchIssue(id);
         this.collectUsersAndProjects(fullIssue);
-        entities.push(await this.buildIssueEntity(fullIssue));
+        return { kind: "ok" as const, entity: await this.buildIssueEntity(fullIssue) };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        failedEntities.push({
-          externalId: this.issueExternalId(id),
-          entityType: "issue",
-          error: message,
-        });
+        return {
+          kind: "fail" as const,
+          failure: {
+            externalId: this.issueExternalId(id),
+            entityType: "issue",
+            error: err instanceof Error ? err.message : String(err),
+          },
+        };
       }
+    });
+    const entities: CrawlerEntityData[] = [];
+    const failedEntities: FailedEntity[] = [];
+    for (const o of outcomes) {
+      if (o.kind === "ok") entities.push(o.entity);
+      else failedEntities.push(o.failure);
     }
 
     const serializedCollected = {
@@ -626,26 +678,31 @@ export class MantisHubCrawler implements Crawler {
    */
   private async fetchRetryBatch(c: MantisHubSyncCursor): Promise<SyncResult> {
     const ids = c._retryIds ?? [];
-    const batch = ids.slice(0, INCREMENTAL_PAGE_SIZE);
-    const remaining = ids.slice(INCREMENTAL_PAGE_SIZE);
+    const batch = ids.slice(0, PAGE_SIZE);
+    const remaining = ids.slice(PAGE_SIZE);
 
-    const entities: CrawlerEntityData[] = [];
-    const failedEntities: FailedEntity[] = [];
-    for (let i = 0; i < batch.length; i++) {
-      const id = batch[i];
-      this.reportProgress(`Retrying previously-failed issue #${id} (${i + 1}/${batch.length}, ${remaining.length} more queued)`);
+    this.reportProgress(`Retrying ${batch.length} previously-failed issue(s), ${remaining.length} more queued`);
+    const retryOutcomes = await mapWithConcurrency(batch, ISSUE_FETCH_CONCURRENCY, async (id) => {
       try {
         const fullIssue = await this.fetchIssue(id);
         this.collectUsersAndProjects(fullIssue);
-        entities.push(await this.buildIssueEntity(fullIssue));
+        return { kind: "ok" as const, entity: await this.buildIssueEntity(fullIssue) };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        failedEntities.push({
-          externalId: this.issueExternalId(id),
-          entityType: "issue",
-          error: message,
-        });
+        return {
+          kind: "fail" as const,
+          failure: {
+            externalId: this.issueExternalId(id),
+            entityType: "issue",
+            error: err instanceof Error ? err.message : String(err),
+          },
+        };
       }
+    });
+    const entities: CrawlerEntityData[] = [];
+    const failedEntities: FailedEntity[] = [];
+    for (const o of retryOutcomes) {
+      if (o.kind === "ok") entities.push(o.entity);
+      else failedEntities.push(o.failure);
     }
 
     // After the retry queue is drained, fall back to whatever the cursor

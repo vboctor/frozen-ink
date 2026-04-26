@@ -158,11 +158,16 @@ describe("MantisHubCrawler", () => {
   });
 
   it("journals issues missing the required summary field with entity context", async () => {
-    crawler.setFetch(routingFetch(async () => {
-      return jsonResponse({
-        issues: [sampleIssue({ id: 7, summary: "" })],
-      });
-    }));
+    // The list endpoint uses select=id,updated_at, so the malformed-summary
+    // scenario surfaces during the per-issue detail fetch — intercept that
+    // directly rather than mocking the list payload.
+    crawler.setFetch(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.match(SINGLE_ISSUE_RE)) {
+        return jsonResponse({ issues: [sampleIssue({ id: 7, summary: "" })] });
+      }
+      return jsonResponse({ issues: [{ id: 7, updated_at: "2024-01-02T00:00:00Z" }] });
+    });
 
     // Per-entity validation errors are reported via failedEntities so the
     // sync can continue and the SyncEngine can journal them for retry,
@@ -251,8 +256,8 @@ describe("MantisHubCrawler", () => {
 
   it("advances to page 2 with in-run cursor state", async () => {
     const listUrls: string[] = [];
-    // Full sync uses page_size=100 — return a full page to trigger pagination.
-    const repeatedPage = Array.from({ length: 100 }, (_, i) =>
+    // List call uses page_size=25 — return a full page to trigger pagination.
+    const repeatedPage = Array.from({ length: 25 }, (_, i) =>
       sampleIssue({
         id: i + 1,
         updated_at: "2024-03-01T00:00:00Z",
