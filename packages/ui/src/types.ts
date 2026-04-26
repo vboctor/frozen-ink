@@ -91,6 +91,8 @@ export interface SyncRun {
   errors: unknown;
   startedAt: string;
   completedAt: string | null;
+  errorCount?: number;
+  failureReason?: string | null;
 }
 
 export interface SyncProgress {
@@ -101,6 +103,8 @@ export interface SyncProgress {
   updated: number;
   deleted: number;
   error: string | null;
+  errorCount?: number;
+  failureReason?: string | null;
 }
 
 export interface SyncJob {
@@ -114,6 +118,8 @@ export interface SyncJob {
   startedAt: number;
   completedAt: number | null;
   full: boolean;
+  errorCount?: number;
+  failureReason?: string | null;
 }
 
 export interface ExportRequest {

@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { createCryptoHasher } from "../compat/crypto";
 import { getCollectionDb } from "../db/client";
-import { entities } from "../db/collection-schema";
+import { entities, syncErrors } from "../db/collection-schema";
 import type { EntityData } from "../db/collection-schema";
 import { MetadataStore } from "../db/metadata";
 import { getCollection, updateCollection } from "../config/context";
@@ -93,6 +93,14 @@ const DEFAULT_ASSET_EXTENSIONS: string[] = [];
 
 /** Default max asset size: 10 MB in KB. */
 const DEFAULT_ASSET_MAX_SIZE_KB = 10240;
+
+/**
+ * Per-entity retry cap. Once an entity has failed this many times across
+ * runs, the SyncEngine stops handing it back to the crawler as a retry
+ * candidate. The journal row is kept (so the count stays visible in the UI)
+ * but it no longer slows down every subsequent incremental sync.
+ */
+const MAX_ENTITY_ATTEMPTS = 3;
 
 export interface AssetConfig {
   /** Allowed file extensions (with dot). */
@@ -196,6 +204,24 @@ export class SyncEngine {
       this.crawler.setExistingExternalIds(new Set(rows.map((r: { externalId: string }) => r.externalId)));
     }
 
+    // Hand the crawler the set of externalIds that previously failed so it
+    // can re-attempt them at the start of this run. Entries that have already
+    // failed MAX_ENTITY_ATTEMPTS times are skipped — their journal row stays
+    // (so the count is still visible to the user) but they no longer add
+    // work to every incremental sync. On success the row is cleared below.
+    if (this.crawler.setRetryExternalIds) {
+      const failedRows = this.db
+        .select({ externalId: syncErrors.externalId, attempts: syncErrors.attempts })
+        .from(syncErrors)
+        .all() as Array<{ externalId: string; attempts: number }>;
+      const retryable = failedRows
+        .filter((r) => (r.attempts ?? 0) < MAX_ENTITY_ATTEMPTS)
+        .map((r) => r.externalId);
+      if (retryable.length > 0) {
+        this.crawler.setRetryExternalIds(new Set(retryable));
+      }
+    }
+
     const metadata = new MetadataStore(this.dbPath);
 
     // Mirror user-facing config fields from YAML into the DB so consumers
@@ -255,6 +281,16 @@ export class SyncEngine {
           entityTypes: result.entities.map((e) => e.entityType),
         });
 
+        // Record per-entity failures into the journal (sync_errors). The
+        // sync continues regardless — the journal preserves visibility and
+        // lets the user resume retries later. Per-entity attempts are capped
+        // at MAX_ENTITY_ATTEMPTS so the same broken records don't slow down
+        // every incremental sync forever.
+        const failed = result.failedEntities ?? [];
+        for (const f of failed) {
+          this.recordSyncError(f.externalId, f.entityType, f.error);
+        }
+
         // Process entities (links are deferred until all entities exist)
         const deferredLinks: Array<{
           entityId: number;
@@ -272,6 +308,8 @@ export class SyncEngine {
           }
           created += counts.created;
           updated += counts.updated;
+          // Successful sync: clear any prior journal entry for this entity.
+          this.clearSyncError(entityData.externalId);
           this.onEntityProcessed?.({
             collectionName: this.collectionName,
             externalId: entityData.externalId,
@@ -296,16 +334,16 @@ export class SyncEngine {
           if (didDelete) deleted++;
         }
 
-        // Update cursor
+        // Update cursor and persist after every successful batch so resume
+        // works even if the next call crashes the process. Cost is a single
+        // metadata write per page — negligible vs. fetching the page.
         if (result.nextCursor) {
           cursor = result.nextCursor;
         }
+        metadata.setSyncState({ cursor: cursor ?? null });
 
         hasMore = result.hasMore;
       }
-
-      // Persist cursor to DB; version goes to YAML (user-facing) and is mirrored in DB.
-      metadata.setSyncState({ cursor: cursor ?? null });
 
       if (pausedByRateLimit) {
         // Don't bump version, reconcile (would delete unsynced entities as
@@ -318,10 +356,16 @@ export class SyncEngine {
           lastCreated: created,
           lastUpdated: updated,
           lastDeleted: deleted,
-          lastErrors: ["Paused due to GitHub rate limit; will resume on next sync"],
+          lastErrors: ["Paused due to rate limit; will resume on next sync"],
+          errorCount: this.countSyncErrors(),
+          failureReason: "rate_limit",
         });
         return { created, updated, deleted };
       }
+
+      // Sync completed normally. The cursor was already persisted on the last
+      // batch above and now carries the incremental watermark (e.g. updatedSince
+      // for MantisHub) that the next incremental run will use. Don't clear it.
 
       metadata.setCollectionVersion(currentVersion);
       updateCollection(this.collectionName, { version: currentVersion });
@@ -345,6 +389,8 @@ export class SyncEngine {
         lastUpdated: updated,
         lastDeleted: deleted,
         lastErrors: errors.length > 0 ? errors : null,
+        errorCount: this.countSyncErrors(),
+        failureReason: null,
       });
 
       return { created, updated, deleted };
@@ -357,11 +403,50 @@ export class SyncEngine {
         lastUpdated: updated,
         lastDeleted: deleted,
         lastErrors: errors,
+        errorCount: this.countSyncErrors(),
+        failureReason: "fatal",
       });
       throw err;
     } finally {
       metadata.close();
     }
+  }
+
+  /**
+   * Record a recoverable per-entity sync failure. Increments the attempt
+   * counter on existing rows; inserts a new row otherwise. The journal is
+   * read on the next sync to feed retry IDs back to the crawler.
+   */
+  private recordSyncError(externalId: string, entityType: string, error: string): void {
+    const [existing] = this.db
+      .select({ attempts: syncErrors.attempts })
+      .from(syncErrors)
+      .where(eq(syncErrors.externalId, externalId))
+      .all();
+    const now = new Date().toISOString().replace("T", " ").replace("Z", "");
+    if (existing) {
+      this.db
+        .update(syncErrors)
+        .set({ error, attempts: (existing.attempts ?? 0) + 1, lastSeenAt: now })
+        .where(eq(syncErrors.externalId, externalId))
+        .run();
+    } else {
+      this.db
+        .insert(syncErrors)
+        .values({ externalId, entityType, error, attempts: 1, firstSeenAt: now, lastSeenAt: now })
+        .run();
+    }
+  }
+
+  /** Remove a journal entry — called when the entity successfully syncs. */
+  private clearSyncError(externalId: string): void {
+    this.db.delete(syncErrors).where(eq(syncErrors.externalId, externalId)).run();
+  }
+
+  /** Total number of unresolved sync failures in the journal. */
+  private countSyncErrors(): number {
+    const rows = this.db.select({ id: syncErrors.externalId }).from(syncErrors).all();
+    return rows.length;
   }
 
   private async updateEntityData(entityId: number, updates: Partial<EntityData>): Promise<void> {

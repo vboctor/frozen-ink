@@ -48,3 +48,21 @@ export const entities = sqliteTable("entities", {
     .notNull()
     .default(sql`(datetime('now'))`),
 });
+
+/**
+ * Per-entity sync failure journal. Populated by the SyncEngine when a crawler
+ * reports a recoverable failure for a specific entity. Rows are removed when
+ * the entity is successfully synced. Cleared on full re-sync.
+ */
+export const syncErrors = sqliteTable("sync_errors", {
+  externalId: text("external_id").primaryKey(),
+  entityType: text("entity_type").notNull(),
+  error: text("error").notNull(),
+  attempts: integer("attempts").notNull().default(1),
+  firstSeenAt: text("first_seen_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  lastSeenAt: text("last_seen_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
