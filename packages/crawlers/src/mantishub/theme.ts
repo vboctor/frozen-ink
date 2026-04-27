@@ -400,9 +400,12 @@ function markdownToHtml(
   );
 
   // ── Step 13: blockquotes (">" becomes "&gt;" after escaping) ──
-  html = html.replace(/((?:^&gt;(?: .*)?(?:\n|$))+)/gm, (block) => {
+  // Tolerates any non-space characters immediately after "&gt;" (e.g. ">."
+  // typo lines) so a stray malformed quote line doesn't split a multi-line
+  // block into separate <blockquote> elements.
+  html = html.replace(/((?:^&gt;.*(?:\n|$))+)/gm, (block) => {
     const lines = block.replace(/\n+$/, "").split("\n")
-      .map((line) => line.replace(/^&gt; ?/, ""));
+      .map((line) => line.replace(/^&gt;[ \t.]*/, ""));
     // GFM admonition: first line is "[!TYPE]"
     const adm = lines[0]?.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i);
     if (adm) {

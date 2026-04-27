@@ -205,6 +205,13 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/>onboarding-guide</);
   });
 
+  it("tolerates malformed blockquote lines without splitting the quote", () => {
+    const html = theme.renderHtml!(makePageContext("> First line\n>. \n> Third line"));
+    expect((html.match(/<blockquote/g) ?? []).length).toBe(1);
+    expect(html).toContain("First line");
+    expect(html).toContain("Third line");
+  });
+
   it("renders ![alt](url) as an <img> in HTML", () => {
     const html = theme.renderHtml!(makePageContext("![Screenshot](https://example.com/x.png)"));
     expect(html).toContain('<img class="mt-md-image" src="https://example.com/x.png" alt="Screenshot"');
