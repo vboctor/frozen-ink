@@ -133,6 +133,44 @@ function mtAvatar(name: string, avatarUrl?: string | null, size = 24): string {
 type Lookup = (externalId: string) => string | undefined;
 
 /**
+ * Build a nested <ul> tree from a contiguous block of bullet-list lines.
+ * Indentation is measured in spaces (tabs expand to 2 spaces). Lines are
+ * grouped into sibling/parent items by ascending/descending indent.
+ */
+function buildNestedUl(block: string): string {
+  const rawLines = block.replace(/\n+$/, "").split("\n");
+  const items: { indent: number; content: string }[] = [];
+  for (const line of rawLines) {
+    const m = line.match(/^([ \t]*)[-*+] (.+)$/);
+    if (!m) continue;
+    items.push({ indent: m[1].replace(/\t/g, "  ").length, content: m[2] });
+  }
+  if (!items.length) return "";
+
+  let i = 0;
+  const baseIndent = items[0].indent;
+  function build(level: number, isRoot: boolean): string {
+    const parts: string[] = [];
+    parts.push(isRoot ? `<ul class="mt-md-list">` : `<ul>`);
+    while (i < items.length && items[i].indent >= level) {
+      const item = items[i];
+      if (item.indent > level) break; // handled by recursion
+      i++;
+      const next = items[i];
+      if (next && next.indent > level) {
+        const nested = build(next.indent, false);
+        parts.push(`<li>${item.content}${nested}</li>`);
+      } else {
+        parts.push(`<li>${item.content}</li>`);
+      }
+    }
+    parts.push(`</ul>`);
+    return parts.join("");
+  }
+  return build(baseIndent, true);
+}
+
+/**
  * Convert plain text to HTML with escaped entities, line breaks,
  * and #1234 issue references / @mentions converted to wikilinks.
  */
@@ -294,13 +332,8 @@ function markdownToHtml(
     return `<h${hashes.length} class="mt-md-h${hashes.length}">${content}</h${hashes.length}>`;
   });
 
-  // ── Step 11: unordered lists (groups of "- ", "* ", or "+ " lines) ──
-  html = html.replace(/((?:^[ \t]*[-*+] .+(?:\n|$))+)/gm, (block) => {
-    const items = block.trim().split("\n")
-      .map((line) => { const m = line.match(/^[ \t]*[-*+] (.+)$/); return m ? `<li>${m[1]}</li>` : ""; })
-      .filter(Boolean).join("");
-    return `<ul class="mt-md-list">${items}</ul>`;
-  });
+  // ── Step 11: unordered lists (groups of "- ", "* ", or "+ " lines, with nesting) ──
+  html = html.replace(/((?:^[ \t]*[-*+] .+(?:\n|$))+)/gm, (block) => buildNestedUl(block));
 
   // ── Step 12: ordered lists (groups of "1. " lines) ──
   html = html.replace(/((?:^[ \t]*\d+\. .+(?:\n|$))+)/gm, (block) => {

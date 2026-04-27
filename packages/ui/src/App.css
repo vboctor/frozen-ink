@@ -2526,6 +2526,23 @@ body {
   cursor: help;
 }
 
+/* Markdown lists rendered inside MantisHub HTML descriptions.
+   The global "* { padding: 0 }" reset strips default list indentation,
+   so we restore it explicitly here. Nested ul/ol inside list items
+   inherit the same indentation. */
+.mt-description ul,
+.mt-description ol {
+  padding-left: 1.6em;
+  margin: 6px 0;
+}
+.mt-description ul { list-style: disc outside; }
+.mt-description ol { list-style: decimal outside; }
+.mt-description ul ul { list-style: circle outside; }
+.mt-description ul ul ul { list-style: square outside; }
+.mt-description li { margin: 2px 0; }
+.mt-description li > ul,
+.mt-description li > ol { margin: 2px 0; }
+
 /* User profile card */
 .mt-user-card {
   display: flex;
