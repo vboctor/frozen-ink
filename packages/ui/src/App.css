@@ -1049,41 +1049,54 @@ body {
   margin: 24px 0;
 }
 
-/* ===== Callouts ===== */
+/* ===== Callouts (GitHub-style admonitions) =====
+   Each type exposes its colour as --callout-color; the border, title text
+   and icon all pick that hue, and the background is a soft tint via
+   color-mix so the body text stays readable. */
 .callout {
+  --callout-color: #0969da;
   border-radius: var(--radius);
   padding: 12px 16px;
-  margin-bottom: 16px;
-  border-left: 4px solid;
+  margin: 16px 0;
+  border-left: 4px solid var(--callout-color);
+  background: color-mix(in srgb, var(--callout-color) 6%, transparent);
 }
 
-.callout-info { background: var(--callout-info); border-color: var(--callout-info-border); }
-.callout-warning { background: var(--callout-warning); border-color: var(--callout-warning-border); }
-.callout-danger { background: var(--callout-danger); border-color: var(--callout-danger-border); }
-.callout-tip { background: var(--callout-tip); border-color: var(--callout-tip-border); }
-.callout-note { background: var(--callout-note); border-color: var(--callout-note-border); }
-.callout-link { background: var(--callout-link); border-color: var(--callout-link-border); }
-.callout-git { background: var(--callout-git); border-color: var(--callout-git-border); }
+.callout-note,
+.callout-info      { --callout-color: #0969da; }
+.callout-tip       { --callout-color: #1a7f37; }
+.callout-important { --callout-color: #8250df; }
+.callout-warning   { --callout-color: #9a6700; }
+.callout-caution,
+.callout-danger    { --callout-color: #cf222e; }
+.callout-link      { --callout-color: #6e7781; }
+.callout-git       { --callout-color: #8250df; }
 
 .callout-title {
-  font-weight: 600;
-  margin-bottom: 4px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--callout-color);
+  margin-bottom: 4px;
+  line-height: 1;
 }
 
 .callout-icon {
-  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
 }
+.callout-icon svg { display: block; }
 
 .callout-body {
   font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
 }
 
-.callout-body p:last-child {
-  margin-bottom: 0;
-}
+.callout-body :first-child { margin-top: 0; }
+.callout-body p:last-child { margin-bottom: 0; }
+.callout-body :last-child { margin-bottom: 0; }
 
 /* ===== Backlinks Panel (right sidebar) ===== */
 .backlinks-panel {
@@ -2597,23 +2610,41 @@ body {
 }
 .mt-md-video-label { color: inherit; }
 
-/* GFM admonition callouts (> [!NOTE], > [!WARNING], etc.) */
+/* GFM admonition callouts (> [!NOTE], > [!WARNING], etc.) — GitHub-style.
+   Type colors are exposed as a custom property so the title text, icon, and
+   left border share the same hue while the body text stays neutral. */
 .mt-md-callout {
-  border-left: 4px solid var(--accent, #4a90e2);
-  background: var(--bg-secondary, rgba(74, 144, 226, 0.08));
-  padding: 8px 12px;
-  margin: 8px 0;
-  border-radius: 4px;
+  --callout-color: #0969da;
+  border-left: 4px solid var(--callout-color);
+  background: color-mix(in srgb, var(--callout-color) 6%, transparent);
+  padding: 12px 16px;
+  margin: 16px 0;
+  border-radius: 6px;
+  color: var(--text);
 }
 .mt-md-callout-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
+  color: var(--callout-color);
   margin-bottom: 4px;
+  line-height: 1;
 }
-.mt-md-callout-note { border-left-color: #4a90e2; }
-.mt-md-callout-tip { border-left-color: #2ea44f; }
-.mt-md-callout-important { border-left-color: #8957e5; }
-.mt-md-callout-warning { border-left-color: #d29922; }
-.mt-md-callout-caution { border-left-color: #cf222e; }
+.mt-md-callout-icon {
+  display: inline-flex;
+  align-items: center;
+}
+.mt-md-callout-icon svg { display: block; }
+.mt-md-callout-body { color: var(--text); line-height: 1.5; }
+.mt-md-callout-body :first-child { margin-top: 0; }
+.mt-md-callout-body :last-child { margin-bottom: 0; }
+
+.mt-md-callout-note      { --callout-color: #0969da; }
+.mt-md-callout-tip       { --callout-color: #1a7f37; }
+.mt-md-callout-important { --callout-color: #8250df; }
+.mt-md-callout-warning   { --callout-color: #9a6700; }
+.mt-md-callout-caution   { --callout-color: #cf222e; }
 
 /* GFM task lists ("- [ ]" / "- [x]") */
 .mt-md-task-list {
