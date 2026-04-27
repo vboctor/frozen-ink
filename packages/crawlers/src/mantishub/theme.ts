@@ -230,11 +230,24 @@ function markdownToHtml(
     });
     // Same-project: [[page-name]]
     raw = raw.replace(/\[\[([\w-]+)\]\]/g, (_m, pageName: string) => {
-      if (!projectId) return `[[${pageName}]]`;
-      const path = lookup(`page:${projectId}:${pageName}`);
-      if (!path) return `[[${pageName}]]`;
+      const path = projectId ? lookup(`page:${projectId}:${pageName}`) : undefined;
       const idx = links.length;
-      links.push(`<a class="mt-page-link" href="#wikilink/${encodeURIComponent(path)}">${esc(pageName)}</a>`);
+      if (!path) {
+        links.push(`<span class="mt-page-link mt-page-missing" title="Page not found">${esc(pageName)}</span>`);
+      } else {
+        links.push(`<a class="mt-page-link" href="#wikilink/${encodeURIComponent(path)}">${esc(pageName)}</a>`);
+      }
+      return `\x00LINK${idx}\x00`;
+    });
+  } else {
+    raw = raw.replace(/\[\[\/(.+?)\/([\w-]+)\]\]/g, (_m, projName: string, pageName: string) => {
+      const idx = links.length;
+      links.push(`<span class="mt-page-link mt-page-missing" title="Page not found">${esc(projName)}/${esc(pageName)}</span>`);
+      return `\x00LINK${idx}\x00`;
+    });
+    raw = raw.replace(/\[\[([\w-]+)\]\]/g, (_m, pageName: string) => {
+      const idx = links.length;
+      links.push(`<span class="mt-page-link mt-page-missing" title="Page not found">${esc(pageName)}</span>`);
       return `\x00LINK${idx}\x00`;
     });
   }

@@ -150,6 +150,14 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).toContain('class="mt-issue-ref"');
     expect(html).toContain("#wikilink/issues%2F00100-linked-issue");
   });
+
+  it("renders unresolved [[wiki-link]] as a missing-page indicator (not literal)", () => {
+    const html = theme.renderHtml!(makePageContext("See [[nonexistent-page]] for details."));
+    expect(html).toContain("mt-page-missing");
+    expect(html).toContain("nonexistent-page");
+    expect(html).not.toContain("[[nonexistent-page]]");
+  });
+
 });
 
 describe("MantisHubTheme getFilePath", () => {
