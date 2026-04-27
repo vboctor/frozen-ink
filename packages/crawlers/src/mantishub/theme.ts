@@ -133,22 +133,42 @@ function mtAvatar(name: string, avatarUrl?: string | null, size = 24): string {
 type Lookup = (externalId: string) => string | undefined;
 
 /**
- * Build a nested <ul> tree from a contiguous block of bullet-list lines.
- * Indentation is measured in spaces (tabs expand to 2 spaces). Lines are
- * grouped into sibling/parent items by ascending/descending indent.
+ * Build a nested list tree (unordered and/or ordered) from a contiguous block.
+ * Indentation (tabs expand to 2 spaces) determines nesting; sibling items at
+ * the same indent inherit the marker style of the first sibling. Single blank
+ * lines between items are tolerated (the list is not split).
  */
-function buildNestedUl(block: string): string {
+type ListItem = { indent: number; ordered: boolean; orderStart?: number; content: string };
+
+function buildNestedList(block: string): string {
   const rawLines = block.replace(/\n+$/, "").split("\n");
-  const items: { indent: number; content: string }[] = [];
+  const items: ListItem[] = [];
   for (const line of rawLines) {
-    const m = line.match(/^([ \t]*)[-*+] (.+)$/);
-    if (!m) continue;
-    items.push({ indent: m[1].replace(/\t/g, "  ").length, content: m[2] });
+    if (!line.trim()) continue; // skip blank lines that separate items
+    const ul = line.match(/^([ \t]*)[-*+] (.+)$/);
+    if (ul) {
+      items.push({
+        indent: ul[1].replace(/\t/g, "  ").length,
+        ordered: false,
+        content: ul[2],
+      });
+      continue;
+    }
+    const ol = line.match(/^([ \t]*)(\d+)\. (.+)$/);
+    if (ol) {
+      items.push({
+        indent: ol[1].replace(/\t/g, "  ").length,
+        ordered: true,
+        orderStart: parseInt(ol[2], 10),
+        content: ol[3],
+      });
+    }
   }
   if (!items.length) return "";
 
   let i = 0;
   const baseIndent = items[0].indent;
+
   function renderItem(content: string): { liClass: string; html: string } {
     const task = content.match(/^\[( |x|X)\]\s+(.*)$/);
     if (task) {
@@ -160,13 +180,19 @@ function buildNestedUl(block: string): string {
     }
     return { liClass: "", html: content };
   }
+
   function build(level: number, isRoot: boolean): string {
-    const parts: string[] = [];
-    let hasTask = false;
+    if (i >= items.length) return "";
+    const ordered = items[i].ordered;
+    const start = items[i].orderStart;
+    const tag = ordered ? "ol" : "ul";
     const inner: string[] = [];
+    let hasTask = false;
     while (i < items.length && items[i].indent >= level) {
       const item = items[i];
       if (item.indent > level) break;
+      // If a sibling switches marker style, end the current list.
+      if (item.indent === level && item.ordered !== ordered) break;
       i++;
       const rendered = renderItem(item.content);
       if (rendered.liClass) hasTask = true;
@@ -178,14 +204,21 @@ function buildNestedUl(block: string): string {
         inner.push(`<li${rendered.liClass}>${rendered.html}</li>`);
       }
     }
-    const rootClasses = ["mt-md-list"];
-    if (hasTask) rootClasses.push("mt-md-task-list");
-    parts.push(isRoot ? `<ul class="${rootClasses.join(" ")}">` : (hasTask ? `<ul class="mt-md-task-list">` : `<ul>`));
-    parts.push(...inner);
-    parts.push(`</ul>`);
-    return parts.join("");
+    const classes: string[] = [];
+    if (isRoot) classes.push("mt-md-list");
+    if (hasTask) classes.push("mt-md-task-list");
+    const classAttr = classes.length ? ` class="${classes.join(" ")}"` : "";
+    const startAttr = ordered && start !== undefined && start !== 1 ? ` start="${start}"` : "";
+    return `<${tag}${classAttr}${startAttr}>${inner.join("")}</${tag}>`;
   }
-  return build(baseIndent, true);
+
+  // Build top-level lists; if marker style flips at the root indent, emit
+  // adjacent sibling lists rather than collapsing them.
+  const out: string[] = [];
+  while (i < items.length && items[i].indent === baseIndent) {
+    out.push(build(baseIndent, true));
+  }
+  return out.join("");
 }
 
 /**
@@ -350,16 +383,14 @@ function markdownToHtml(
     return `<h${hashes.length} class="mt-md-h${hashes.length}">${content}</h${hashes.length}>`;
   });
 
-  // ── Step 11: unordered lists (groups of "- ", "* ", or "+ " lines, with nesting) ──
-  html = html.replace(/((?:^[ \t]*[-*+] .+(?:\n|$))+)/gm, (block) => buildNestedUl(block));
-
-  // ── Step 12: ordered lists (groups of "1. " lines) ──
-  html = html.replace(/((?:^[ \t]*\d+\. .+(?:\n|$))+)/gm, (block) => {
-    const items = block.trim().split("\n")
-      .map((line) => { const m = line.match(/^[ \t]*\d+\. (.+)$/); return m ? `<li>${m[1]}</li>` : ""; })
-      .filter(Boolean).join("");
-    return `<ol class="mt-md-list">${items}</ol>`;
-  });
+  // ── Step 11: lists (unordered + ordered, with nesting and lenient blank lines) ──
+  // A list block is a run of list-marker lines, optionally separated by single
+  // blank lines. We capture and process both bullet and numbered markers in one
+  // pass so the two list styles can nest inside each other.
+  html = html.replace(
+    /(?:^[ \t]*(?:[-*+]|\d+\.) .+\n?(?:(?:[ \t]*\n)?[ \t]*(?:[-*+]|\d+\.) .+\n?)*)/gm,
+    (block) => buildNestedList(block),
+  );
 
   // ── Step 13: blockquotes (">" becomes "&gt;" after escaping) ──
   html = html.replace(/((?:^&gt;(?: .*)?(?:\n|$))+)/gm, (block) => {
