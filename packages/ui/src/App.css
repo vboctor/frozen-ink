@@ -2557,6 +2557,45 @@ body {
   border-top: 1px solid var(--border, #d0d7de);
   margin: 16px 0;
 }
+.mt-description iframe.mt-md-video,
+.markdown-view iframe.mt-md-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+/* Komodo play card — used when iframe embedding isn't available */
+.mt-md-video-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  margin: 8px 0;
+  background: var(--bg-secondary, #f6f8fa);
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+}
+.mt-md-video-link:hover {
+  background: var(--hover-bg, #f0f3f6);
+  border-color: var(--accent, #0969da);
+}
+.mt-md-video-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent, #0969da);
+  color: #fff;
+  font-size: 12px;
+}
+.mt-md-video-label { color: inherit; }
 
 /* GFM admonition callouts (> [!NOTE], > [!WARNING], etc.) */
 .mt-md-callout {

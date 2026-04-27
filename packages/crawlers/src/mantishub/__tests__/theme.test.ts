@@ -232,6 +232,43 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).toContain("Third line");
   });
 
+  it("renders Loom, YouTube, and Vimeo image-syntax URLs as iframe embeds", () => {
+    const l = theme.renderHtml!(makePageContext("![Demo](https://www.loom.com/share/xyz)"));
+    expect(l).toContain('src="https://www.loom.com/embed/xyz"');
+    const y = theme.renderHtml!(makePageContext("![Demo](https://www.youtube.com/watch?v=dQw4w9WgXcQ)"));
+    expect(y).toContain('src="https://www.youtube.com/embed/dQw4w9WgXcQ"');
+    const v = theme.renderHtml!(makePageContext("![Demo](https://vimeo.com/76979871)"));
+    expect(v).toContain('src="https://player.vimeo.com/video/76979871"');
+  });
+
+  it("renders Komodo recordings as a clickable play-card link (no iframe)", () => {
+    const k = theme.renderHtml!(makePageContext("![How to](https://komododecks.com/recordings/abc123)"));
+    expect(k).toContain('class="mt-md-video-link"');
+    expect(k).toContain('href="https://kommodo.ai/recordings/abc123"');
+    expect(k).toContain("How to");
+    expect(k).not.toContain("<iframe");
+  });
+
+  it("leaves video image syntax untouched in generated markdown so the viewer can render it", () => {
+    const md = theme.render({
+      entity: {
+        externalId: "page:1:demo",
+        entityType: "page",
+        title: "Demo",
+        data: {
+          id: 1, name: "demo", title: "Demo",
+          project: { id: 1, name: "TestProject" },
+          content: "![How](https://www.youtube.com/watch?v=dQw4w9WgXcQ)",
+        },
+      },
+      collectionName: "test",
+      crawlerType: "mantishub",
+      lookupEntityPath: lookup,
+    });
+    expect(md).toContain("![How](https://www.youtube.com/watch?v=dQw4w9WgXcQ)");
+    expect(md).not.toContain("<iframe");
+  });
+
   it("renders ![alt](url) as an <img> in HTML", () => {
     const html = theme.renderHtml!(makePageContext("![Screenshot](https://example.com/x.png)"));
     expect(html).toContain('<img class="mt-md-image" src="https://example.com/x.png" alt="Screenshot"');
