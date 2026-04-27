@@ -205,6 +205,12 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/>onboarding-guide</);
   });
 
+  it("renders --- as a horizontal rule", () => {
+    const html = theme.renderHtml!(makePageContext("Above\n\n---\n\n## Below"));
+    expect(html).toContain('<hr class="mt-md-hr">');
+    expect(html).toContain("<h2");
+  });
+
   it("recognises NOTE admonition with leading whitespace before '>'", () => {
     const html = theme.renderHtml!(makePageContext(" > [!NOTE] \n> Legacy doco"));
     expect(html).toContain("mt-md-callout-note");

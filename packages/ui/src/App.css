@@ -2549,6 +2549,11 @@ body {
   border-radius: 4px;
   margin: 8px 0;
 }
+.mt-description hr.mt-md-hr {
+  border: 0;
+  border-top: 1px solid var(--border, #d0d7de);
+  margin: 16px 0;
+}
 
 /* GFM admonition callouts (> [!NOTE], > [!WARNING], etc.) */
 .mt-md-callout {

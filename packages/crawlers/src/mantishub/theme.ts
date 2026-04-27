@@ -390,6 +390,9 @@ function markdownToHtml(
     return `<h${hashes.length} class="mt-md-h${hashes.length}">${content}</h${hashes.length}>`;
   });
 
+  // ── Step 10b: horizontal rules (---, ***, ___) ──
+  html = html.replace(/^[ \t]*([-_*])(?:[ \t]*\1){2,}[ \t]*$/gm, `<hr class="mt-md-hr">`);
+
   // ── Step 11: lists (unordered + ordered, with nesting and lenient blank lines) ──
   // A list block is a run of list-marker lines, optionally separated by single
   // blank lines. We capture and process both bullet and numbered markers in one
@@ -427,8 +430,9 @@ function markdownToHtml(
   html = `<p>${html}</p>`;
   html = html.replace(/<p>\s*<\/p>/g, "");
   // Unwrap block elements incorrectly wrapped in <p>
-  html = html.replace(/<p>(\s*<(?:h[1-6]|pre|ul|ol|blockquote)[ >])/g, "$1");
-  html = html.replace(/(<\/(?:h[1-6]|pre|ul|ol|blockquote)>\s*)<\/p>/g, "$1");
+  html = html.replace(/<p>(\s*<(?:h[1-6]|pre|ul|ol|blockquote|hr|div)[ >\/])/g, "$1");
+  html = html.replace(/(<\/(?:h[1-6]|pre|ul|ol|blockquote|div)>\s*)<\/p>/g, "$1");
+  html = html.replace(/(<hr[^>]*>\s*)<\/p>/g, "$1");
 
   // ── Step 15: single newlines → <br> (within paragraphs) ──
   html = html.replace(/\n/g, "<br>");
