@@ -205,6 +205,13 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/>onboarding-guide</);
   });
 
+  it("merges indented continuation lines into the previous list item", () => {
+    const md = "* **Droplet**\n  Shut down the droplet.\n* **IP**\n  Release the reserved IP.";
+    const html = theme.renderHtml!(makePageContext(md));
+    expect(html).toContain("<li><strong>Droplet</strong><br>Shut down the droplet.</li>");
+    expect(html).toContain("<li><strong>IP</strong><br>Release the reserved IP.</li>");
+  });
+
   it("renders --- as a horizontal rule", () => {
     const html = theme.renderHtml!(makePageContext("Above\n\n---\n\n## Below"));
     expect(html).toContain('<hr class="mt-md-hr">');

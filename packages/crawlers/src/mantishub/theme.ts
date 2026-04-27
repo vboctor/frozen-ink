@@ -162,6 +162,12 @@ function buildNestedList(block: string): string {
         orderStart: parseInt(ol[2], 10),
         content: ol[3],
       });
+      continue;
+    }
+    // Lazy continuation: an indented non-marker line belongs to the
+    // previous item (the bold-title-then-explanation pattern).
+    if (items.length) {
+      items[items.length - 1].content += `<br>${line.trim()}`;
     }
   }
   if (!items.length) return "";
@@ -398,7 +404,7 @@ function markdownToHtml(
   // blank lines. We capture and process both bullet and numbered markers in one
   // pass so the two list styles can nest inside each other.
   html = html.replace(
-    /(?:^[ \t]*(?:[-*+]|\d+\.) .+\n?(?:(?:[ \t]*\n)?[ \t]*(?:[-*+]|\d+\.) .+\n?)*)/gm,
+    /(?:^[ \t]*(?:[-*+]|\d+\.) .+\n?(?:(?:[ \t]*\n)?(?:[ \t]*(?:[-*+]|\d+\.) .+\n?|[ \t]+\S.*\n?))*)/gm,
     (block) => buildNestedList(block),
   );
 
