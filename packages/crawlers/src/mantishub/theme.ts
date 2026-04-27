@@ -149,21 +149,39 @@ function buildNestedUl(block: string): string {
 
   let i = 0;
   const baseIndent = items[0].indent;
+  function renderItem(content: string): { liClass: string; html: string } {
+    const task = content.match(/^\[( |x|X)\]\s+(.*)$/);
+    if (task) {
+      const checked = task[1].toLowerCase() === "x";
+      return {
+        liClass: ` class="mt-md-task${checked ? " mt-md-task-done" : ""}"`,
+        html: `<input type="checkbox" disabled${checked ? " checked" : ""}> ${task[2]}`,
+      };
+    }
+    return { liClass: "", html: content };
+  }
   function build(level: number, isRoot: boolean): string {
     const parts: string[] = [];
-    parts.push(isRoot ? `<ul class="mt-md-list">` : `<ul>`);
+    let hasTask = false;
+    const inner: string[] = [];
     while (i < items.length && items[i].indent >= level) {
       const item = items[i];
-      if (item.indent > level) break; // handled by recursion
+      if (item.indent > level) break;
       i++;
+      const rendered = renderItem(item.content);
+      if (rendered.liClass) hasTask = true;
       const next = items[i];
       if (next && next.indent > level) {
         const nested = build(next.indent, false);
-        parts.push(`<li>${item.content}${nested}</li>`);
+        inner.push(`<li${rendered.liClass}>${rendered.html}${nested}</li>`);
       } else {
-        parts.push(`<li>${item.content}</li>`);
+        inner.push(`<li${rendered.liClass}>${rendered.html}</li>`);
       }
     }
+    const rootClasses = ["mt-md-list"];
+    if (hasTask) rootClasses.push("mt-md-task-list");
+    parts.push(isRoot ? `<ul class="${rootClasses.join(" ")}">` : (hasTask ? `<ul class="mt-md-task-list">` : `<ul>`));
+    parts.push(...inner);
     parts.push(`</ul>`);
     return parts.join("");
   }

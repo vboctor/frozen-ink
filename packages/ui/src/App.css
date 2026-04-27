@@ -2561,6 +2561,23 @@ body {
 .mt-md-callout-warning { border-left-color: #d29922; }
 .mt-md-callout-caution { border-left-color: #cf222e; }
 
+/* GFM task lists ("- [ ]" / "- [x]") */
+.mt-md-task-list {
+  list-style: none;
+  padding-left: 1.2em;
+}
+.mt-md-task {
+  position: relative;
+}
+.mt-md-task input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.mt-md-task-done {
+  color: var(--text-secondary, #888);
+  text-decoration: line-through;
+}
+
 /* User profile card */
 .mt-user-card {
   display: flex;
