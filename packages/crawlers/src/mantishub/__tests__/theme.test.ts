@@ -10,6 +10,14 @@ const lookup = (externalId: string): string | undefined => {
     "issue:100": "issues/00100-linked-issue",
     "issue:200": "issues/00200-another-issue",
     "user:alice": "users/alice",
+    "page:1:onboarding-guide": "testproject/pages/onboarding-guide",
+  };
+  return map[externalId];
+};
+
+const titleLookup = (externalId: string): string | undefined => {
+  const map: Record<string, string> = {
+    "page:1:onboarding-guide": "Onboarding Guide for New Engineers",
   };
   return map[externalId];
 };
@@ -131,6 +139,7 @@ describe("MantisHubTheme HTML page rendering", () => {
       collectionName: "test",
       crawlerType: "mantishub",
       lookupEntityPath: lookup,
+      lookupEntityTitle: titleLookup,
     };
   }
 
@@ -186,6 +195,14 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).toContain('class="mt-title">Onboarding Guide</h1>');
     const h1Count = (html.match(/<h1[\s>]/g) ?? []).length;
     expect(h1Count).toBe(1);
+  });
+
+  it("uses the target page title as wiki-link label when available", () => {
+    const html = theme.renderHtml!(makePageContext("See [[onboarding-guide]] for details."));
+    expect(html).toContain('class="mt-page-link"');
+    expect(html).toContain("Onboarding Guide for New Engineers");
+    // The slug should not appear as the visible label (only inside the URL fragment).
+    expect(html).not.toMatch(/>onboarding-guide</);
   });
 
   it("renders unresolved [[wiki-link]] as a missing-page indicator (not literal)", () => {

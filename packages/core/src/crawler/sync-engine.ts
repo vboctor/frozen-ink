@@ -819,6 +819,17 @@ export class SyncEngine {
     };
   }
 
+  private makeLookupEntityTitle(): (externalId: string) => string | undefined {
+    return (externalId: string) => {
+      const rows = this.db
+        .select({ title: entities.title })
+        .from(entities)
+        .where(eq(entities.externalId, externalId))
+        .all();
+      return rows[0]?.title ?? undefined;
+    };
+  }
+
   /**
    * Build a wikilink resolver that supports Obsidian-style stem matching.
    * "Topic" matches an entity whose externalId ends with "/Topic.md" or is "Topic.md".
@@ -877,6 +888,7 @@ export class SyncEngine {
       collectionName: this.collectionName,
       crawlerType,
       lookupEntityPath: this.makeLookupEntityPath(),
+      lookupEntityTitle: this.makeLookupEntityTitle(),
       resolveWikilink: this.makeResolveWikilink(),
     });
   }

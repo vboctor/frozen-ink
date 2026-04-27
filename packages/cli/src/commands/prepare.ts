@@ -36,6 +36,18 @@ function makeEntityPathLookup(colDb: ColDb): (id: string) => string | undefined 
   };
 }
 
+/** Build entity title lookup for theme cross-reference labelling. */
+function makeEntityTitleLookup(colDb: ColDb): (id: string) => string | undefined {
+  return (externalId: string) => {
+    const rows = colDb
+      .select({ title: entities.title })
+      .from(entities)
+      .where(eq(entities.externalId, externalId))
+      .all();
+    return rows[0]?.title ?? undefined;
+  };
+}
+
 /** Build stem-matching wikilink resolver (for Obsidian-style [[bare name]] links). */
 function makeResolveWikilink(colDb: ColDb): (target: string) => string | undefined {
   const allRows = colDb
@@ -240,6 +252,7 @@ async function checkSamples(
     .all();
 
   const lookupEntityPath = makeEntityPathLookup(colDb);
+  const lookupEntityTitle = makeEntityTitleLookup(colDb);
   const resolveWikilink = makeResolveWikilink(colDb);
 
   let sampled = 0;
@@ -273,6 +286,7 @@ async function checkSamples(
         collectionName,
         crawlerType,
         lookupEntityPath,
+        lookupEntityTitle,
         resolveWikilink,
       };
 

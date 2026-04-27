@@ -165,6 +165,14 @@ Examples:
         if (!row || row.folder == null || row.slug == null) return undefined;
         return row.folder ? `${row.folder}/${row.slug}` : row.slug;
       };
+      const entityTitleLookup = (externalId: string): string | undefined => {
+        const [row] = colDb
+          .select({ title: entities.title })
+          .from(entities)
+          .where(eq(entities.externalId, externalId))
+          .all();
+        return row?.title ?? undefined;
+      };
 
       const byExtId = new Map<string, string>();
       const byStem = new Map<string, string>();
@@ -205,6 +213,7 @@ Examples:
           collectionName: localName,
           crawlerType,
           lookupEntityPath: entityPathLookup,
+          lookupEntityTitle: entityTitleLookup,
           resolveWikilink,
         };
         const derivedTitle = themeEngine.getTitle(ctx);
