@@ -205,6 +205,18 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/>onboarding-guide</);
   });
 
+  it("renders nested bullet lists with proper indentation", () => {
+    const md = "- Top one\n  - Child A\n  - Child B\n    - Grand\n- Top two";
+    const html = theme.renderHtml!(makePageContext(md));
+    // Outer list with class, inner list without
+    expect(html).toContain('<ul class="mt-md-list">');
+    // Three <ul> opens (root + 2 nested) and three closes
+    expect((html.match(/<ul/g) ?? []).length).toBe(3);
+    expect((html.match(/<\/ul>/g) ?? []).length).toBe(3);
+    // The grand-child should be nested inside Child B's <li>
+    expect(html).toContain("Child B<ul><li>Grand</li></ul>");
+  });
+
   it("renders unresolved [[wiki-link]] as a missing-page indicator (not literal)", () => {
     const html = theme.renderHtml!(makePageContext("See [[nonexistent-page]] for details."));
     expect(html).toContain("mt-page-missing");
