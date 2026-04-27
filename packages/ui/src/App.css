@@ -2526,10 +2526,13 @@ body {
   cursor: help;
 }
 
-/* Markdown lists rendered inside MantisHub HTML descriptions.
-   The global "* { padding: 0 }" reset strips default list indentation,
-   so we restore it explicitly here. Nested ul/ol inside list items
-   inherit the same indentation. */
+/* Markdown content rendered inside MantisHub HTML descriptions.
+   The global "* { margin: 0; padding: 0 }" reset strips spacing and
+   list indentation, so we restore them explicitly here. */
+.mt-description p { margin: 8px 0; }
+.mt-description p:first-child { margin-top: 0; }
+.mt-description p:last-child { margin-bottom: 0; }
+
 .mt-description ul,
 .mt-description ol {
   padding-left: 1.6em;
