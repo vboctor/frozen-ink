@@ -2518,6 +2518,14 @@ body {
   text-decoration: underline;
 }
 
+/* Wiki page links — missing target rendered dimmed with dashed underline */
+.mt-page-missing {
+  color: var(--text-secondary, #888);
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
 /* User profile card */
 .mt-user-card {
   display: flex;
