@@ -51,6 +51,12 @@ export interface ThemeRenderContext {
    */
   lookupEntityPath?: (externalId: string) => string | undefined;
   /**
+   * Look up the human-readable display title for any entity by its externalId.
+   * Themes can use this to label cross-references with the target's title rather
+   * than its slug/page-name. Returns undefined if the entity is unknown.
+   */
+  lookupEntityTitle?: (externalId: string) => string | undefined;
+  /**
    * Resolve an Obsidian-style wikilink target (bare name or path) to a markdown
    * file path (relative to markdown root, without .md extension).
    * Supports stem matching: "Topic" matches "subfolder/Topic.md".

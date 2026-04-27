@@ -109,6 +109,14 @@ export async function generateCollection(
     if (!r || r.folder == null || r.slug == null) return undefined;
     return r.folder ? `${r.folder}/${r.slug}` : r.slug;
   };
+  const entityTitleLookup = (externalId: string): string | undefined => {
+    const rows = colDb
+      .select({ title: entities.title })
+      .from(entities)
+      .where(eq(entities.externalId, externalId))
+      .all();
+    return rows[0]?.title ?? undefined;
+  };
 
   // Build stem-matching wikilink resolver (for Obsidian [[bare name]] links)
   const allEntityRows = colDb
@@ -164,6 +172,7 @@ export async function generateCollection(
       collectionName: col.name,
       crawlerType: col.crawler,
       lookupEntityPath: entityPathLookup,
+      lookupEntityTitle: entityTitleLookup,
       resolveWikilink,
     };
     const derivedTitle = themeEngine.getTitle(baseCtx);

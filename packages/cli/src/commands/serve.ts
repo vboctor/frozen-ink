@@ -506,6 +506,14 @@ export function createApiServer(
           if (!row || row.folder == null || row.slug == null) return undefined;
           return row.folder ? `${row.folder}/${row.slug}` : row.slug;
         };
+        const lookupEntityTitle = (externalId: string): string | undefined => {
+          const [row] = colDb
+            .select({ title: entities.title })
+            .from(entities)
+            .where(eq(entities.externalId, externalId))
+            .all();
+          return row?.title ?? undefined;
+        };
 
         const markdown = themeEngine.render({
           entity: {
@@ -519,6 +527,7 @@ export function createApiServer(
           collectionName: name,
           crawlerType,
           lookupEntityPath,
+          lookupEntityTitle,
         });
 
         return new Response(markdown, {
@@ -568,6 +577,14 @@ export function createApiServer(
           if (!row || row.folder == null || row.slug == null) return undefined;
           return row.folder ? `${row.folder}/${row.slug}` : row.slug;
         };
+        const lookupEntityTitle = (externalId: string): string | undefined => {
+          const [row] = colDb
+            .select({ title: entities.title })
+            .from(entities)
+            .where(eq(entities.externalId, externalId))
+            .all();
+          return row?.title ?? undefined;
+        };
 
         const html = themeEngine.renderHtml({
           entity: {
@@ -581,6 +598,7 @@ export function createApiServer(
           collectionName: name,
           crawlerType: htmlCrawlerType,
           lookupEntityPath,
+          lookupEntityTitle,
         });
 
         if (!html) return errorResponse("HTML rendering not available", 404);
