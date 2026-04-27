@@ -2543,6 +2543,13 @@ body {
 .mt-description li > ul,
 .mt-description li > ol { margin: 2px 0; }
 
+.mt-description img.mt-md-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
 /* GFM admonition callouts (> [!NOTE], > [!WARNING], etc.) */
 .mt-md-callout {
   border-left: 4px solid var(--accent, #4a90e2);

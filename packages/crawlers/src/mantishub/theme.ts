@@ -301,8 +301,15 @@ function markdownToHtml(
     return `\x00CODEBLOCK${idx}\x00`;
   });
 
-  // ── Step 2: extract markdown links [text](url) before escaping ──
+  // ── Step 2a: extract image syntax ![alt](url) before regular links ──
   const links: string[] = [];
+  raw = raw.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (_m, alt: string, url: string) => {
+    const idx = links.length;
+    links.push(`<img class="mt-md-image" src="${esc(url)}" alt="${esc(alt)}" loading="lazy">`);
+    return `\x00LINK${idx}\x00`;
+  });
+
+  // ── Step 2b: extract markdown links [text](url) before escaping ──
   raw = raw.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, (_m, linkText: string, url: string) => {
     const idx = links.length;
     links.push(`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(linkText)}</a>`);

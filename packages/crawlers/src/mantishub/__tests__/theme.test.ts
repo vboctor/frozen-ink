@@ -205,6 +205,13 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/>onboarding-guide</);
   });
 
+  it("renders ![alt](url) as an <img> in HTML", () => {
+    const html = theme.renderHtml!(makePageContext("![Screenshot](https://example.com/x.png)"));
+    expect(html).toContain('<img class="mt-md-image" src="https://example.com/x.png" alt="Screenshot"');
+    expect(html).not.toContain("!Screenshot");
+    expect(html).not.toContain("!<a");
+  });
+
   it("renders nested ordered lists with continuous numbering", () => {
     const md = "1. First\n\n2. Second\n   1. Sub a\n   2. Sub b\n\n3. Third\n4. Fourth";
     const html = theme.renderHtml!(makePageContext(md));
