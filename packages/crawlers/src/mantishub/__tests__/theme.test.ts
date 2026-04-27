@@ -205,6 +205,18 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/>onboarding-guide</);
   });
 
+  it("renders GFM > [!NOTE] admonitions as styled callouts", () => {
+    const md = "> [!NOTE]\n> Heads up.\n\n> [!WARNING]\n> Careful here.";
+    const html = theme.renderHtml!(makePageContext(md));
+    expect(html).toContain("mt-md-callout-note");
+    expect(html).toContain('<div class="mt-md-callout-title">Note</div>');
+    expect(html).toContain("Heads up.");
+    expect(html).toContain("mt-md-callout-warning");
+    expect(html).toContain("Careful here.");
+    // Should not appear as literal blockquote text
+    expect(html).not.toContain("[!NOTE]");
+  });
+
   it("renders nested bullet lists with proper indentation", () => {
     const md = "- Top one\n  - Child A\n  - Child B\n    - Grand\n- Top two";
     const html = theme.renderHtml!(makePageContext(md));

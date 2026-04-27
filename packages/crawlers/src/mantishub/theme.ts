@@ -344,10 +344,21 @@ function markdownToHtml(
   });
 
   // ── Step 13: blockquotes (">" becomes "&gt;" after escaping) ──
-  html = html.replace(/((?:^&gt; .+(?:\n|$))+)/gm, (block) => {
-    const content = block.trim().split("\n")
-      .map((line) => line.replace(/^&gt; /, "")).join("<br>");
-    return `<blockquote class="mt-md-blockquote">${content}</blockquote>`;
+  html = html.replace(/((?:^&gt;(?: .*)?(?:\n|$))+)/gm, (block) => {
+    const lines = block.replace(/\n+$/, "").split("\n")
+      .map((line) => line.replace(/^&gt; ?/, ""));
+    // GFM admonition: first line is "[!TYPE]"
+    const adm = lines[0]?.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i);
+    if (adm) {
+      const type = adm[1].toLowerCase();
+      const label = type.charAt(0).toUpperCase() + type.slice(1);
+      const body = lines.slice(1).join("<br>");
+      return `<div class="mt-md-callout mt-md-callout-${type}">` +
+        `<div class="mt-md-callout-title">${label}</div>` +
+        `<div class="mt-md-callout-body">${body}</div>` +
+        `</div>`;
+    }
+    return `<blockquote class="mt-md-blockquote">${lines.join("<br>")}</blockquote>`;
   });
 
   // ── Step 14: paragraphs (blank lines separate blocks) ──

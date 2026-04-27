@@ -2543,6 +2543,24 @@ body {
 .mt-description li > ul,
 .mt-description li > ol { margin: 2px 0; }
 
+/* GFM admonition callouts (> [!NOTE], > [!WARNING], etc.) */
+.mt-md-callout {
+  border-left: 4px solid var(--accent, #4a90e2);
+  background: var(--bg-secondary, rgba(74, 144, 226, 0.08));
+  padding: 8px 12px;
+  margin: 8px 0;
+  border-radius: 4px;
+}
+.mt-md-callout-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.mt-md-callout-note { border-left-color: #4a90e2; }
+.mt-md-callout-tip { border-left-color: #2ea44f; }
+.mt-md-callout-important { border-left-color: #8957e5; }
+.mt-md-callout-warning { border-left-color: #d29922; }
+.mt-md-callout-caution { border-left-color: #cf222e; }
+
 /* User profile card */
 .mt-user-card {
   display: flex;
