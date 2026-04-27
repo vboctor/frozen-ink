@@ -151,6 +151,43 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).toContain("#wikilink/issues%2F00100-linked-issue");
   });
 
+  it("does not duplicate the page heading in markdown when content starts with H1", () => {
+    const md = theme.render({
+      entity: {
+        externalId: "page:1:getting-started",
+        entityType: "page",
+        title: "Getting Started",
+        data: {
+          id: 1, name: "getting-started", title: "Getting Started",
+          project: { id: 1, name: "TestProject" },
+          content: "# Getting Started\n\nWelcome.",
+        },
+      },
+      collectionName: "test",
+      crawlerType: "mantishub",
+      lookupEntityPath: lookup,
+    });
+    // Only one occurrence of the heading text in body (excluding frontmatter).
+    const body = md.replace(/^---[\s\S]*?---\n/, "");
+    const matches = body.match(/Getting Started/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+
+  it("does not render duplicate H1 when content starts with matching title", () => {
+    const html = theme.renderHtml!(makePageContext("# Getting Started\n\nWelcome."));
+    // Title H1 should appear exactly once
+    const h1Count = (html.match(/<h1[\s>]/g) ?? []).length;
+    expect(h1Count).toBe(1);
+    expect(html).toContain("Welcome.");
+  });
+
+  it("uses the content H1 when it differs from the stored title", () => {
+    const html = theme.renderHtml!(makePageContext("# Onboarding Guide\n\nBody."));
+    expect(html).toContain('class="mt-title">Onboarding Guide</h1>');
+    const h1Count = (html.match(/<h1[\s>]/g) ?? []).length;
+    expect(h1Count).toBe(1);
+  });
+
   it("renders unresolved [[wiki-link]] as a missing-page indicator (not literal)", () => {
     const html = theme.renderHtml!(makePageContext("See [[nonexistent-page]] for details."));
     expect(html).toContain("mt-page-missing");

@@ -940,7 +940,16 @@ export class MantisHubTheme implements Theme {
     const project = d.project as { id: number; name: string } | null;
     const createdBy = d.createdBy as { name: string; real_name?: string } | null;
     const updatedBy = d.updatedBy as { name: string; real_name?: string } | null;
-    const content = (d.content as string) ?? "";
+    let content = (d.content as string) ?? "";
+    let pageHeading = (d.title as string) || (d.name as string);
+
+    // If the content begins with a leading H1, prefer it over the stored title
+    // so we don't render two stacked headers.
+    const leadingH1 = content.match(/^\s*#\s+(.+?)\s*(?:\n|$)/);
+    if (leadingH1) {
+      pageHeading = leadingH1[1];
+      content = content.slice(leadingH1[0].length);
+    }
 
     const fm: Record<string, unknown> = {
       title: d.title || d.name,
@@ -958,7 +967,7 @@ export class MantisHubTheme implements Theme {
     const crumbs = [project?.name, d.name as string].filter(Boolean).join(" > ");
     sections.push(`**${crumbs}**`);
 
-    sections.push(`## ${d.title || d.name}`);
+    sections.push(`## ${pageHeading}`);
 
     // Page content (raw markdown)
     if (content) {
@@ -1005,7 +1014,17 @@ export class MantisHubTheme implements Theme {
     const project = d.project as { id: number; name: string } | null;
     const createdBy = d.createdBy as { name: string; real_name?: string } | null;
     const updatedBy = d.updatedBy as { name: string; real_name?: string } | null;
-    const content = (d.content as string) ?? "";
+    let content = (d.content as string) ?? "";
+    const storedTitle = (d.title as string) || (d.name as string);
+
+    // If the content begins with a leading H1, prefer it over the stored title
+    // to avoid rendering a duplicate header.
+    let headerTitle = storedTitle;
+    const leadingH1 = content.match(/^\s*#\s+(.+?)\s*(?:\n|$)/);
+    if (leadingH1) {
+      headerTitle = leadingH1[1];
+      content = content.slice(leadingH1[0].length);
+    }
 
     const parts: string[] = [];
     parts.push(`<div class="mt-issue-view">`);
@@ -1016,7 +1035,7 @@ export class MantisHubTheme implements Theme {
       const projectHtml = mtProjectLink(project, lookup);
       parts.push(`<div class="mt-breadcrumb">${projectHtml} &rsaquo; ${esc(d.name as string)}</div>`);
     }
-    parts.push(`<h1 class="mt-title">${esc((d.title as string) || (d.name as string))}</h1>`);
+    parts.push(`<h1 class="mt-title">${esc(headerTitle)}</h1>`);
     parts.push(`</div>`);
 
     // Two-column layout
