@@ -127,6 +127,30 @@ const CALLOUT_ICONS: Record<string, string> = {
   git: "🔀",
 };
 
+/**
+ * Detect a video-sharing URL written as a markdown image and return embed info.
+ * Komodo (kommodo.ai / komododecks.com) is rendered as a clickable play card
+ * because their iframe-embed URL is a premium feature with no public pattern.
+ */
+function videoEmbedFromUrl(url: string): { provider: "komodo" | "loom" | "youtube" | "vimeo"; embedUrl: string; openUrl: string } | null {
+  let m: RegExpMatchArray | null;
+  if ((m = url.match(/^https?:\/\/(?:www\.)?(?:komododecks\.com|kommodo\.ai)\/recordings\/([\w-]+)/))) {
+    const open = `https://kommodo.ai/recordings/${m[1]}`;
+    return { provider: "komodo", embedUrl: open, openUrl: open };
+  }
+  if ((m = url.match(/^https?:\/\/(?:www\.)?loom\.com\/share\/([\w-]+)/))) {
+    return { provider: "loom", embedUrl: `https://www.loom.com/embed/${m[1]}`, openUrl: `https://www.loom.com/share/${m[1]}` };
+  }
+  if ((m = url.match(/^https?:\/\/(?:www\.)?youtube\.com\/watch\?v=([\w-]+)/)) ||
+      (m = url.match(/^https?:\/\/youtu\.be\/([\w-]+)/))) {
+    return { provider: "youtube", embedUrl: `https://www.youtube.com/embed/${m[1]}`, openUrl: `https://www.youtube.com/watch?v=${m[1]}` };
+  }
+  if ((m = url.match(/^https?:\/\/(?:www\.)?vimeo\.com\/(\d+)/))) {
+    return { provider: "vimeo", embedUrl: `https://player.vimeo.com/video/${m[1]}`, openUrl: `https://vimeo.com/${m[1]}` };
+  }
+  return null;
+}
+
 function resolveWikilink(target: string, allFiles: string[]): string | null {
   const directPath = target.endsWith(".md") ? target : `${target}.md`;
   if (allFiles.includes(directPath)) return directPath;
@@ -156,6 +180,30 @@ export default function MarkdownView({
           return <span className="obs-tag">{text}</span>;
         }
         return <code className={className}>{children}</code>;
+      },
+      img({ src, alt }) {
+        const url = typeof src === "string" ? src : "";
+        const video = url ? videoEmbedFromUrl(url) : null;
+        if (video) {
+          if (video.provider === "komodo") {
+            return (
+              <a className="mt-md-video-link" href={video.openUrl} target="_blank" rel="noopener noreferrer">
+                <span className="mt-md-video-icon" aria-hidden>▶</span>
+                <span className="mt-md-video-label">{alt || "Watch recording"}</span>
+              </a>
+            );
+          }
+          return (
+            <iframe
+              className="mt-md-video"
+              src={video.embedUrl}
+              title={alt || `${video.provider} video`}
+              allowFullScreen
+              frameBorder={0}
+            />
+          );
+        }
+        return <img src={url} alt={alt} loading="lazy" />;
       },
       a({ href, children }) {
         if (href?.startsWith(WIKILINK_PREFIX)) {

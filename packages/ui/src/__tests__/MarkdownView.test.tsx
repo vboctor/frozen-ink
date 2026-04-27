@@ -211,4 +211,48 @@ describe("MarkdownView", () => {
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
   });
+
+  it("renders YouTube image syntax as an iframe player", () => {
+    const { container } = render(
+      <MarkdownView
+        content="![Demo](https://www.youtube.com/watch?v=dQw4w9WgXcQ)"
+        collection="test"
+        allFiles={[]}
+        onWikilinkClick={() => {}}
+      />,
+    );
+    const iframe = container.querySelector("iframe.mt-md-video");
+    expect(iframe).toBeInTheDocument();
+    expect(iframe).toHaveAttribute("src", "https://www.youtube.com/embed/dQw4w9WgXcQ");
+  });
+
+  it("renders Vimeo image syntax as an iframe player", () => {
+    const { container } = render(
+      <MarkdownView
+        content="![Vimeo](https://vimeo.com/76979871)"
+        collection="test"
+        allFiles={[]}
+        onWikilinkClick={() => {}}
+      />,
+    );
+    const iframe = container.querySelector("iframe.mt-md-video");
+    expect(iframe).toHaveAttribute("src", "https://player.vimeo.com/video/76979871");
+  });
+
+  it("renders Komodo recordings as a clickable play card (no iframe)", () => {
+    const { container } = render(
+      <MarkdownView
+        content="![How to](https://komododecks.com/recordings/abc123)"
+        collection="test"
+        allFiles={[]}
+        onWikilinkClick={() => {}}
+      />,
+    );
+    expect(container.querySelector("iframe")).toBeNull();
+    const link = container.querySelector("a.mt-md-video-link") as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link!.href).toBe("https://kommodo.ai/recordings/abc123");
+    expect(link!.target).toBe("_blank");
+    expect(link!.textContent).toContain("How to");
+  });
 });

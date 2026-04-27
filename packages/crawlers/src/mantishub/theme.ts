@@ -133,6 +133,57 @@ function mtAvatar(name: string, avatarUrl?: string | null, size = 24): string {
 type Lookup = (externalId: string) => string | undefined;
 
 /**
+ * Detect a video-sharing URL and return either an iframe embed (Loom, YouTube,
+ * Vimeo) or a clickable play-card that opens the source in a new tab (Komodo,
+ * which has no public iframe-embed URL on its free tier).
+ * Returns null for non-video URLs.
+ */
+export function videoEmbedHtml(url: string, alt: string): string | null {
+  let m: RegExpMatchArray | null;
+  if ((m = url.match(/^https?:\/\/(?:www\.)?(?:komododecks\.com|kommodo\.ai)\/recordings\/([\w-]+)/))) {
+    const playUrl = `https://kommodo.ai/recordings/${m[1]}`;
+    const label = esc(alt || "Watch recording");
+    return `<a class="mt-md-video-link" href="${esc(playUrl)}" target="_blank" rel="noopener noreferrer">` +
+      `<span class="mt-md-video-icon" aria-hidden="true">▶</span><span class="mt-md-video-label">${label}</span>` +
+      `</a>`;
+  }
+  if ((m = url.match(/^https?:\/\/(?:www\.)?loom\.com\/share\/([\w-]+)/))) {
+    return `<iframe class="mt-md-video" src="https://www.loom.com/embed/${esc(m[1])}" title="${esc(alt || "Loom recording")}" allowfullscreen frameborder="0"></iframe>`;
+  }
+  if ((m = url.match(/^https?:\/\/(?:www\.)?youtube\.com\/watch\?v=([\w-]+)/)) ||
+      (m = url.match(/^https?:\/\/youtu\.be\/([\w-]+)/))) {
+    return `<iframe class="mt-md-video" src="https://www.youtube.com/embed/${esc(m[1])}" title="${esc(alt || "YouTube video")}" allowfullscreen frameborder="0"></iframe>`;
+  }
+  if ((m = url.match(/^https?:\/\/(?:www\.)?vimeo\.com\/(\d+)/))) {
+    return `<iframe class="mt-md-video" src="https://player.vimeo.com/video/${esc(m[1])}" title="${esc(alt || "Vimeo video")}" allowfullscreen frameborder="0"></iframe>`;
+  }
+  return null;
+}
+
+/**
+ * Detect a video-sharing URL and return its embed metadata for use by the
+ * markdown viewer's React `img` component. Returns null for non-video URLs.
+ */
+export function videoEmbedInfo(url: string): { provider: "komodo" | "loom" | "youtube" | "vimeo"; embedUrl: string; openUrl: string } | null {
+  let m: RegExpMatchArray | null;
+  if ((m = url.match(/^https?:\/\/(?:www\.)?(?:komododecks\.com|kommodo\.ai)\/recordings\/([\w-]+)/))) {
+    const open = `https://kommodo.ai/recordings/${m[1]}`;
+    return { provider: "komodo", embedUrl: open, openUrl: open };
+  }
+  if ((m = url.match(/^https?:\/\/(?:www\.)?loom\.com\/share\/([\w-]+)/))) {
+    return { provider: "loom", embedUrl: `https://www.loom.com/embed/${m[1]}`, openUrl: `https://www.loom.com/share/${m[1]}` };
+  }
+  if ((m = url.match(/^https?:\/\/(?:www\.)?youtube\.com\/watch\?v=([\w-]+)/)) ||
+      (m = url.match(/^https?:\/\/youtu\.be\/([\w-]+)/))) {
+    return { provider: "youtube", embedUrl: `https://www.youtube.com/embed/${m[1]}`, openUrl: `https://www.youtube.com/watch?v=${m[1]}` };
+  }
+  if ((m = url.match(/^https?:\/\/(?:www\.)?vimeo\.com\/(\d+)/))) {
+    return { provider: "vimeo", embedUrl: `https://player.vimeo.com/video/${m[1]}`, openUrl: `https://vimeo.com/${m[1]}` };
+  }
+  return null;
+}
+
+/**
  * Build a nested list tree (unordered and/or ordered) from a contiguous block.
  * Indentation (tabs expand to 2 spaces) determines nesting; sibling items at
  * the same indent inherit the marker style of the first sibling. Single blank
@@ -311,7 +362,12 @@ function markdownToHtml(
   const links: string[] = [];
   raw = raw.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (_m, alt: string, url: string) => {
     const idx = links.length;
-    links.push(`<img class="mt-md-image" src="${esc(url)}" alt="${esc(alt)}" loading="lazy">`);
+    const embed = videoEmbedHtml(url, alt);
+    if (embed) {
+      links.push(embed);
+    } else {
+      links.push(`<img class="mt-md-image" src="${esc(url)}" alt="${esc(alt)}" loading="lazy">`);
+    }
     return `\x00LINK${idx}\x00`;
   });
 
@@ -436,8 +492,8 @@ function markdownToHtml(
   html = `<p>${html}</p>`;
   html = html.replace(/<p>\s*<\/p>/g, "");
   // Unwrap block elements incorrectly wrapped in <p>
-  html = html.replace(/<p>(\s*<(?:h[1-6]|pre|ul|ol|blockquote|hr|div)[ >\/])/g, "$1");
-  html = html.replace(/(<\/(?:h[1-6]|pre|ul|ol|blockquote|div)>\s*)<\/p>/g, "$1");
+  html = html.replace(/<p>(\s*<(?:h[1-6]|pre|ul|ol|blockquote|hr|div|iframe)[ >\/])/g, "$1");
+  html = html.replace(/(<\/(?:h[1-6]|pre|ul|ol|blockquote|div|iframe)>\s*)<\/p>/g, "$1");
   html = html.replace(/(<hr[^>]*>\s*)<\/p>/g, "$1");
 
   // ── Step 15: single newlines → <br> (within paragraphs) ──
