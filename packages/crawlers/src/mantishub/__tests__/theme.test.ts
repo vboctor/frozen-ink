@@ -205,6 +205,20 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/>onboarding-guide</);
   });
 
+  it("renders task list items as checkboxes", () => {
+    const md = "- [x] Done thing\n- [ ] Open thing\n- Plain item";
+    const html = theme.renderHtml!(makePageContext(md));
+    expect(html).toContain('<input type="checkbox" disabled checked>');
+    expect(html).toContain('<input type="checkbox" disabled>');
+    expect(html).toContain('class="mt-md-task mt-md-task-done"');
+    expect(html).toContain('class="mt-md-task"');
+    expect(html).toContain("mt-md-task-list");
+    // Plain item retains no task class
+    expect(html).toContain("<li>Plain item</li>");
+    // No literal bracket prefix on task items
+    expect(html).not.toMatch(/<li[^>]*>\[/);
+  });
+
   it("renders GFM > [!NOTE] admonitions as styled callouts", () => {
     const md = "> [!NOTE]\n> Heads up.\n\n> [!WARNING]\n> Careful here.";
     const html = theme.renderHtml!(makePageContext(md));
