@@ -302,16 +302,28 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/<li[^>]*>\[/);
   });
 
-  it("renders GFM > [!NOTE] admonitions as styled callouts", () => {
+  it("renders GFM > [!NOTE] admonitions as styled callouts with icons", () => {
     const md = "> [!NOTE]\n> Heads up.\n\n> [!WARNING]\n> Careful here.";
     const html = theme.renderHtml!(makePageContext(md));
     expect(html).toContain("mt-md-callout-note");
-    expect(html).toContain('<div class="mt-md-callout-title">Note</div>');
+    expect(html).toContain('class="mt-md-callout-title"');
+    expect(html).toContain("<svg");
+    expect(html).toContain(">Note<");
     expect(html).toContain("Heads up.");
     expect(html).toContain("mt-md-callout-warning");
     expect(html).toContain("Careful here.");
-    // Should not appear as literal blockquote text
     expect(html).not.toContain("[!NOTE]");
+  });
+
+  it("recognises shorthand [Note] / [Warning] without the GFM '!' prefix", () => {
+    const md = "> [Note]\n> Plain note text.\n\n> [Warning]\n> Plain warning text.";
+    const html = theme.renderHtml!(makePageContext(md));
+    expect(html).toContain("mt-md-callout-note");
+    expect(html).toContain("mt-md-callout-warning");
+    expect(html).toContain("Plain note text.");
+    expect(html).toContain("Plain warning text.");
+    expect(html).not.toContain("[Note]");
+    expect(html).not.toContain("[Warning]");
   });
 
   it("renders nested bullet lists with proper indentation", () => {

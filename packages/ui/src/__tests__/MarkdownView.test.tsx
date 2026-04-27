@@ -212,6 +212,36 @@ describe("MarkdownView", () => {
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
   });
 
+  it("renders GFM > [!NOTE] callouts with an icon and type-specific class", () => {
+    const { container } = render(
+      <MarkdownView
+        content={"> [!NOTE]\n> Heads up — this is informational."}
+        collection="test"
+        allFiles={[]}
+        onWikilinkClick={() => {}}
+      />,
+    );
+    const callout = container.querySelector(".callout.callout-note") as HTMLElement | null;
+    expect(callout).not.toBeNull();
+    expect(callout!.querySelector(".callout-icon svg")).not.toBeNull();
+    expect(callout!.querySelector(".callout-title")?.textContent).toContain("Note");
+    expect(callout!.querySelector(".callout-body")?.textContent).toContain("Heads up");
+  });
+
+  it("recognises shorthand [Warning] without the GFM '!' prefix", () => {
+    const { container } = render(
+      <MarkdownView
+        content={"> [Warning]\n> Be careful."}
+        collection="test"
+        allFiles={[]}
+        onWikilinkClick={() => {}}
+      />,
+    );
+    const callout = container.querySelector(".callout.callout-warning");
+    expect(callout).not.toBeNull();
+    expect(container.textContent).not.toContain("[Warning]");
+  });
+
   it("renders YouTube image syntax as an iframe player", () => {
     const { container } = render(
       <MarkdownView
