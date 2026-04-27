@@ -205,6 +205,13 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/>onboarding-guide</);
   });
 
+  it("recognises NOTE admonition with leading whitespace before '>'", () => {
+    const html = theme.renderHtml!(makePageContext(" > [!NOTE] \n> Legacy doco"));
+    expect(html).toContain("mt-md-callout-note");
+    expect(html).toContain("Legacy doco");
+    expect(html).not.toContain("[!NOTE]");
+  });
+
   it("tolerates malformed blockquote lines without splitting the quote", () => {
     const html = theme.renderHtml!(makePageContext("> First line\n>. \n> Third line"));
     expect((html.match(/<blockquote/g) ?? []).length).toBe(1);

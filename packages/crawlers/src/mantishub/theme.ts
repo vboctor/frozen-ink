@@ -403,15 +403,17 @@ function markdownToHtml(
   // Tolerates any non-space characters immediately after "&gt;" (e.g. ">."
   // typo lines) so a stray malformed quote line doesn't split a multi-line
   // block into separate <blockquote> elements.
-  html = html.replace(/((?:^&gt;.*(?:\n|$))+)/gm, (block) => {
+  html = html.replace(/((?:^[ \t]*&gt;.*(?:\n|$))+)/gm, (block) => {
     const lines = block.replace(/\n+$/, "").split("\n")
-      .map((line) => line.replace(/^&gt;[ \t.]*/, ""));
-    // GFM admonition: first line is "[!TYPE]"
-    const adm = lines[0]?.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i);
+      .map((line) => line.replace(/^[ \t]*&gt;[ \t.]*/, ""));
+    // GFM admonition: first line is "[!TYPE]" (trimmed, since source
+    // pages occasionally have trailing whitespace after the marker).
+    const first = lines[0]?.trim() ?? "";
+    const adm = first.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]$/i);
     if (adm) {
       const type = adm[1].toLowerCase();
       const label = type.charAt(0).toUpperCase() + type.slice(1);
-      const body = lines.slice(1).join("<br>");
+      const body = lines.slice(1).filter((l) => l.length > 0).join("<br>");
       return `<div class="mt-md-callout mt-md-callout-${type}">` +
         `<div class="mt-md-callout-title">${label}</div>` +
         `<div class="mt-md-callout-body">${body}</div>` +
