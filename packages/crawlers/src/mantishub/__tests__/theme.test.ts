@@ -205,6 +205,18 @@ describe("MantisHubTheme HTML page rendering", () => {
     expect(html).not.toMatch(/>onboarding-guide</);
   });
 
+  it("renders nested ordered lists with continuous numbering", () => {
+    const md = "1. First\n\n2. Second\n   1. Sub a\n   2. Sub b\n\n3. Third\n4. Fourth";
+    const html = theme.renderHtml!(makePageContext(md));
+    // Single outer <ol>
+    expect((html.match(/<ol[\s>]/g) ?? []).length).toBe(2); // outer + 1 nested
+    expect((html.match(/<\/ol>/g) ?? []).length).toBe(2);
+    // Outer should contain First, Second, Third, Fourth in one list
+    expect(html).toMatch(/<ol class="mt-md-list">.*First.*Second.*Third.*Fourth.*<\/ol>/s);
+    // Nested ol inside Second's <li>
+    expect(html).toMatch(/Second<ol[^>]*><li>Sub a<\/li><li>Sub b<\/li><\/ol>/);
+  });
+
   it("renders task list items as checkboxes", () => {
     const md = "- [x] Done thing\n- [ ] Open thing\n- Plain item";
     const html = theme.renderHtml!(makePageContext(md));
