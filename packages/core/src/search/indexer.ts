@@ -23,39 +23,27 @@ export interface SearchFilters {
   limit?: number;
 }
 
+/**
+ * FTS5 search over the `entities_fts` virtual table. Schema is owned by
+ * `LOCAL_MIGRATIONS` (`packages/core/src/db/migrations/local.ts`); the
+ * runner is invoked here defensively so callers that open this without
+ * having gone through `getCollectionDb` first still see the latest shape.
+ *
+ * Final FTS column order (after migration v4):
+ *   entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED,
+ *   title, content, tags, attachment_text
+ *
+ * bm25 weights — kept identical to `worker/src/db/search.ts`:
+ *   title 10, tags 5, body 1, attachment 0.25 (UNINDEXED cols get 1.0
+ *   but never match). See `SCHEMA.md` for the rationale on weights.
+ */
 export class SearchIndexer {
   private sqlite: any;
-  /**
-   * Whether the live FTS table includes the `attachment_text` column. New
-   * collections always do; collections created before the column was added
-   * keep their existing schema until they are explicitly reindexed (FTS5
-   * doesn't support `ALTER TABLE ADD COLUMN`, and dropping the table
-   * silently breaks search for every entity that hasn't changed since the
-   * upgrade — so we leave it alone until a deliberate rebuild).
-   */
-  private hasAttachmentTextColumn = true;
 
   constructor(dbPath: string) {
     this.sqlite = openDatabase(dbPath);
     this.sqlite.exec("PRAGMA journal_mode = WAL;");
-    // Schema (entities, entities_fts, etc.) is owned by the migrations
-    // module — see `db/migrations/local.ts` and `SCHEMA.md`. Running the
-    // sync runner here is cheap (in-memory cached) and idempotent so it's
-    // safe even when getCollectionDb already ran it earlier in the process.
     runSyncMigrations(this.sqlite, LOCAL_MIGRATIONS, dbPath);
-
-    // Detect whether the FTS table has the `attachment_text` column. For
-    // current schema versions this is always true; the flag is kept for
-    // belt-and-suspenders against future schema changes that might
-    // re-introduce a 7-column variant.
-    try {
-      const cols = (this.sqlite.prepare("PRAGMA table_info(entities_fts)").all() as any[]).map(
-        (r: any) => r.name,
-      );
-      this.hasAttachmentTextColumn = cols.includes("attachment_text");
-    } catch {
-      this.hasAttachmentTextColumn = false;
-    }
   }
 
   updateIndex(entity: {
@@ -65,48 +53,33 @@ export class SearchIndexer {
     title: string;
     content: string;
     tags: string[];
+    /**
+     * Accepted for API symmetry with older callers but no longer
+     * persisted — the FTS table dropped its `collection_name` column in
+     * migration v4 (it was never queried). Each collection has its own
+     * SQLite file, so collection scoping is implicit.
+     */
     collectionName?: string;
     /** Concatenated OCR / extracted text from the entity's attachments. */
     attachmentText?: string;
   }): void {
-    // Remove existing entry for this entity
     this.sqlite.exec(
       `DELETE FROM entities_fts WHERE entity_id = '${entity.id}'`,
     );
 
-    if (this.hasAttachmentTextColumn) {
-      this.sqlite
-        .prepare(
-          `INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags, attachment_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          entity.collectionName ?? "",
-          String(entity.id),
-          entity.externalId,
-          entity.entityType,
-          entity.title,
-          entity.content,
-          entity.tags.join(" "),
-          entity.attachmentText ?? "",
-        );
-    } else {
-      // Legacy schema (pre attachment_text). attachmentText is dropped on
-      // the floor — it's only populated by the Evernote crawler today, and
-      // pre-existing collections don't have any OCR text to preserve.
-      this.sqlite
-        .prepare(
-          `INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          entity.collectionName ?? "",
-          String(entity.id),
-          entity.externalId,
-          entity.entityType,
-          entity.title,
-          entity.content,
-          entity.tags.join(" "),
-        );
-    }
+    this.sqlite
+      .prepare(
+        `INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags, attachment_text) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        String(entity.id),
+        entity.externalId,
+        entity.entityType,
+        entity.title,
+        entity.content,
+        entity.tags.join(" "),
+        entity.attachmentText ?? "",
+      );
   }
 
   /**
@@ -134,28 +107,19 @@ export class SearchIndexer {
 
   search(query: string, filters?: SearchFilters): SearchResult[] {
     const ftsQuery = buildFtsQuery(query);
-
     if (!ftsQuery) return [];
 
-    // Weight title matches much more heavily than body/tags so an entity
-    // with the query in its title ranks above one that only mentions the
-    // query in its content. bm25() weights are positional for every
-    // declared column (UNINDEXED columns included), not just indexed ones.
-    // Column order: collection_name, entity_id, external_id, entity_type,
-    //               title, content, tags, attachment_text.
-    // Column weights: title 10, tags 5, body 1, attachment 0.25 (and 1.0
-    // for the four UNINDEXED housekeeping columns, which never match). Tags
-    // are deliberately weighted high — they're a curated signal that a note
-    // is *about* a topic — so a tag match outranks a body match without
-    // overpowering a title hit. Legacy collections without the
-    // attachment_text column use the same weights minus the trailing one.
-    const bm25Expr = this.hasAttachmentTextColumn
-      ? "bm25(entities_fts, 1.0, 1.0, 1.0, 1.0, 10.0, 1.0, 5.0, 0.25)"
-      : "bm25(entities_fts, 1.0, 1.0, 1.0, 1.0, 10.0, 1.0, 5.0)";
+    // Column order: entity_id, external_id, entity_type (UNINDEXED), then
+    // title=10, content=1, tags=5, attachment_text=0.25. Snippet uses
+    // column 3 (title) — wait, snippet uses column 4 (content) in
+    // 0-indexed terms. After v4 the indices are: 0=entity_id, 1=external_id,
+    // 2=entity_type, 3=title, 4=content, 5=tags, 6=attachment_text. Snippet
+    // continues to highlight column 4 (content) so the UI shows where in
+    // the body the query matched.
     let sql = `
       SELECT entity_id, external_id, entity_type, title,
-        ${bm25Expr} AS rank,
-        snippet(entities_fts, 5, '<mark>', '</mark>', '…', 48) AS snippet
+        bm25(entities_fts, 1.0, 1.0, 1.0, 10.0, 1.0, 5.0, 0.25) AS rank,
+        snippet(entities_fts, 4, '<mark>', '</mark>', '…', 48) AS snippet
       FROM entities_fts
       WHERE entities_fts MATCH ?
     `;

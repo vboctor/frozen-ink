@@ -1,4 +1,5 @@
 import type { AsyncMigration } from "./types";
+import { ENTITIES_TABLE_DDL, ENTITIES_INDEX_DDL } from "./shared";
 
 /**
  * Schema migrations for the **published Cloudflare D1** database that
@@ -19,22 +20,10 @@ export const WORKER_MIGRATIONS: AsyncMigration[] = [
     description:
       "Baseline: entities table + indexes, entities_fts virtual table (entity_id / external_id / entity_type / title / content / tags).",
     up: async (db) => {
-      await db.exec(`CREATE TABLE IF NOT EXISTS entities (
-  id INTEGER PRIMARY KEY,
-  external_id TEXT NOT NULL,
-  entity_type TEXT NOT NULL,
-  title TEXT NOT NULL,
-  data TEXT NOT NULL DEFAULT '{}',
-  content_hash TEXT,
-  folder TEXT,
-  slug TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);`);
-      await db.exec("CREATE INDEX IF NOT EXISTS idx_entities_external ON entities(external_id);");
-      await db.exec("CREATE INDEX IF NOT EXISTS idx_entities_folder   ON entities(folder, slug);");
-      await db.exec("CREATE INDEX IF NOT EXISTS idx_entities_type     ON entities(entity_type);");
-      await db.exec("CREATE INDEX IF NOT EXISTS idx_entities_updated  ON entities(updated_at);");
+      await db.exec(ENTITIES_TABLE_DDL);
+      for (const sql of ENTITIES_INDEX_DDL) {
+        await db.exec(sql);
+      }
       await db.exec(
         "CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);",
       );
