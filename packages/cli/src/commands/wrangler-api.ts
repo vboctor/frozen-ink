@@ -221,6 +221,42 @@ export async function executeD1Query(databaseId: string, sql: string): Promise<v
   }
 }
 
+/**
+ * Run a D1 query and return the result rows. Same transport as
+ * `executeD1Query` but threads through the response body so callers can
+ * read PRAGMA / SELECT output (used by the publish-time FTS schema check).
+ */
+export async function queryD1Rows<T = Record<string, unknown>>(
+  databaseId: string,
+  sql: string,
+): Promise<T[]> {
+  const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`,
+    init: {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ sql }),
+    },
+  }));
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`D1 query failed: ${res.status} ${text.slice(0, 500)}`);
+  }
+  const data = (await res.json()) as {
+    success: boolean;
+    errors?: Array<{ code?: number; message: string }>;
+    result?: Array<{ results?: T[] }>;
+  };
+  if (!data.success) {
+    const errs = (data.errors ?? []).map((e) => `[${e.code ?? "?"}] ${e.message}`).join("; ");
+    throw new Error(`D1 query failed: ${errs || "unknown error"}`);
+  }
+  return data.result?.[0]?.results ?? [];
+}
+
 export async function executeD1Command(dbName: string, sql: string): Promise<string> {
   const { stdout } = await runWrangler(["d1", "execute", dbName, "--remote", "--command", sql, "--json", "--yes"]);
   return stdout;

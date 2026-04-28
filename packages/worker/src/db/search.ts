@@ -19,16 +19,20 @@ export async function searchEntities(
   const ftsQuery = buildFtsQuery(query);
   if (!ftsQuery) return [];
 
-  // FTS5 query — weight title column higher than content/tags so title
-  // matches rank ahead of body mentions. bm25() weights are positional for
-  // every declared column including UNINDEXED ones. Published worker schema:
-  //   entity_id, external_id, entity_type, title, content, tags.
-  // Lower bm25 = better match. Snippet uses column 4 (content) so the UI
-  // shows where in the body the query matched, not a re-render of the title.
+  // FTS5 query — keep weights in lockstep with the local SearchIndexer
+  // (`packages/core/src/search/indexer.ts`). bm25() weights are positional
+  // for every declared column including UNINDEXED ones. Published worker
+  // schema (after the attachment_text migration in publish.ts):
+  //   entity_id, external_id, entity_type, title, content, tags, attachment_text.
+  // Weights: title 10, tags 5, body 1, attachment 0.25 (and 1.0 for the
+  // three UNINDEXED housekeeping columns, which never match). attachment
+  // text is weighted low so a body or tag hit decisively outranks an
+  // OCR-only match. Lower bm25 score = better match. Snippet still uses
+  // column 4 (content) so the UI shows the body context for the match.
   let sql = `
     SELECT
       entity_id, external_id, entity_type, title,
-      bm25(entities_fts, 1.0, 1.0, 1.0, 10.0, 1.0, 2.0) AS rank,
+      bm25(entities_fts, 1.0, 1.0, 1.0, 10.0, 1.0, 5.0, 0.25) AS rank,
       snippet(entities_fts, 4, '<mark>', '</mark>', '…', 48) AS snippet
     FROM entities_fts
     WHERE entities_fts MATCH ?
