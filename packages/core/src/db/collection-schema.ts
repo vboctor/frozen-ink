@@ -5,9 +5,24 @@ export interface EntityData {
   source: Record<string, unknown>;
   out_links?: string[];
   in_links?: string[];
-  assets?: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }>;
+  assets?: Array<{
+    filename: string;
+    mimeType: string;
+    storagePath: string;
+    hash: string;
+    /** Extracted / OCR text used to make attachment contents full-text searchable. */
+    text?: string;
+  }>;
   url?: string | null;
   tags?: string[] | null;
+  /**
+   * Optional explicit sort key for the file-tree view. When unset, callers
+   * fall back to the entity's title (lex sort by title). Crawlers that have
+   * a more meaningful order (e.g. timestamp-based, like Evernote's last-
+   * updated date) emit a sortable string here so the tree can show notes
+   * in chronological order without relying on filename hacks.
+   */
+  sortKey?: string;
 }
 
 /** Reconstruct the relative markdown path from folder/slug columns. */

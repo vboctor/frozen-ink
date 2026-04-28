@@ -17,11 +17,25 @@ export interface CrawlerEntityData {
   contentHash?: string;
   url?: string;
   tags?: string[];
+  /**
+   * Optional sort key recorded on the entity. When the file-tree's effective
+   * folder config sorts by this key, entries are ordered lexicographically
+   * by sortKey (then by title as a tiebreaker). Crawlers without a natural
+   * order can leave this unset — callers fall back to the entity title.
+   */
+  sortKey?: string;
   attachments?: {
     filename: string;
     mimeType: string;
     content: Buffer | Uint8Array;
     storagePath?: string;
+    /**
+     * Optional extracted / OCR text for this attachment. Stored on
+     * `EntityData.assets[i].text` and indexed in the FTS `attachment_text`
+     * column so contents inside images and PDFs become searchable without
+     * polluting the rendered note body.
+     */
+    text?: string;
   }[];
   relations?: {
     targetExternalId: string;

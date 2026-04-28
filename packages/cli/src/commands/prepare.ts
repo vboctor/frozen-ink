@@ -87,6 +87,7 @@ function serializeFolderConfig(config: FolderConfig): string {
     lines.push(`hide: [${config.hide.join(", ")}]`);
   }
   if (config.showCount === true) lines.push("showCount: true");
+  if (config.created_at_prefix === true) lines.push("created_at_prefix: true");
   return lines.join("\n") + "\n";
 }
 
@@ -126,6 +127,30 @@ async function writeFolderConfigFiles(
 
       await storage.write(ymlPath, ymlContent);
       wrote = true;
+    }
+
+    // subdirConfig propagation — see SyncEngine.writeFolderConfigFiles for
+    // the full rationale. Serialises the parent's subdirConfig into every
+    // direct child's yml.
+    for (const dirPath of allDirs) {
+      const folderName = dirPath.split("/").pop()!;
+      const cfg = configs[folderName];
+      if (!cfg?.subdirConfig) continue;
+      const desired = serializeFolderConfig(cfg.subdirConfig);
+      const prefix = `${dirPath}/`;
+      for (const childPath of allDirs) {
+        if (!childPath.startsWith(prefix)) continue;
+        const rel = childPath.slice(prefix.length);
+        if (!rel || rel.includes("/")) continue;
+        if (rel in configs) continue;
+        const ymlPath = `${childPath}/${rel}.yml`;
+        try {
+          const existing = await storage.read(ymlPath);
+          if (existing === desired) continue;
+        } catch { /* file doesn't exist yet */ }
+        await storage.write(ymlPath, desired);
+        wrote = true;
+      }
     }
   }
 

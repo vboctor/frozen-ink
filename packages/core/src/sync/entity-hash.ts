@@ -33,6 +33,7 @@ export function computeEntityHash(entity: HashableEntity): string {
     assets,
     url: d.url ?? null,
     tags,
+    sortKey: d.sortKey ?? null,
   });
 
   const hasher = createCryptoHasher("sha256");

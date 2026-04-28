@@ -112,14 +112,15 @@ api.get("/api/collections/:name/html/*", async (c) => {
 api.get("/api/collections/:name/tree", async (c) => {
   const name = c.req.param("name");
   const col = await getCollectionConfig(c.env.BUCKET, name);
-  // D1 .all() returns max 5000 rows — paginate to fetch all entities
-  const allResults: Array<{ folder: string; slug: string; title: string }> = [];
+  // D1 .all() returns max 5000 rows — paginate to fetch all entities. Pull
+  // `data` too so we can extract per-entity sortKey for the tree sort.
+  const allResults: Array<{ folder: string; slug: string; title: string; data: string }> = [];
   const PAGE_SIZE = 5000;
   let offset = 0;
   for (;;) {
     const { results } = await c.env.DB.prepare(
-      "SELECT folder, slug, title FROM entities WHERE folder IS NOT NULL AND slug IS NOT NULL LIMIT ? OFFSET ?",
-    ).bind(PAGE_SIZE, offset).all<{ folder: string; slug: string; title: string }>();
+      "SELECT folder, slug, title, data FROM entities WHERE folder IS NOT NULL AND slug IS NOT NULL LIMIT ? OFFSET ?",
+    ).bind(PAGE_SIZE, offset).all<{ folder: string; slug: string; title: string; data: string }>();
     if (!results || results.length === 0) break;
     allResults.push(...results);
     if (results.length < PAGE_SIZE) break;
@@ -128,10 +129,16 @@ api.get("/api/collections/:name/tree", async (c) => {
 
   const labelWithTitle = col?.crawler ? themeEngine.labelFilesWithTitle(col.crawler) : true;
   const titleByPath = new Map<string, string>();
+  const sortKeyByPath = new Map<string, string>();
   const mdPaths = allResults
     .map((row) => {
       const rel = row.folder ? `${row.folder}/${row.slug}.md` : `${row.slug}.md`;
       if (labelWithTitle && row.title) titleByPath.set(rel, row.title);
+      try {
+        const data = row.data ? JSON.parse(row.data) : null;
+        const sortKey = data?.sortKey;
+        if (typeof sortKey === "string" && sortKey) sortKeyByPath.set(rel, sortKey);
+      } catch { /* malformed data — skip sortKey */ }
       return rel;
     })
     .filter((p) => p.endsWith(".md"));
@@ -196,7 +203,7 @@ api.get("/api/collections/:name/tree", async (c) => {
     return true;
   });
 
-  const tree = buildTreeFromPaths(filteredPaths, titleByPath, folderConfigs);
+  const tree = buildTreeFromPaths(filteredPaths, titleByPath, folderConfigs, sortKeyByPath);
   return c.json(tree);
 });
 
@@ -618,6 +625,7 @@ function buildTreeFromPaths(
   paths: string[],
   titleByPath: Map<string, string> = new Map(),
   folderConfigs: Map<string, { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean; expandFirstN?: number; expanded?: boolean; created_at_prefix?: boolean }> = new Map(),
+  sortKeyByPath: Map<string, string> = new Map(),
 ): object[] {
   interface TreeNode {
     name: string;
@@ -704,11 +712,12 @@ function buildTreeFromPaths(
     const files = nodes
       .filter((n) => n.type === "file")
       .filter((n) => folderHideCompiled.length === 0 || !matchesHidePattern(folderHideCompiled, n.name));
-    if (sortOrder === "DESC") {
-      files.sort((a, b) => b.name.localeCompare(a.name));
-    } else {
-      files.sort((a, b) => a.name.localeCompare(b.name));
-    }
+    const fileEffectiveKey = (f: TreeNode): string => sortKeyByPath.get(f.path) ?? f.name;
+    files.sort((a, b) => {
+      const ka = fileEffectiveKey(a);
+      const kb = fileEffectiveKey(b);
+      return sortOrder === "DESC" ? kb.localeCompare(ka) : ka.localeCompare(kb);
+    });
     if (config?.created_at_prefix) {
       for (const file of files) {
         const datePrefix = file.name.slice(0, 8);

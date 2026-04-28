@@ -28,6 +28,7 @@ import {
   gitTheme,
   mantisHubTheme,
   rssTheme,
+  evernoteTheme,
 } from "@frozenink/crawlers";
 import { sql } from "drizzle-orm";
 import { TextInput } from "./TextInput.js";
@@ -678,6 +679,7 @@ export function CollectionList({
       themeEngine.register(gitTheme);
       themeEngine.register(mantisHubTheme);
       themeEngine.register(rssTheme);
+      themeEngine.register(evernoteTheme);
       const factory = registry.get(col.crawler);
       if (!factory) { setSyncProgress((p) => [...p, `No crawler for ${col.crawler}`]); setSyncStartTime(null); setMode("list"); return; }
       const crawler = factory();

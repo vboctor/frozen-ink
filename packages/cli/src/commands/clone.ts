@@ -224,6 +224,11 @@ Examples:
         // Index inline — content is already in memory, no storage read needed
         const [dbEntity] = colDb.select().from(entities).where(eq(entities.externalId, re.externalId)).all();
         if (dbEntity) {
+          const reAssets = (re.data as Record<string, unknown> | undefined)?.assets as Array<{ text?: string }> | undefined;
+          const attachmentText = (reAssets ?? [])
+            .map((a) => a.text)
+            .filter((t): t is string => Boolean(t && t.trim()))
+            .join("\n");
           indexer.updateIndex({
             id: dbEntity.id,
             externalId: re.externalId,
@@ -231,6 +236,7 @@ Examples:
             title: derivedTitle ?? re.title,
             content: markdown,
             tags: re.tags ?? [],
+            attachmentText,
           });
         }
 

@@ -12,6 +12,7 @@ import {
   gitTheme,
   mantisHubTheme,
   rssTheme,
+  evernoteTheme,
 } from "@frozenink/crawlers";
 import { TextInput } from "./TextInput.js";
 
@@ -99,6 +100,7 @@ export function ExportView({
         themeEngine.register(gitTheme);
         themeEngine.register(mantisHubTheme);
         themeEngine.register(rssTheme);
+        themeEngine.register(evernoteTheme);
       }
 
       await exportStaticSite({

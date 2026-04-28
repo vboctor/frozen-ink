@@ -44,13 +44,22 @@ function preprocessMarkdown(raw: string, collection: string, filePath?: string):
       `![${path}](/api/attachments/${encodeURIComponent(collection)}/${path})`,
   );
 
-  // Rewrite relative attachment paths (../attachments/... or ../../attachments/...) to API URLs
-  // so they resolve in the web viewer where files aren't on the local filesystem.
-  // Root-level vault notes produce ../attachments/...; nested notes produce ../../attachments/...
+  // Rewrite attachment-relative paths to API URLs so they resolve in the
+  // web viewer where files aren't on the local filesystem. Accepts both
+  // root-relative (`attachments/...`, used by the Evernote crawler) and
+  // ancestor-relative (`../attachments/...`, `../../attachments/...`) forms.
+  // Both image refs (`![]`) and plain links (`[]`) are rewritten so PDF
+  // download links keep working too.
+  const attachmentPathRe = /(?:\.\.\/)*attachments\/([^)]+)/;
   content = content.replace(
-    /!\[([^\]]*)\]\((?:\.\.\/)+attachments\/([^)]+)\)/g,
-    (_match, alt: string, path: string) =>
+    new RegExp(`!\\[([^\\]]*)\\]\\((${attachmentPathRe.source})\\)`, "g"),
+    (_match, alt: string, _full: string, path: string) =>
       `![${alt}](/api/attachments/${encodeURIComponent(collection)}/${path})`,
+  );
+  content = content.replace(
+    new RegExp(`(?<!!)\\[([^\\]]*)\\]\\((${attachmentPathRe.source})\\)`, "g"),
+    (_match, label: string, _full: string, path: string) =>
+      `[${label}](/api/attachments/${encodeURIComponent(collection)}/${path})`,
   );
 
   // Rewrite MantisBT-style relative asset paths: ![alt](assets/filename)
@@ -203,6 +212,40 @@ export default function MarkdownView({
       },
       img({ src, alt }) {
         const url = typeof src === "string" ? src : "";
+        // Inline PDFs: an `<img>` ref to a `.pdf` is treated as a request to
+        // embed the document inline. URL fragment params strip the
+        // thumbnail sidebar/bookmark pane and fit-to-width — most browser
+        // PDF viewers (Chrome/Edge built-in, pdf.js, Safari) honour these.
+        //
+        // Use `<iframe>` rather than `<object>` because `<object>` doesn't
+        // reliably re-load when React reuses the same DOM node and only
+        // swaps the `data` attribute (browsing between two PDF notes was
+        // intermittently showing the previous note's PDF — or none at all).
+        // `<iframe src=…>` triggers a full navigation; pairing it with a
+        // `key` of the URL forces React to unmount + remount on every
+        // change, killing any stale viewer state.
+        if (/\.pdf(\?|#|$)/i.test(url)) {
+          const sep = url.includes("#") ? "&" : "#";
+          const viewerUrl = `${url}${sep}navpanes=0&pagemode=none&toolbar=1&zoom=page-width`;
+          return (
+            <div className="mt-md-pdf-wrap">
+              <iframe
+                key={viewerUrl}
+                src={viewerUrl}
+                title={alt || "PDF"}
+                className="mt-md-pdf"
+              />
+              <a
+                className="mt-md-pdf-fallback"
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open {alt || "PDF"} in a new tab
+              </a>
+            </div>
+          );
+        }
         const video = url ? videoEmbedFromUrl(url) : null;
         if (video) {
           if (video.provider === "komodo") {

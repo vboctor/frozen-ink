@@ -9,6 +9,8 @@ import { MantisHubCrawler } from "./mantishub/crawler";
 import { MantisHubTheme } from "./mantishub/theme";
 import { RssCrawler } from "./rss/crawler";
 import { RssTheme } from "./rss/theme";
+import { EvernoteCrawler } from "./evernote/crawler";
+import { EvernoteTheme } from "./evernote/theme";
 
 export { GitHubCrawler } from "./github/crawler";
 export { GitHubTheme } from "./github/theme";
@@ -30,6 +32,11 @@ export { RssCrawler } from "./rss/crawler";
 export { RssTheme } from "./rss/theme";
 export type { RssConfig, RssCredentials } from "./rss/types";
 
+export { EvernoteCrawler, listEvernoteNotebooks } from "./evernote/crawler";
+export type { EvernoteNotebookSummary } from "./evernote/crawler";
+export { EvernoteTheme } from "./evernote/theme";
+export type { EvernoteConfig, EvernoteCredentials } from "./evernote/types";
+
 export function createDefaultRegistry(): CrawlerRegistry {
   const registry = new CrawlerRegistry();
   registry.register("github", () => new GitHubCrawler());
@@ -37,6 +44,7 @@ export function createDefaultRegistry(): CrawlerRegistry {
   registry.register("git", () => new GitCrawler());
   registry.register("mantishub", () => new MantisHubCrawler());
   registry.register("rss", () => new RssCrawler());
+  registry.register("evernote", () => new EvernoteCrawler());
   return registry;
 }
 
@@ -45,3 +53,4 @@ export const obsidianTheme = new ObsidianTheme();
 export const gitTheme = new GitTheme();
 export const mantisHubTheme = new MantisHubTheme();
 export const rssTheme = new RssTheme();
+export const evernoteTheme = new EvernoteTheme();

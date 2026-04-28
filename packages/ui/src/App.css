@@ -822,6 +822,51 @@ body {
   font-family: var(--font-body);
 }
 
+/*
+ * When the markdown body contains an embedded PDF, drop the 800px reading
+ * column so the viewer can use the full available width. `:has()` is
+ * supported in all current browsers Polyscope targets.
+ */
+.markdown-view:has(.mt-md-pdf) {
+  max-width: none;
+}
+
+.mt-md-pdf-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 16px 0;
+}
+
+.mt-md-pdf {
+  display: block;
+  width: 100%;
+  /* Grow with viewport height; reserve room for the app's top chrome. */
+  height: calc(100vh - 200px);
+  min-height: 600px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  background: var(--bg, #1e1e1e);
+}
+
+/*
+ * Lightweight "open in new tab" link sits below the inline viewer so the
+ * user always has a working escape hatch when the embedded viewer fails
+ * (some webviews don't bundle a PDF plugin, file integrity errors, etc.).
+ */
+.mt-md-pdf-fallback {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-radius: 4px;
+}
+.mt-md-pdf-fallback:hover {
+  color: var(--text);
+  background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+}
+
 .markdown-view h1 {
   font-size: 28px;
   font-weight: 600;
@@ -1294,6 +1339,26 @@ body {
 .loading {
   padding: 24px;
   color: var(--text-muted);
+}
+
+/*
+ * Subtle non-blocking indicator shown while a new file or collection is
+ * loading on top of an existing view. Pinned to the top-right corner so
+ * it never covers the previous content the user is browsing.
+ */
+.loading-inline {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.4));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.85;
 }
 
 /* ===== Search Overlay ===== */

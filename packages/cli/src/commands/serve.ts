@@ -27,6 +27,7 @@ import {
   gitTheme,
   mantisHubTheme,
   rssTheme,
+  evernoteTheme,
 } from "@frozenink/crawlers";
 import { startStdioServer } from "@frozenink/mcp";
 import { eq, desc, inArray, and } from "drizzle-orm";
@@ -42,6 +43,7 @@ function createThemeEngine(): ThemeEngine {
   themeEngine.register(gitTheme);
   themeEngine.register(mantisHubTheme);
   themeEngine.register(rssTheme);
+  themeEngine.register(evernoteTheme);
   return themeEngine;
 }
 
@@ -105,14 +107,14 @@ function matchesHidePattern(patterns: string[], filename: string): boolean {
   });
 }
 
-/** Parse a folder yml file (visible/sort/hide/showCount fields). */
-function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean } {
+/** Parse a folder yml file (visible/sort/hide/showCount/created_at_prefix fields). */
+function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean; created_at_prefix?: boolean } {
   const folderName = basename(dirPath);
   const ymlPath = join(dirPath, `${folderName}.yml`);
   if (!existsSync(ymlPath)) return {};
   try {
     const content = readFileSync(ymlPath, "utf-8");
-    const config: { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean } = {};
+    const config: { visible?: boolean; sort?: "ASC" | "DESC"; hide?: string[]; showCount?: boolean; created_at_prefix?: boolean } = {};
     for (const line of content.split("\n")) {
       const m = line.match(/^(\w+):\s*(.+)$/);
       if (!m) continue;
@@ -120,6 +122,7 @@ function readFolderConfig(dirPath: string): { visible?: boolean; sort?: "ASC" | 
       if (key === "visible") config.visible = val.trim() !== "false";
       if (key === "sort") config.sort = val.trim() === "DESC" ? "DESC" : "ASC";
       if (key === "showCount") config.showCount = val.trim() === "true";
+      if (key === "created_at_prefix") config.created_at_prefix = val.trim() === "true";
       if (key === "hide") {
         // Parse inline YAML array: [item1, item2] or ["item1", "item2"]
         const arrayMatch = val.trim().match(/^\[(.+)\]$/);
@@ -241,6 +244,7 @@ function buildFileTree(
   themeConfigs: Record<string, FolderConfig> = {},
   themeRootConfig: FolderConfig = {},
   labelFilesWithTitle: boolean = true,
+  sortKeyByPath: Map<string, string> = new Map(),
 ): object[] {
   if (!existsSync(dirPath)) return [];
 
@@ -269,7 +273,7 @@ function buildFileTree(
       const childYmlCfg = readFolderConfig(childDirPath);
       const childMerged: FolderConfig = { ...childThemeCfg, ...childYmlCfg };
       if (childMerged.visible === false) continue;
-      const children = buildFileTree(childDirPath, titleByPath, relativePath, themeConfigs, themeRootConfig, labelFilesWithTitle);
+      const children = buildFileTree(childDirPath, titleByPath, relativePath, themeConfigs, themeRootConfig, labelFilesWithTitle, sortKeyByPath);
       // Hide directories with no (visible) files in their subtree so stale
       // empty folders on disk don't leak into the tree.
       if (countFiles(children) === 0) continue;
@@ -306,9 +310,20 @@ function buildFileTree(
     }
   }
 
-  // Apply directory/file ordering by this folder's sort config.
+  // Apply directory/file ordering by this folder's sort config. Files sort
+  // by their effective sortKey (entity data → fall back to filename), so
+  // crawlers can opt notes into chronological order without baking the
+  // date into the filename.
   const sortedDirs = sortOrder === "DESC" ? dirs.slice().reverse() : dirs;
-  const sortedFiles = sortOrder === "DESC" ? files.slice().reverse() : files;
+  const fileEffectiveKey = (f: object): string => {
+    const node = f as { path: string; name: string };
+    return sortKeyByPath.get(node.path) ?? node.name;
+  };
+  const sortedFiles = files.slice().sort((a, b) => {
+    const ka = fileEffectiveKey(a);
+    const kb = fileEffectiveKey(b);
+    return sortOrder === "DESC" ? kb.localeCompare(ka) : ka.localeCompare(kb);
+  });
 
   // Mark the first N expanded, rest explicitly collapsed. The UI defaults to
   // "expanded" when the flag is absent, so both states must be set.
@@ -415,16 +430,20 @@ export function createApiServer(
         const contentDir = join(home, "collections", name, "content");
 
         const titleByPath = new Map<string, string>();
+        const sortKeyByPath = new Map<string, string>();
         const dbPath = getCollectionDbPath(name);
         if (existsSync(dbPath)) {
           const colDb = getCollectionDb(dbPath);
           const rows = colDb
-            .select({ folder: entities.folder, slug: entities.slug, title: entities.title })
+            .select({ folder: entities.folder, slug: entities.slug, title: entities.title, data: entities.data })
             .from(entities)
             .all();
           for (const row of rows) {
             const mdPath = entityMarkdownPath(row.folder, row.slug);
-            if (mdPath && row.title) titleByPath.set(mdPath, row.title);
+            if (!mdPath) continue;
+            if (row.title) titleByPath.set(mdPath, row.title);
+            const sortKey = (row.data as EntityData)?.sortKey;
+            if (typeof sortKey === "string" && sortKey) sortKeyByPath.set(mdPath, sortKey);
           }
         }
 
@@ -432,7 +451,7 @@ export function createApiServer(
         const themeConfigs = themeEngine.getFolderConfigs(crawlerType);
         const themeRootConfig = themeEngine.getRootConfig(crawlerType);
         const labelWithTitle = themeEngine.labelFilesWithTitle(crawlerType);
-        const tree = buildFileTree(contentDir, titleByPath, "", themeConfigs, themeRootConfig, labelWithTitle);
+        const tree = buildFileTree(contentDir, titleByPath, "", themeConfigs, themeRootConfig, labelWithTitle, sortKeyByPath);
         return jsonResponse(tree);
       }
 

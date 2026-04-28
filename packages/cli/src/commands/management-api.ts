@@ -38,6 +38,7 @@ import {
   gitTheme,
   mantisHubTheme,
   rssTheme,
+  evernoteTheme,
 } from "@frozenink/crawlers";
 import { prepareCollection } from "./prepare";
 import { createGenerateThemeEngine } from "./generate";
@@ -236,6 +237,7 @@ function createThemeEngine(): ThemeEngine {
   engine.register(gitTheme);
   engine.register(mantisHubTheme);
   engine.register(rssTheme);
+  engine.register(evernoteTheme);
   return engine;
 }
 
@@ -667,6 +669,26 @@ export function handleManagementRequest(req: Request): Response | null {
         return jsonResponse({ authenticated: true });
       } catch (err) {
         return jsonResponse({ authenticated: false, error: String(err) });
+      }
+    });
+  }
+
+  // --- Crawler-specific helpers ---
+
+  // GET /api/crawlers/evernote/notebooks?path=...
+  if (path === "/api/crawlers/evernote/notebooks" && method === "GET") {
+    return handleAsync(async () => {
+      try {
+        const { listEvernoteNotebooks } = await import("@frozenink/crawlers");
+        const url = new URL(req.url);
+        const conduitPath = url.searchParams.get("path") || undefined;
+        const notebooks = await listEvernoteNotebooks(conduitPath);
+        return jsonResponse({ notebooks });
+      } catch (err) {
+        return jsonResponse(
+          { notebooks: [], error: err instanceof Error ? err.message : String(err) },
+          200,
+        );
       }
     });
   }

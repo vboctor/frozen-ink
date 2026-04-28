@@ -155,7 +155,11 @@ export default function FileTree({ tree, loading, selectedFile, onSelect }: File
     }
   }
 
-  if (loading) {
+  // Only show the blocking "Loading files…" placeholder when there's
+  // nothing to render yet. If we already have a tree (e.g. a sync just
+  // finished and we're reloading), keep showing it so the user can keep
+  // browsing while the new data arrives.
+  if (loading && tree.length === 0) {
     return (
       <div className="file-tree-empty">
         <p>Loading files…</p>

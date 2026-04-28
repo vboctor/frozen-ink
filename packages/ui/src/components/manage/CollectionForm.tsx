@@ -27,9 +27,10 @@ const CRAWLER_TYPES = [
   { id: "git", label: "Git", description: "Commits, branches, and tags from a local repository" },
   { id: "mantishub", label: "MantisHub", description: "Issues from a MantisHub instance" },
   { id: "rss", label: "RSS/Atom", description: "Posts from RSS or Atom feeds with optional sitemap backfill" },
+  { id: "evernote", label: "Evernote", description: "Notes from a local Evernote v10 install (macOS)" },
 ];
 
-const NO_CREDENTIALS_CRAWLERS = ["obsidian", "git", "remote", "rss"];
+const NO_CREDENTIALS_CRAWLERS = ["obsidian", "git", "remote", "rss", "evernote"];
 
 function configToStrings(obj: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
@@ -483,6 +484,8 @@ function renderConfigFields(
       );
     case "remote":
       return field("sourceUrl", "Source URL", "https://example.workers.dev");
+    case "evernote":
+      return <EvernoteConfigFields config={config} setConfig={setConfig} />;
     default:
       return <p className="text-muted">No configuration needed.</p>;
   }
@@ -514,10 +517,177 @@ function renderCredentialFields(
       return field("token", "API Token", "your-api-token");
     case "obsidian":
     case "git":
+    case "evernote":
       return <p className="text-muted">No credentials needed for local sources.</p>;
     case "remote":
       return <p className="text-muted">Credentials are inherited from the source.</p>;
     default:
       return null;
   }
+}
+
+interface EvernoteNotebookSummary {
+  guid: string;
+  name: string;
+  noteCount: number;
+  totalBytes: number;
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  let n = bytes;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
+}
+
+function EvernoteConfigFields({
+  config,
+  setConfig,
+}: {
+  config: Record<string, string>;
+  setConfig: (c: Record<string, string>) => void;
+}) {
+  const set = (key: string, val: string) => setConfig({ ...config, [key]: val });
+
+  // Selection mode: "all" syncs every notebook; "subset" enables the multi-select.
+  // We persist the comma-separated selection in the same `notebooks` config key
+  // the CLI uses, so loaded collections round-trip cleanly.
+  // The serialized form supports both a JSON array (preferred — round-trips
+  // cleanly through configToStrings + JSON.parse on submit) and the legacy
+  // comma-separated form the CLI accepts.
+  const initialList = (() => {
+    const raw = config.notebooks ?? "";
+    if (!raw) return [] as string[];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === "string");
+    } catch {
+      // fall through to comma split
+    }
+    return raw.split(",").map((s) => s.trim()).filter(Boolean);
+  })();
+  const [mode, setMode] = useState<"all" | "subset">(initialList.length > 0 ? "subset" : "all");
+  const [selected, setSelected] = useState<Set<string>>(new Set(initialList));
+  const [notebooks, setNotebooks] = useState<EvernoteNotebookSummary[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchNotebooks = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (config.conduitStoragePath) params.set("path", config.conduitStoragePath);
+      const res = await fetch(`/api/crawlers/evernote/notebooks?${params.toString()}`);
+      const body = await res.json();
+      if (body.error) {
+        setError(body.error);
+        setNotebooks([]);
+      } else {
+        setNotebooks(body.notebooks as EvernoteNotebookSummary[]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-load on first mount when no path is set (covers the auto-detect case).
+  useEffect(() => {
+    if (!config.conduitStoragePath) fetchNotebooks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggle = (name: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      // Store as a JSON array so handleSubmit's JSON.parse turns it into
+      // a real string[] for the crawler config.
+      set("notebooks", next.size > 0 ? JSON.stringify([...next]) : "");
+      return next;
+    });
+  };
+
+  return (
+    <>
+      <PathField
+        label="Conduit Storage Path"
+        value={config.conduitStoragePath ?? ""}
+        onChange={(v) => set("conduitStoragePath", v)}
+        placeholder="leave blank to auto-detect ~/Library/Containers/com.evernote.Evernote/..."
+      />
+      <div>
+        <label>Notebooks</label>
+        <div>
+          <label>
+            <input
+              type="radio"
+              checked={mode === "all"}
+              onChange={() => {
+                setMode("all");
+                set("notebooks", "");
+                setSelected(new Set());
+              }}
+            />
+            {" "}All notebooks
+          </label>
+          <label style={{ marginLeft: "1em" }}>
+            <input
+              type="radio"
+              checked={mode === "subset"}
+              onChange={() => setMode("subset")}
+            />
+            {" "}Pick notebooks
+          </label>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={fetchNotebooks}
+            style={{ marginLeft: "1em" }}
+          >
+            {loading ? "Loading..." : "Refresh list"}
+          </button>
+        </div>
+        {error && <p className="text-muted">{error}</p>}
+        {mode === "subset" && notebooks && notebooks.length > 0 && (
+          <div className="evernote-notebook-list" style={{ maxHeight: 220, overflowY: "auto", marginTop: 8 }}>
+            {notebooks.map((nb) => (
+              <div key={nb.guid}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(nb.name)}
+                    onChange={() => toggle(nb.name)}
+                  />
+                  {" "}{nb.name}
+                  <span className="form-label-hint">
+                    {" "}— {nb.noteCount} note{nb.noteCount === 1 ? "" : "s"}
+                    {nb.totalBytes > 0 ? `, ${formatBytes(nb.totalBytes)}` : ""}
+                  </span>
+                </label>
+              </div>
+            ))}
+          </div>
+        )}
+        {mode === "subset" && notebooks && notebooks.length === 0 && !loading && (
+          <p className="text-muted">No notebooks found at that path.</p>
+        )}
+      </div>
+      <div>
+        <label>
+          <input
+            type="checkbox"
+            checked={config.snapshot !== "false"}
+            onChange={(e) => set("snapshot", String(e.target.checked))}
+          />
+          {" "}Snapshot DB before reading (only used when Evernote has uncheckpointed writes)
+        </label>
+      </div>
+    </>
+  );
 }

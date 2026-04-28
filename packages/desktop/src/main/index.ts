@@ -64,6 +64,11 @@ function createMainWindow(): BrowserWindow {
       preload: existsSync(preloadPath) ? preloadPath : undefined,
       contextIsolation: true,
       nodeIntegration: false,
+      // Enable Chromium's built-in PDF plugin so `<object type="application/pdf">`
+      // renders inline. Without this flag the embed silently falls back to the
+      // `<a>` link content and PDF attachments show as a clickable filename
+      // with no viewer.
+      plugins: true,
     },
     titleBarStyle: "default",
   });
