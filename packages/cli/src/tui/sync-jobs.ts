@@ -22,6 +22,7 @@ import {
   gitTheme,
   mantisHubTheme,
   rssTheme,
+  evernoteTheme,
 } from "@frozenink/crawlers";
 import { pullCollection } from "../commands/pull.js";
 
@@ -102,6 +103,7 @@ function createThemeEngine(): ThemeEngine {
   engine.register(gitTheme);
   engine.register(mantisHubTheme);
   engine.register(rssTheme);
+  engine.register(evernoteTheme);
   return engine;
 }
 

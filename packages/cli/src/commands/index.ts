@@ -84,6 +84,10 @@ Examples:
 
         const markdown = readFileSync(filePath, "utf-8");
 
+        const attachmentText = (entityData.assets ?? [])
+          .map((a) => a.text)
+          .filter((t): t is string => Boolean(t && t.trim()))
+          .join("\n");
         indexer.updateIndex({
           id: entity.id,
           externalId: entity.externalId,
@@ -91,6 +95,7 @@ Examples:
           title: entity.title,
           content: markdown,
           tags: entityData.tags ?? [],
+          attachmentText,
         });
         indexed++;
 

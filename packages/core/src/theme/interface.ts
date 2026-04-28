@@ -4,6 +4,15 @@ export interface FolderConfig {
   /** Sort order for both files and subdirectories in this folder (default: ASC). */
   sort?: "ASC" | "DESC";
   /**
+   * Default config to apply *inside* every direct child subdirectory of
+   * this folder that doesn't already have its own explicit theme config.
+   * Useful when a theme creates one subfolder per "context" (e.g. one per
+   * Evernote notebook) and wants every such folder to share defaults.
+   * Implemented at config-write time: each matching child gets a generated
+   * `<child-name>.yml` serialised from this object.
+   */
+  subdirConfig?: FolderConfig;
+  /**
    * Glob patterns matching filenames to hide within this folder.
    * Wildcards: * matches any sequence of characters, ? matches one character.
    * Example: ["AGENTS.md", "CLAUDE.md", "*.draft"]

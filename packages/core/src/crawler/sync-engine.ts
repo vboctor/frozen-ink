@@ -21,6 +21,7 @@ function serializeFolderConfig(config: FolderConfig): string {
     lines.push(`hide: [${config.hide.join(", ")}]`);
   }
   if (config.showCount === true) lines.push("showCount: true");
+  if (config.created_at_prefix === true) lines.push("created_at_prefix: true");
   return lines.join("\n") + "\n";
 }
 
@@ -31,6 +32,16 @@ function isToolPath(filePath: string): boolean {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Concatenate per-attachment OCR/extracted text for the FTS attachment_text column. */
+function collectAttachmentText(entityData: Pick<CrawlerEntityData, "attachments">): string {
+  if (!entityData.attachments?.length) return "";
+  const parts: string[] = [];
+  for (const att of entityData.attachments) {
+    if (att.text && att.text.trim()) parts.push(att.text);
+  }
+  return parts.join("\n");
 }
 
 function withEntityContext(err: unknown, entity: Pick<CrawlerEntityData, "entityType" | "externalId">): Error {
@@ -91,8 +102,16 @@ export function extractWikilinks(markdown: string, sourceFilePath?: string): str
 /** Empty = no extension filter (all file types allowed). */
 const DEFAULT_ASSET_EXTENSIONS: string[] = [];
 
-/** Default max asset size: 10 MB in KB. */
-const DEFAULT_ASSET_MAX_SIZE_KB = 10240;
+/**
+ * Default max asset size: 100 MB in KB. PDFs and image-heavy documents
+ * routinely exceed the previous 10 MB cap, especially for sources like
+ * Evernote where users attach scanned bills, mortgage statements, etc.
+ * Skipped attachments leave a broken `![…](…)` reference in the rendered
+ * markdown, so a too-conservative cap silently corrupts the output.
+ * Override per collection by setting `assets.maxSize` (KB) in the
+ * collection's yml.
+ */
+const DEFAULT_ASSET_MAX_SIZE_KB = 100 * 1024;
 
 /**
  * Per-entity retry cap. Once an entity has failed this many times across
@@ -574,6 +593,7 @@ export class SyncEngine {
         source: entityData.data as Record<string, unknown>,
         url: entityData.url ?? null,
         tags: entityData.tags ?? [],
+        ...(entityData.sortKey !== undefined ? { sortKey: entityData.sortKey } : {}),
       };
 
       // Update entity
@@ -615,6 +635,7 @@ export class SyncEngine {
         title: entityData.title,
         content: markdown,
         tags: entityData.tags ?? [],
+        attachmentText: collectAttachmentText(entityData),
       });
 
       return { created: 0, updated: 1 };
@@ -636,6 +657,7 @@ export class SyncEngine {
       source: entityData.data as Record<string, unknown>,
       url: entityData.url ?? null,
       tags: entityData.tags ?? [],
+      ...(entityData.sortKey !== undefined ? { sortKey: entityData.sortKey } : {}),
     };
 
     // Insert entity
@@ -682,6 +704,7 @@ export class SyncEngine {
       title: entityData.title,
       content: markdown,
       tags: entityData.tags ?? [],
+      attachmentText: collectAttachmentText(entityData),
     });
 
     return { created: 1, updated: 0 };
@@ -714,7 +737,7 @@ export class SyncEngine {
       return;
     }
 
-    const assetEntries: Array<{ filename: string; mimeType: string; storagePath: string; hash: string }> = [];
+    const assetEntries: Array<{ filename: string; mimeType: string; storagePath: string; hash: string; text?: string }> = [];
 
     for (const att of entityData.attachments) {
       const storagePath = att.storagePath ?? `${this.markdownBasePath}/${entityData.entityType}/assets/${att.filename}`;
@@ -736,6 +759,7 @@ export class SyncEngine {
         mimeType: att.mimeType,
         storagePath,
         hash,
+        ...(att.text ? { text: att.text } : {}),
       });
     }
 
@@ -975,7 +999,11 @@ export class SyncEngine {
         this.syncLinks(row.id, markdown, filePath);
         this.recomputeHash(row.id);
 
-        // Update search index
+        // Update search index — preserve any previously-extracted attachment text.
+        const storedAssetText = (rowData.assets ?? [])
+          .map((a) => a.text)
+          .filter((t): t is string => Boolean(t && t.trim()))
+          .join("\n");
         this.searchIndexer.updateIndex({
           id: row.id,
           externalId: row.externalId,
@@ -983,6 +1011,7 @@ export class SyncEngine {
           title,
           content: markdown,
           tags: [],
+          attachmentText: storedAssetText,
         });
       } catch (err) {
         throw withEntityContext(err, { entityType: row.entityType, externalId: row.externalId });
@@ -1099,6 +1128,32 @@ export class SyncEngine {
       if (!(folderName in configs)) continue;
       const ymlPath = `${dirPath}/${folderName}.yml`;
       await this.storage.write(ymlPath, serializeFolderConfig(configs[folderName]));
+    }
+
+    // subdirConfig propagation: for every dir whose theme config carries a
+    // `subdirConfig`, serialise that config into each direct child's
+    // `<child>/<child>.yml`. This lets themes with dynamic per-context
+    // folders (e.g. one subfolder per Evernote notebook) declare a uniform
+    // default — sort, created_at_prefix, hide, etc. — without needing to
+    // know the child folder names ahead of time.
+    for (const dirPath of allDirs) {
+      const folderName = dirPath.split("/").pop()!;
+      const cfg = configs[folderName];
+      if (!cfg?.subdirConfig) continue;
+      const desired = serializeFolderConfig(cfg.subdirConfig);
+      const prefix = `${dirPath}/`;
+      for (const childPath of allDirs) {
+        if (!childPath.startsWith(prefix)) continue;
+        const rel = childPath.slice(prefix.length);
+        if (!rel || rel.includes("/")) continue;
+        if (rel in configs) continue;
+        const ymlPath = `${childPath}/${rel}.yml`;
+        try {
+          const existing = await this.storage.read(ymlPath);
+          if (existing === desired) continue;
+        } catch { /* file doesn't exist yet */ }
+        await this.storage.write(ymlPath, desired);
+      }
     }
 
     // Root content.yml is written only by prepare (which merges theme rootConfig

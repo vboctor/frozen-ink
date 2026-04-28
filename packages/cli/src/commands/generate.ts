@@ -20,7 +20,7 @@ import {
 } from "@frozenink/core";
 import type { EntityData } from "@frozenink/core";
 import { eq } from "drizzle-orm";
-import { gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme, rssTheme } from "@frozenink/crawlers";
+import { gitHubTheme, obsidianTheme, gitTheme, mantisHubTheme, rssTheme, evernoteTheme } from "@frozenink/crawlers";
 
 /** Write <folder-name>.yml config files for folders matching the theme's folderConfigs(). */
 async function writeFolderConfigFiles(
@@ -72,6 +72,7 @@ export function createGenerateThemeEngine(): ThemeEngine {
   themeEngine.register(gitTheme);
   themeEngine.register(mantisHubTheme);
   themeEngine.register(rssTheme);
+  themeEngine.register(evernoteTheme);
   return themeEngine;
 }
 
@@ -220,7 +221,11 @@ export async function generateCollection(
       .where(eq(entities.id, entity.id))
       .run();
 
-    // Rebuild FTS index
+    // Rebuild FTS index — preserve any previously-extracted attachment text.
+    const attachmentText = (entityData.assets ?? [])
+      .map((a) => a.text)
+      .filter((t): t is string => Boolean(t && t.trim()))
+      .join("\n");
     indexer.updateIndex({
       id: entity.id,
       externalId: entity.externalId,
@@ -228,6 +233,7 @@ export async function generateCollection(
       title,
       content: markdown,
       tags: entityData.tags ?? [],
+      attachmentText,
     });
 
     // Rebuild entity out_links in data

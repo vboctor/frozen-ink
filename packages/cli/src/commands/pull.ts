@@ -290,13 +290,20 @@ export async function pullCollection(collectionName: string, opts: PullCollectio
         content = await storage.read(`content/${re.markdownPath}`);
       } catch { /* ok */ }
     }
+    const reData = re.data as Record<string, unknown> | undefined;
+    const reAssets = reData?.assets as Array<{ text?: string }> | undefined;
+    const attachmentText = (reAssets ?? [])
+      .map((a) => a.text)
+      .filter((t): t is string => Boolean(t && t.trim()))
+      .join("\n");
     indexer.updateIndex({
       id: dbEntity.id,
       externalId: re.externalId,
       entityType: re.entityType,
       title: re.title,
       content,
-      tags: ((re.data as Record<string, unknown>)?.tags as string[] | undefined) ?? [],
+      tags: (reData?.tags as string[] | undefined) ?? [],
+      attachmentText,
     });
   }
   for (const entityId of deletedEntityIds) {

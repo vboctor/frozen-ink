@@ -406,7 +406,11 @@ export default function App() {
     }
     const collection = selectedCollection; // capture for async callbacks
     saveLastCollection(collection);
-    setFileTree([]);
+    // Don't blank the tree — keep showing the previous one while the new
+    // collection's tree loads. The FileTree shows an inline loading
+    // indicator via the `loading` prop. Sync runs that touch the active
+    // collection re-fire this effect via `refreshKey`; we want browsing
+    // to stay possible the whole time.
     setTreeLoading(true);
     // Close tabs from other collections so a stale tab doesn't linger
     setTabs((prev) => {
@@ -1140,11 +1144,25 @@ export default function App() {
       </div>
       <div className="main-body">
         <div className="main-inner">
-          {(loading || (viewMode === "html" && htmlLoading)) && <div className="loading">Loading...</div>}
-          {!loading && !fileNotFound && selectedFile && viewMode === "html" && htmlContent !== null && (
+          {/*
+            Stay responsive while a new file (or collection) loads — keep
+            rendering the previous content and surface a small inline
+            indicator instead of replacing the pane with a "Loading…" block
+            that blanks the view. Only show the blocking placeholder when
+            there's literally nothing else to show.
+          */}
+          {(loading || (viewMode === "html" && htmlLoading))
+            && !fileContent && !htmlContent && (
+              <div className="loading">Loading...</div>
+            )}
+          {(loading || (viewMode === "html" && htmlLoading))
+            && (fileContent || htmlContent) && (
+              <div className="loading-inline" aria-live="polite">Loading…</div>
+            )}
+          {!fileNotFound && selectedFile && viewMode === "html" && htmlContent !== null && (
             <HtmlView html={htmlContent} onWikilinkClick={handleWikilinkNavigate} />
           )}
-          {!loading && !fileNotFound && selectedFile && viewMode === "markdown" && fileContent !== null && (
+          {!fileNotFound && selectedFile && viewMode === "markdown" && fileContent !== null && (
             <MarkdownView
               content={fileContent}
               collection={selectedCollection || ""}

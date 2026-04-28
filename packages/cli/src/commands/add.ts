@@ -35,6 +35,8 @@ export const addCommand = new Command("add")
   .option("--max-prs <count>", "Maximum pull requests to sync (for github)", parseInt)
   .option("--open-only", "Only sync open issues/PRs, delete closed ones (for github)")
   .option("--sync-entities <types>", "Comma-separated entity types to sync: issues,pages,users (for mantishub)")
+  .option("--conduit-storage <path>", "Path to Evernote v10 conduit-storage directory (for evernote)")
+  .option("--notebooks <names>", "Comma-separated notebook allowlist (for evernote)")
   .option("--credentials <name>", "Use a named credential set from ~/.frozenink/credentials.yml")
   .addHelpText("after", `
 Examples:
@@ -189,6 +191,21 @@ Examples:
       config.repoPath = repoPath;
       if (opts.includeDiffs) {
         config.includeDiffs = true;
+      }
+    } else if (crawlerType === "evernote") {
+      if (opts.conduitStorage) {
+        const { resolve } = await import("path");
+        const path = resolve(opts.conduitStorage);
+        config.conduitStoragePath = path;
+        if (!useNamedCreds) {
+          (credentials as Record<string, unknown>).conduitStoragePath = path;
+        }
+      }
+      if (opts.notebooks) {
+        config.notebooks = (opts.notebooks as string)
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean);
       }
     } else if (crawlerType === "rss") {
       if (!opts.feedUrl) {
