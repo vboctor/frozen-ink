@@ -1,4 +1,5 @@
 import { openDatabase } from "../compat/sqlite";
+import { runSyncMigrations, LOCAL_MIGRATIONS } from "../db/migrations";
 import { buildFtsQuery } from "./fts-query";
 
 export interface SearchResult {
@@ -37,38 +38,16 @@ export class SearchIndexer {
   constructor(dbPath: string) {
     this.sqlite = openDatabase(dbPath);
     this.sqlite.exec("PRAGMA journal_mode = WAL;");
-    this.createFtsTable();
-  }
+    // Schema (entities, entities_fts, etc.) is owned by the migrations
+    // module — see `db/migrations/local.ts` and `SCHEMA.md`. Running the
+    // sync runner here is cheap (in-memory cached) and idempotent so it's
+    // safe even when getCollectionDb already ran it earlier in the process.
+    runSyncMigrations(this.sqlite, LOCAL_MIGRATIONS, dbPath);
 
-  private createFtsTable(): void {
-    // Migrate the legacy schema that lacks `collection_name` — that
-    // migration predates this work and is still required for correctness.
-    try {
-      const row = this.sqlite.prepare("PRAGMA table_info(entities_fts)").all();
-      const cols = (row as any[]).map((r: any) => r.name);
-      if (cols.length > 0 && !cols.includes("collection_name")) {
-        this.sqlite.exec("DROP TABLE IF EXISTS entities_fts");
-      }
-    } catch {
-      // Table may not exist yet
-    }
-
-    this.sqlite.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
-        collection_name UNINDEXED,
-        entity_id UNINDEXED,
-        external_id UNINDEXED,
-        entity_type UNINDEXED,
-        title,
-        content,
-        tags,
-        attachment_text
-      );
-    `);
-
-    // Detect whether the (possibly pre-existing) FTS table actually has the
-    // attachment_text column. Older collections won't, and that's fine —
-    // attachment text is only meaningful for new (post-OCR) entities.
+    // Detect whether the FTS table has the `attachment_text` column. For
+    // current schema versions this is always true; the flag is kept for
+    // belt-and-suspenders against future schema changes that might
+    // re-introduce a 7-column variant.
     try {
       const cols = (this.sqlite.prepare("PRAGMA table_info(entities_fts)").all() as any[]).map(
         (r: any) => r.name,

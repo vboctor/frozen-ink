@@ -630,55 +630,53 @@ export async function publishCollections(
     if (!full && storedLocalManifestHash && storedLocalManifestHash === newLocalManifestHash) {
       onProgress("d1-build", "Local manifest unchanged since last publish — skipping D1 rebuild");
     } else {
-      // Ensure schema exists. Idempotent so first publish creates tables and
-      // re-publish is a no-op. No DROPs on `entities` — the manifest-driven
-      // delta below brings D1 in sync without wiping it.
+      // Schema is owned by the migration runner — see
+      // `packages/core/src/db/migrations/worker.ts` and the SCHEMA.md
+      // entries that describe each version. The runner records the
+      // applied version in the `metadata` table; subsequent republishes
+      // see the version is current and short-circuit.
       //
-      // FTS schema migration: `entities_fts` gained an `attachment_text`
-      // column to make OCR'd attachment text searchable. FTS5 doesn't
-      // support `ALTER TABLE ADD COLUMN`, so on republishes that have an
-      // older FTS schema we have to detect the missing column, drop the
-      // table, recreate it with the new shape, and re-INSERT every FTS row.
-      // This mirrors the local SearchIndexer.createFtsTable migration.
-      let needsFtsRebuild = false;
-      if (isUpdate) {
-        try {
-          const ftsCols = await queryD1Rows<{ name: string }>(
-            d1DatabaseId,
-            "PRAGMA table_info(entities_fts);",
-          );
-          if (ftsCols.length > 0 && !ftsCols.some((c) => c.name === "attachment_text")) {
-            needsFtsRebuild = true;
-            onProgress("d1-build", "Migrating entities_fts schema (adding attachment_text column)");
-          }
-        } catch {
-          // Best-effort; if PRAGMA fails the IF NOT EXISTS path below
-          // still creates the new shape on a fresh DB.
-        }
+      // Track the pre-migration version so we know whether the FTS table
+      // was just dropped + recreated. When it was, every FTS row needs
+      // to re-INSERT regardless of the manifest delta — the FTS table
+      // itself is empty.
+      const { runAsyncMigrations, WORKER_MIGRATIONS, FTS_RESET_FROM_BELOW } =
+        await import("@frozenink/core");
+      const d1Executor = {
+        exec: (sql: string) => executeD1Query(d1DatabaseId, sql),
+        query: <T,>(sql: string) => queryD1Rows<T>(d1DatabaseId, sql),
+      };
+      // Read the version BEFORE the runner writes the new one so we can
+      // tell whether a reset migration ran in this call.
+      let preMigrationVersion = 0;
+      try {
+        const rows = await queryD1Rows<{ value: string }>(
+          d1DatabaseId,
+          "SELECT value FROM metadata WHERE key = 'schema.version'",
+        );
+        preMigrationVersion = rows[0] ? Number.parseInt(rows[0].value, 10) || 0 : 0;
+      } catch {
+        // Metadata table missing on first publish — version stays 0.
       }
-
-      const schemaInit: string[] = [];
-      schemaInit.push(`CREATE TABLE IF NOT EXISTS entities (
-  id INTEGER PRIMARY KEY,
-  external_id TEXT NOT NULL, entity_type TEXT NOT NULL,
-  title TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
-  content_hash TEXT,
-  folder TEXT,
-  slug TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);`);
-      schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_external ON entities(external_id);");
-      schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_folder   ON entities(folder, slug);");
-      schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_type     ON entities(entity_type);");
-      schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_updated  ON entities(updated_at);");
-      if (needsFtsRebuild) {
-        schemaInit.push("DROP TABLE IF EXISTS entities_fts;");
-      }
-      schemaInit.push(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags, attachment_text);",
+      const migrationResult = await runAsyncMigrations(
+        d1Executor,
+        WORKER_MIGRATIONS,
+        `d1:${d1DatabaseId}`,
       );
-      await executeD1Query(d1DatabaseId, schemaInit.join("\n"));
+      if (migrationResult.applied.length > 0) {
+        onProgress(
+          "d1-build",
+          `Applied D1 migrations: ${migrationResult.applied.join(", ")} (now at v${migrationResult.current})`,
+        );
+      }
+      // FTS_RESET_FROM_BELOW is the version that drops + recreates
+      // entities_fts. When the pre-migration version sits below it and
+      // the current version is at or above, the FTS table was just
+      // emptied by a migration in this run and we need to re-INSERT
+      // every FTS row regardless of manifest delta. (Fresh DBs hit this
+      // path too — push is just the empty entity list, harmless.)
+      const needsFtsRebuild = preMigrationVersion < FTS_RESET_FROM_BELOW
+        && migrationResult.current >= FTS_RESET_FROM_BELOW;
 
       // Fetch remote manifest (empty on first publish). Manifest endpoint is
       // behind authMiddleware when PASSWORD_HASH is set; pass the plaintext
