@@ -3,8 +3,8 @@
  * here is by definition the SAME on both sides — adding a column or
  * index here must be safe for both runtimes.
  *
- * Per-runtime divergences (FTS shape, sync_errors, r2_manifest) live in
- * each list's own migration body, NOT here.
+ * Per-runtime divergences (currently just `sync_errors`, which is
+ * local-only) live in each list's own migration body, NOT here.
  */
 
 /**

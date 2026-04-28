@@ -7,9 +7,10 @@
  * `metadata` table under `schema.version` so subsequent loads are O(1).
  *
  * Two flavours: the local SQLite handle is synchronous (used inside
- * `getCollectionDb`, which is itself sync), and D1 is async. The two
- * physical schemas differ in places (FTS `collection_name`, the
- * `r2_manifest` table, etc.) so they have separate migration lists.
+ * `getCollectionDb`, which is itself sync), and D1 is async. After local
+ * migration v4 the `entities` and `entities_fts` shapes are identical —
+ * the only intentional divergence is the local-only `sync_errors`
+ * journal (the worker never syncs).
  *
  * **Idempotence rule.** Every migration body must be safe to re-run
  * against a partially-applied DB. Use `CREATE TABLE IF NOT EXISTS`,

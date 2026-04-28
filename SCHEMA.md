@@ -56,10 +56,11 @@ Final FTS bm25 weights used by `SearchIndexer.search()`: `title=10, tags=5, body
 
 Created and migrated by `publishCollections()` in `packages/cli/src/commands/publish.ts`. The runner uses an async D1 executor backed by `executeD1Query` / `queryD1Rows` from `wrangler-api.ts`.
 
-After local v4, the **`entities` table and `entities_fts` schema are identical between local and worker**. The remaining intentional differences are:
+After local v4, the **`entities` table and `entities_fts` schema are identical between local and worker**. The only intentional difference left is:
 
 - `sync_errors` (per-entity sync failure journal) — **local-only**. Sync runs locally; the worker never syncs.
-- `r2_manifest` (R2 file index) — **worker-only**. Local has no R2.
+
+Stale-file cleanup on R2 is done by listing the bucket directly (`listR2Objects` in `wrangler-api.ts`) and diffing against what was just uploaded — there is **no `r2_manifest` D1 table**. Tags and links are not separate tables either; they live inside `entities.data` JSON.
 
 Both runtimes share the same `entities` DDL (extracted into `migrations/shared.ts` as `ENTITIES_TABLE_DDL` + `ENTITIES_INDEX_DDL`) and the same FTS column shape. Adding a column to `entities` should mean editing one constant and adding a numbered migration to both lists.
 
