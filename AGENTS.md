@@ -323,7 +323,7 @@ The `fink publish` command uses the `wrangler` CLI for all Cloudflare operations
 
 Three CF resources are created per deployment:
 
-1. **D1 Database** (`{workerName}-db`) — entities, tags, links, FTS5 search index, R2 manifest
+1. **D1 Database** (`{workerName}-db`) — `entities` (data JSON includes tags + links), `entities_fts` FTS5 index, `metadata`. Stale R2 files are detected by listing the bucket, not via a D1 table. See `SCHEMA.md` for the full schema.
 2. **R2 Bucket** (`{workerName}-files`) — markdown files, attachments, static UI assets (organized by `{collection}/markdown/...`, `{collection}/attachments/...`, `_ui/...`)
 3. **Worker** (`{workerName}`) — Hono server with D1 + R2 bindings, password auth, REST API, MCP
 
