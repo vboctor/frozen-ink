@@ -376,30 +376,59 @@ manifest, or the rendered output, the same change MUST land in the same PR
 for both code paths and both deployment scenarios.** The local server
 (`fink serve`) and the published Cloudflare worker are two independent
 implementations of the same API surface that must stay in lockstep. Test
-both in the same PR — local-only smoke tests gave us shipped gaps before
-(notably `attachment_text` FTS, where the local indexer was extended but
-the publish path silently dropped the column on D1).
+both in the same PR — local-only smoke tests gave us shipped gaps before.
+
+#### Schema migrations — single source of truth
+
+**All on-disk schema changes go through the migrations module — never
+inline `CREATE TABLE` / `ALTER TABLE` / FTS recreate elsewhere.** The
+two databases (local SQLite, published D1) each have their own ordered
+migration list:
+
+- `packages/core/src/db/migrations/local.ts` — `LOCAL_MIGRATIONS`
+- `packages/core/src/db/migrations/worker.ts` — `WORKER_MIGRATIONS`
+
+The runner records the latest applied id in each DB's `metadata` table
+under `schema.version`. The hot path is O(1) (one SELECT, cached in
+process). Migrations are triggered automatically from:
+
+- `getCollectionDb()` in `core/db/client.ts` — every local DB open
+- `SearchIndexer` constructor — defensive re-check (cached, free)
+- `publishCollections()` in `cli/commands/publish.ts` — every publish /
+  republish, before D1 schema is touched
+
+**When making a schema change**, update all of:
+
+1. The migration list (`local.ts` and/or `worker.ts`) — append a new
+   numbered migration; never edit a published one
+2. `SCHEMA.md` at the repo root — document what changed and why
+3. The PR test plan — include a `fink publish` to a scratch worker
+4. A migration unit test if the change is non-trivial (drop+recreate,
+   backfill loop, etc.)
+
+**Idempotence is non-negotiable.** Every migration body must be safe to
+re-run on a partially-applied DB. Use `CREATE TABLE IF NOT EXISTS`,
+`PRAGMA table_info` checks before drops, etc. The runner doesn't
+transaction-wrap migrations — if one fails halfway and is re-run, the
+second pass must finish what the first started.
+
+**FTS5 has no `ALTER TABLE ADD COLUMN`.** Any change that adds an FTS
+column needs a "detect missing → drop FTS table → recreate" body, plus
+a publish-time signal so unchanged entities still get their FTS rows
+re-INSERTed (`worker.ts` exports `FTS_RESET_FROM_BELOW` for this).
 
 What "the same change" looks like in practice — the checklist below is
 not exhaustive but covers the layers most commonly missed:
 
 | Change category | Local layer to update | Worker layer to update |
 |---|---|---|
-| New column on `entities` | `core/db/collection-schema.ts`, `core/db/client.ts` migration | `cli/commands/publish.ts` (CREATE TABLE + INSERT prefix), `worker/src/db/client.ts` SELECT |
-| New column on `entities_fts` | `core/search/indexer.ts` (column-presence migration + INSERT) | `cli/commands/publish.ts` (CREATE VIRTUAL TABLE + drop+recreate migration on republish + INSERT prefix), `worker/src/db/search.ts` (`bm25()` weight count, `snippet()` column index) |
-| New field inside `entities.data` JSON | `core/db/collection-schema.ts` `EntityData`, hash inclusion in `core/sync/entity-hash.ts` | Verify worker reads it: `worker/src/handlers/api.ts` SELECT `data` and parse it (no D1 schema change needed since data is opaque JSON) |
+| New column on `entities` | New entry in `LOCAL_MIGRATIONS` + `core/db/collection-schema.ts` Drizzle schema | New entry in `WORKER_MIGRATIONS` + `worker/src/db/client.ts` SELECT, `cli/commands/publish.ts` INSERT prefix |
+| New column on `entities_fts` | New entry in `LOCAL_MIGRATIONS` (drop+recreate + `bm25()` weight) | New entry in `WORKER_MIGRATIONS` (drop+recreate + `FTS_RESET_FROM_BELOW`) + `worker/src/db/search.ts` (`bm25()` weight count, `snippet()` column index), `cli/commands/publish.ts` INSERT prefix |
+| New field inside `entities.data` JSON | `core/db/collection-schema.ts` `EntityData`, hash inclusion in `core/sync/entity-hash.ts` | Verify worker reads it: `worker/src/handlers/api.ts` SELECT `data` and parse it (no D1 schema change since data is opaque JSON) |
 | Search ranking / weights | `core/search/indexer.ts` `bm25()` | `worker/src/db/search.ts` `bm25()` — keep weights identical |
 | Markdown rendering / theme output | `crawlers/src/<name>/theme.ts` | Same theme imported by `worker/src/handlers/{api,mcp}.ts` — re-run worker build, `--worker-only` re-publish |
 | New folder-config field | `core/theme/interface.ts`, `cli/commands/{prepare,sync-engine}.ts` serializer | `worker/src/handlers/api.ts` tree builder reads `_config/<name>-folders.json` — make sure the field round-trips |
 | New entity field that affects the file tree (e.g. `sortKey`) | `serve.ts` `buildFileTree`'s comparator | `worker/src/handlers/api.ts` `buildTreeFromPaths` and `default-file` resolver |
-
-**Republish is not a migration.** `CREATE TABLE IF NOT EXISTS` is
-idempotent — D1 keeps the old schema. FTS5 specifically does NOT support
-`ALTER TABLE ADD COLUMN`. Any change that adds an FTS column requires an
-explicit "detect column missing → drop FTS table → recreate → re-INSERT"
-pass in `publish.ts`, mirroring the local `SearchIndexer` migration. Use
-the same `PRAGMA table_info` detection pattern; don't blindly drop on
-every publish or you blow up FTS rows for unchanged collections.
 
 **Test plan must cover both.** A smoke test through `fink serve` is not
 sufficient. Test plans for schema/query/ranking changes must include a
@@ -408,10 +437,10 @@ attachment-text-only search that should hit, a sort key that should
 reorder, a new field that should round-trip through clone). Capture the
 test in the PR description.
 
-Pre-existing collections published before the change must be considered.
-Either the change is backward-compatible (worker reads new field
-gracefully when missing) or the publish path includes a migration step
-that runs once on the next republish.
+Pre-existing collections (local or published) must be handled. Either
+the change is backward-compatible (worker reads new field gracefully
+when missing) or the migration runs automatically the next time the DB
+is opened / the next time `fink publish` runs.
 
 ### Build & Test Commands
 
