@@ -304,6 +304,7 @@ export async function publishCollections(
     checkWranglerAuth,
     createD1,
     executeD1Query,
+    queryD1Rows,
 
     createR2Bucket,
     putR2Object,
@@ -630,8 +631,32 @@ export async function publishCollections(
       onProgress("d1-build", "Local manifest unchanged since last publish — skipping D1 rebuild");
     } else {
       // Ensure schema exists. Idempotent so first publish creates tables and
-      // re-publish is a no-op. No DROPs — the manifest-driven delta below
-      // brings D1 in sync without wiping it.
+      // re-publish is a no-op. No DROPs on `entities` — the manifest-driven
+      // delta below brings D1 in sync without wiping it.
+      //
+      // FTS schema migration: `entities_fts` gained an `attachment_text`
+      // column to make OCR'd attachment text searchable. FTS5 doesn't
+      // support `ALTER TABLE ADD COLUMN`, so on republishes that have an
+      // older FTS schema we have to detect the missing column, drop the
+      // table, recreate it with the new shape, and re-INSERT every FTS row.
+      // This mirrors the local SearchIndexer.createFtsTable migration.
+      let needsFtsRebuild = false;
+      if (isUpdate) {
+        try {
+          const ftsCols = await queryD1Rows<{ name: string }>(
+            d1DatabaseId,
+            "PRAGMA table_info(entities_fts);",
+          );
+          if (ftsCols.length > 0 && !ftsCols.some((c) => c.name === "attachment_text")) {
+            needsFtsRebuild = true;
+            onProgress("d1-build", "Migrating entities_fts schema (adding attachment_text column)");
+          }
+        } catch {
+          // Best-effort; if PRAGMA fails the IF NOT EXISTS path below
+          // still creates the new shape on a fresh DB.
+        }
+      }
+
       const schemaInit: string[] = [];
       schemaInit.push(`CREATE TABLE IF NOT EXISTS entities (
   id INTEGER PRIMARY KEY,
@@ -647,7 +672,12 @@ export async function publishCollections(
       schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_folder   ON entities(folder, slug);");
       schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_type     ON entities(entity_type);");
       schemaInit.push("CREATE INDEX IF NOT EXISTS idx_entities_updated  ON entities(updated_at);");
-      schemaInit.push("CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags);");
+      if (needsFtsRebuild) {
+        schemaInit.push("DROP TABLE IF EXISTS entities_fts;");
+      }
+      schemaInit.push(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags, attachment_text);",
+      );
       await executeD1Query(d1DatabaseId, schemaInit.join("\n"));
 
       // Fetch remote manifest (empty on first publish). Manifest endpoint is
@@ -682,7 +712,10 @@ export async function publishCollections(
       //   prune:  remote-only                 → DELETE on remote
       // --full forces every local entity into the push set so folder/slug
       // (and other non-content-hash) changes propagate to D1.
-      const pushExtIds = full
+      // When the FTS table was rebuilt (schema migration above), every
+      // FTS row needs to be re-INSERTed regardless of whether the entity's
+      // content_hash changed — D1 just dropped the table.
+      const pushExtIds = (full || needsFtsRebuild)
         ? localRows.map((r) => r.entity.externalId)
         : [
             ...plan.entities.delete,
@@ -733,6 +766,13 @@ export async function publishCollections(
 
           const entityDataParsed: EntityData = typeof entity.data === "object" ? entity.data as EntityData : JSON.parse(entity.data as string);
           const entityTagNames = (entityDataParsed.tags ?? []).join(" ");
+          // Concatenate every asset's OCR / extracted text so attachment
+          // contents become searchable on the published worker — same way
+          // SyncEngine builds the local FTS row.
+          const attachmentText = (entityDataParsed.assets ?? [])
+            .map((a) => a.text)
+            .filter((t): t is string => Boolean(t && t.trim()))
+            .join("\n");
           let ftsContent = "";
           const hasMarkdown = entity.folder != null && entity.slug != null;
           if (hasMarkdown && themeEngine.has(colCrawler)) {
@@ -754,7 +794,7 @@ export async function publishCollections(
           if (ftsContent.length > MAX_FTS_CONTENT) ftsContent = ftsContent.slice(0, MAX_FTS_CONTENT);
 
           ftsValueRows.push(
-            `(${ftsEntityIdFor(entity.externalId)}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(ftsContent)}', '${escapeSQL(entityTagNames)}')`,
+            `(${ftsEntityIdFor(entity.externalId)}, '${escapeSQL(entity.externalId)}', '${escapeSQL(entity.entityType)}', '${escapeSQL(entity.title)}', '${escapeSQL(ftsContent)}', '${escapeSQL(entityTagNames)}', '${escapeSQL(attachmentText)}')`,
           );
         }
 
@@ -762,7 +802,7 @@ export async function publishCollections(
         // Bounded by byte size per INSERT to stay under D1's statement limit.
         const MAX_INSERT_BYTES = 80 * 1024;
         const entityPrefix = "INSERT OR REPLACE INTO entities (external_id, entity_type, title, data, content_hash, folder, slug, created_at, updated_at) VALUES ";
-        const ftsPrefix = "INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags) VALUES ";
+        const ftsPrefix = "INSERT INTO entities_fts (entity_id, external_id, entity_type, title, content, tags, attachment_text) VALUES ";
         pushMultiRowInserts(insertSql, entityPrefix, entityValueRows, MAX_INSERT_BYTES);
         pushMultiRowInserts(insertSql, ftsPrefix, ftsValueRows, MAX_INSERT_BYTES);
       }

@@ -369,6 +369,50 @@ Skipping the build means the old compiled bundle is deployed — source changes 
 
 **Note:** `wrangler` is not globally installed; invoke it via `bunx wrangler` or use the CLI which calls it as a subprocess automatically.
 
+#### Local ↔ worker parity rule
+
+**Whenever a change affects schema, query semantics, sort/ranking, the
+manifest, or the rendered output, the same change MUST land in the same PR
+for both code paths and both deployment scenarios.** The local server
+(`fink serve`) and the published Cloudflare worker are two independent
+implementations of the same API surface that must stay in lockstep. Test
+both in the same PR — local-only smoke tests gave us shipped gaps before
+(notably `attachment_text` FTS, where the local indexer was extended but
+the publish path silently dropped the column on D1).
+
+What "the same change" looks like in practice — the checklist below is
+not exhaustive but covers the layers most commonly missed:
+
+| Change category | Local layer to update | Worker layer to update |
+|---|---|---|
+| New column on `entities` | `core/db/collection-schema.ts`, `core/db/client.ts` migration | `cli/commands/publish.ts` (CREATE TABLE + INSERT prefix), `worker/src/db/client.ts` SELECT |
+| New column on `entities_fts` | `core/search/indexer.ts` (column-presence migration + INSERT) | `cli/commands/publish.ts` (CREATE VIRTUAL TABLE + drop+recreate migration on republish + INSERT prefix), `worker/src/db/search.ts` (`bm25()` weight count, `snippet()` column index) |
+| New field inside `entities.data` JSON | `core/db/collection-schema.ts` `EntityData`, hash inclusion in `core/sync/entity-hash.ts` | Verify worker reads it: `worker/src/handlers/api.ts` SELECT `data` and parse it (no D1 schema change needed since data is opaque JSON) |
+| Search ranking / weights | `core/search/indexer.ts` `bm25()` | `worker/src/db/search.ts` `bm25()` — keep weights identical |
+| Markdown rendering / theme output | `crawlers/src/<name>/theme.ts` | Same theme imported by `worker/src/handlers/{api,mcp}.ts` — re-run worker build, `--worker-only` re-publish |
+| New folder-config field | `core/theme/interface.ts`, `cli/commands/{prepare,sync-engine}.ts` serializer | `worker/src/handlers/api.ts` tree builder reads `_config/<name>-folders.json` — make sure the field round-trips |
+| New entity field that affects the file tree (e.g. `sortKey`) | `serve.ts` `buildFileTree`'s comparator | `worker/src/handlers/api.ts` `buildTreeFromPaths` and `default-file` resolver |
+
+**Republish is not a migration.** `CREATE TABLE IF NOT EXISTS` is
+idempotent — D1 keeps the old schema. FTS5 specifically does NOT support
+`ALTER TABLE ADD COLUMN`. Any change that adds an FTS column requires an
+explicit "detect column missing → drop FTS table → recreate → re-INSERT"
+pass in `publish.ts`, mirroring the local `SearchIndexer` migration. Use
+the same `PRAGMA table_info` detection pattern; don't blindly drop on
+every publish or you blow up FTS rows for unchanged collections.
+
+**Test plan must cover both.** A smoke test through `fink serve` is not
+sufficient. Test plans for schema/query/ranking changes must include a
+`fink publish` to a scratch worker and a verification step (e.g. an
+attachment-text-only search that should hit, a sort key that should
+reorder, a new field that should round-trip through clone). Capture the
+test in the PR description.
+
+Pre-existing collections published before the change must be considered.
+Either the change is backward-compatible (worker reads new field
+gracefully when missing) or the publish path includes a migration step
+that runs once on the next republish.
+
 ### Build & Test Commands
 
 ```bash
