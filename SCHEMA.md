@@ -40,19 +40,28 @@ FTS5 table with columns `collection_name UNINDEXED, entity_id UNINDEXED, externa
 
 ### v3 — Add `attachment_text` column to `entities_fts`
 
-Detect the missing column via `PRAGMA table_info`; drop + recreate the FTS table with the new 8-column shape. FTS5 has no `ALTER TABLE ADD COLUMN`. The local SyncEngine re-INSERTs FTS rows on the next sync, this time including `attachment_text` from each entity's `data.assets[].text`.
+Detect the missing column via `PRAGMA table_info`; drop + recreate the FTS table. FTS5 has no `ALTER TABLE ADD COLUMN`. The local SyncEngine re-INSERTs FTS rows on the next sync, this time including `attachment_text` from each entity's `data.assets[].text`.
 
-bm25 weights used by `SearchIndexer.search()`: `title=10, tags=5, body=1, attachment=0.25` (UNINDEXED columns get weight `1.0` but never match).
+### v4 — Schema cleanup to align with the worker schema
+
+Two concurrent changes that minimise the gratuitous local↔worker divergence:
+
+- **Drop `collection_name` from `entities_fts`.** Each local collection has its own SQLite file, so collection scoping is implicit — the column was written but never queried. FTS5 has no DROP COLUMN, so detect via `PRAGMA table_info` then drop+recreate. Final 7-column shape: `entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags, attachment_text` — same as the worker. SyncEngine re-INSERTs FTS rows on the next sync.
+
+- **Drop `AUTOINCREMENT` from `entities.id`.** The historical local table used `INTEGER PRIMARY KEY AUTOINCREMENT` while the worker uses plain `INTEGER PRIMARY KEY`; we never depended on the no-id-reuse guarantee that `AUTOINCREMENT` provides (FTS rows are deleted alongside their entity row before any new INSERT, so collisions can't occur). The migration detects the historical shape via `sqlite_master.sql`, builds a clone table with the new shape, copies all rows preserving their existing ids, drops the original, renames the clone, and rebuilds the indexes. Wrapped in `BEGIN/COMMIT` — partial failure rolls back.
+
+Final FTS bm25 weights used by `SearchIndexer.search()`: `title=10, tags=5, body=1, attachment=0.25` (UNINDEXED columns get weight `1.0` but never match). `snippet()` highlights column index 4 (content). Worker `bm25()` and `snippet()` are kept identical per the parity rule.
 
 ## Worker schema (Cloudflare D1)
 
 Created and migrated by `publishCollections()` in `packages/cli/src/commands/publish.ts`. The runner uses an async D1 executor backed by `executeD1Query` / `queryD1Rows` from `wrangler-api.ts`.
 
-The worker schema is similar to the local one but **does not** include:
+After local v4, the **`entities` table and `entities_fts` schema are identical between local and worker**. The remaining intentional differences are:
 
-- `collection_name` on `entities_fts` (each worker is a single collection, no multiplexing)
-- The legacy `markdown_path` backfill (publish predates that)
-- `entities.id AUTOINCREMENT` (D1 keeps it as plain `INTEGER PRIMARY KEY`)
+- `sync_errors` (per-entity sync failure journal) — **local-only**. Sync runs locally; the worker never syncs.
+- `r2_manifest` (R2 file index) — **worker-only**. Local has no R2.
+
+Both runtimes share the same `entities` DDL (extracted into `migrations/shared.ts` as `ENTITIES_TABLE_DDL` + `ENTITIES_INDEX_DDL`) and the same FTS column shape. Adding a column to `entities` should mean editing one constant and adding a numbered migration to both lists.
 
 ### v1 — Baseline
 
