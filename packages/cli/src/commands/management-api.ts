@@ -3,9 +3,10 @@
  * These routes handle collection CRUD, sync triggering, publish orchestration,
  * export, and configuration — all gated behind mode === "desktop".
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync, readdirSync, rmSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
 import yaml from "js-yaml";
+import { sql } from "drizzle-orm";
 import {
   getFrozenInkHome,
   getCollectionDb,
@@ -29,6 +30,8 @@ import {
   getNamedCredentials,
   getCollectionSyncState,
   updateCollectionSyncState,
+  getOrComputeDiskSize,
+  refreshDiskSizeCache,
 } from "@frozenink/core";
 import {
   createDefaultRegistry,
@@ -198,28 +201,52 @@ export function setPublishCollectionsOverride(fn: PublishCollectionsFn | null): 
 
 // --- Helpers ---
 
-/** Recursively sum file sizes in a directory. */
-function getDirectorySize(dirPath: string): number {
-  if (!existsSync(dirPath)) return 0;
-  let total = 0;
-  try {
-    for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
-      const fullPath = join(dirPath, entry.name);
-      if (entry.isDirectory()) {
-        total += getDirectorySize(fullPath);
-      } else {
-        try { total += statSync(fullPath).size; } catch {}
-      }
-    }
-  } catch {}
-  return total;
-}
-
-/** Get disk size in bytes for a collection (db + content). */
-function getCollectionDiskSize(name: string): number {
-  const home = getFrozenInkHome();
-  const colDir = join(home, "collections", name);
-  return getDirectorySize(colDir);
+/**
+ * Compute the per-collection status fields (entityCount, diskSizeBytes,
+ * lastSyncRun) shared between the list and detail endpoints.
+ */
+export function collectionStatus(name: string): {
+  entityCount: number;
+  diskSizeBytes: number;
+  lastSyncRun: {
+    status: string | undefined;
+    startedAt: string;
+    entitiesCreated: number;
+    entitiesUpdated: number;
+    entitiesDeleted: number;
+    errors: unknown;
+    errorCount: number;
+    failureReason: string | null;
+  } | null;
+} {
+  const dbPath = getCollectionDbPath(name);
+  let entityCount = 0;
+  if (existsSync(dbPath)) {
+    const colDb = getCollectionDb(dbPath);
+    const [{ c }] = colDb
+      .select({ c: sql<number>`count(*)` })
+      .from(entities)
+      .all();
+    entityCount = Number(c) || 0;
+  }
+  const diskSizeBytes = getOrComputeDiskSize(name);
+  const sync = getCollectionSyncState(dbPath);
+  return {
+    entityCount,
+    diskSizeBytes,
+    lastSyncRun: sync.lastAt
+      ? {
+          status: sync.lastStatus,
+          startedAt: sync.lastAt,
+          entitiesCreated: sync.lastCreated ?? 0,
+          entitiesUpdated: sync.lastUpdated ?? 0,
+          entitiesDeleted: sync.lastDeleted ?? 0,
+          errors: sync.lastErrors ?? null,
+          errorCount: sync.errorCount ?? 0,
+          failureReason: sync.failureReason ?? null,
+        }
+      : null,
+  };
 }
 
 // --- Mode detection ---
@@ -365,6 +392,7 @@ export function handleManagementRequest(req: Request): Response | null {
         const home = getFrozenInkHome();
         const themeEngine = createGenerateThemeEngine();
         await prepareCollection(updatedCol, home, themeEngine, (msg) => console.log(`[prepare:${name}]`, msg));
+        refreshDiskSizeCache(name).catch(() => {});
       }
       return jsonResponse({ ok: true });
     });
@@ -397,6 +425,7 @@ export function handleManagementRequest(req: Request): Response | null {
       const home = getFrozenInkHome();
       const themeEngine = createGenerateThemeEngine();
       await prepareCollection(col, home, themeEngine, (msg) => console.log(`[prepare:${name}]`, msg));
+      refreshDiskSizeCache(name).catch(() => {});
       return jsonResponse({ ok: true });
     });
   }
@@ -422,30 +451,7 @@ export function handleManagementRequest(req: Request): Response | null {
     const name = decodeURIComponent(statusMatch[1]);
     const col = getCollection(name);
     if (!col) return errorResponse("Collection not found", 404);
-
-    const dbPath = getCollectionDbPath(name);
-    let entityCount = 0;
-    if (existsSync(dbPath)) {
-      const colDb = getCollectionDb(dbPath);
-      entityCount = colDb.select().from(entities).all().length;
-    }
-
-    const diskSizeBytes = getCollectionDiskSize(name);
-    const sync = getCollectionSyncState(dbPath);
-    return jsonResponse({
-      entityCount,
-      diskSizeBytes,
-      lastSyncRun: sync.lastAt ? {
-        status: sync.lastStatus,
-        startedAt: sync.lastAt,
-        entitiesCreated: sync.lastCreated ?? 0,
-        entitiesUpdated: sync.lastUpdated ?? 0,
-        entitiesDeleted: sync.lastDeleted ?? 0,
-        errors: sync.lastErrors ?? null,
-        errorCount: sync.errorCount ?? 0,
-        failureReason: sync.failureReason ?? null,
-      } : null,
-    });
+    return jsonResponse(collectionStatus(name));
   }
 
   // --- Sync ---
@@ -955,6 +961,10 @@ async function startSyncJob(name: string, full: boolean): Promise<void> {
   } finally {
     job.active = false;
     job.completedAt = Date.now();
+    // Disk size will have changed (created/deleted entities, db growth) — refresh
+    // the YAML cache so the next list/status read gets a fresh value without
+    // walking the directory tree on the request thread.
+    refreshDiskSizeCache(name).catch(() => {});
   }
 }
 

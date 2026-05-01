@@ -41,6 +41,8 @@ const collectionEntrySchema = z.object({
   hide: z.array(z.string()).optional(),
   publish: publishStateSchema.optional(),
   lastPublishedAt: z.string().optional(),
+  /** Cached on-disk size of the collection directory, in kilobytes. Refreshed after content mutations. */
+  size: z.number().optional(),
 });
 
 const legacyDeploymentEntrySchema = z.object({

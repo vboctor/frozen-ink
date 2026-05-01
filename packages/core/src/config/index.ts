@@ -33,3 +33,8 @@ export {
   type FrozenInkYaml,
   type SiteEntry,
 } from "./context";
+export {
+  readCachedDiskSizeKb,
+  refreshDiskSizeCache,
+  getOrComputeDiskSize,
+} from "./disk-cache";

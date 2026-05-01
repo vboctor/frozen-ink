@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import SyncProgress from "./SyncProgress";
-import { formatTimestamp, type Collection, type CollectionStatus } from "../../types";
+import { formatTimestamp, type Collection } from "../../types";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -79,28 +79,13 @@ interface CollectionListProps {
 
 export default function CollectionList({ onSelect, onAdd, onSyncComplete, onCollectionsChanged }: CollectionListProps) {
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [statuses, setStatuses] = useState<Record<string, CollectionStatus>>({});
   const [syncing, setSyncing] = useState(false);
 
   const load = () => {
     fetch("/api/collections")
       .then((r) => r.json())
-      .then((data: Collection[]) => {
-        setCollections(data);
-        for (const col of data) {
-          loadStatus(col.name);
-        }
-      })
+      .then((data: Collection[]) => setCollections(data))
       .catch(console.error);
-  };
-
-  const loadStatus = (name: string) => {
-    fetch(`/api/collections/${encodeURIComponent(name)}/status`)
-      .then((r) => r.json())
-      .then((status: CollectionStatus) => {
-        setStatuses((prev) => ({ ...prev, [name]: status }));
-      })
-      .catch(() => {});
   };
 
   useEffect(load, []);
@@ -116,9 +101,7 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
 
   const handleSyncComplete = () => {
     setSyncing(false);
-    for (const col of collections) {
-      loadStatus(col.name);
-    }
+    load();
     onSyncComplete?.();
     onCollectionsChanged?.();
   };
@@ -146,7 +129,6 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
         const disabled = collections.filter((c) => !c.enabled).sort(byName);
 
         const renderCard = (col: Collection) => {
-          const status = statuses[col.name];
           const showCollectionName = !!col.title && col.title !== col.name;
           return (
             <div
@@ -172,16 +154,16 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
                 <p className="collection-card-desc">{col.description}</p>
               )}
               <div className="collection-card-stats">
-                <span>{status?.entityCount != null ? formatCount(status.entityCount) : "—"} entities</span>
-                {status?.diskSizeBytes != null && status.diskSizeBytes > 0 && (
-                  <span>{formatSize(status.diskSizeBytes)}</span>
+                <span>{col.entityCount != null ? formatCount(col.entityCount) : "—"} entities</span>
+                {col.diskSizeBytes != null && col.diskSizeBytes > 0 && (
+                  <span>{formatSize(col.diskSizeBytes)}</span>
                 )}
-                {status?.lastSyncRun && (
+                {col.lastSyncRun && (
                   <span>
-                    Last sync: {formatTimestamp(status.lastSyncRun.startedAt)}
+                    Last sync: {formatTimestamp(col.lastSyncRun.startedAt)}
                     {" "}
-                    <span className={`sync-type-badge sync-type-${status.lastSyncRun.syncType || "incremental"}`}>
-                      {status.lastSyncRun.syncType === "full" ? "full" : "incr"}
+                    <span className={`sync-type-badge sync-type-${col.lastSyncRun.syncType || "incremental"}`}>
+                      {col.lastSyncRun.syncType === "full" ? "full" : "incr"}
                     </span>
                   </span>
                 )}
