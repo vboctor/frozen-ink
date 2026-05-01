@@ -31,7 +31,7 @@ import {
 } from "@frozenink/crawlers";
 import { startStdioServer } from "@frozenink/mcp";
 import { eq, desc, inArray, and } from "drizzle-orm";
-import { handleManagementRequest, setAppMode } from "./management-api";
+import { handleManagementRequest, setAppMode, collectionStatus } from "./management-api";
 import { prepareCollections } from "./prepare";
 
 const __moduleDir = getModuleDir(import.meta.url);
@@ -408,15 +408,21 @@ export function createApiServer(
         const rows = collectionFilter
           ? (() => { const col = getCollection(collectionFilter); return col ? [col] : []; })()
           : listCollections();
-        const result = rows.map((r) => ({
-          name: r.name,
-          title: r.title ?? r.name,
-          description: r.description,
-          crawlerType: r.crawler,
-          enabled: r.enabled,
-          syncInterval: r.syncInterval,
-          publish: r.publish,
-        }));
+        const result = rows.map((r) => {
+          const status = collectionStatus(r.name);
+          return {
+            name: r.name,
+            title: r.title ?? r.name,
+            description: r.description,
+            crawlerType: r.crawler,
+            enabled: r.enabled,
+            syncInterval: r.syncInterval,
+            publish: r.publish,
+            entityCount: status.entityCount,
+            diskSizeBytes: status.diskSizeBytes,
+            lastSyncRun: status.lastSyncRun,
+          };
+        });
         return jsonResponse(result);
       }
 

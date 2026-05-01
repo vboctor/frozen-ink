@@ -42,6 +42,11 @@ export interface Collection {
   createdAt: string;
   updatedAt: string;
   publish?: PublishState;
+  /** Inlined status fields — populated by GET /api/collections so the
+   * Manage Collections grid renders all cards in one round-trip. */
+  entityCount?: number;
+  diskSizeBytes?: number;
+  lastSyncRun?: SyncRun | null;
 }
 
 export interface TreeNode {
