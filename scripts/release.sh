@@ -60,6 +60,9 @@ if git rev-parse "v$VERSION" >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "→ Installing dependencies..."
+run bun install --frozen-lockfile
+
 echo "→ Running CI..."
 run bun run ci
 
