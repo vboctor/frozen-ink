@@ -3,7 +3,7 @@
 ## What Is Frozen Ink?
 
 Frozen Ink is a local-first knowledge layer for technical work. It crawls sources like
-GitHub repositories, Obsidian vaults, Git repos, RSS feeds, and MantisHub/MantisHub; syncs them into
+GitHub repositories, Obsidian vaults, Git repos, RSS feeds, Evernote, and MantisHub; syncs them into
 a local SQLite index; renders and serves everything through a web UI and MCP server for
 AI tools.
 
@@ -71,9 +71,9 @@ Data Sources (GitHub API, Obsidian Vault, Git Repo, MantisHub, ...)
 | [`@frozenink/worker`](packages/worker/) | Cloudflare Worker for published deployments (Hono + D1 + R2) |
 | [`@frozenink/desktop`](packages/desktop/) | Electron desktop app with workspace management, system tray |
 
-## Crawlers
+## Supported Crawlers
 
-Each crawler syncs a different data source into Frozen Ink. See individual docs for setup and details:
+Frozen Ink currently supports these connectors. Each crawler syncs a different data source into Frozen Ink. See the individual docs for setup and details:
 
 | Crawler | Source | Entities | Docs |
 |---------|--------|----------|------|
@@ -81,7 +81,8 @@ Each crawler syncs a different data source into Frozen Ink. See individual docs 
 | [Obsidian](packages/crawlers/src/obsidian/) | Local Obsidian vault | Notes, Attachments | [README](packages/crawlers/src/obsidian/README.md) |
 | [Git](packages/crawlers/src/git/) | Local Git repository | Commits, Branches, Tags | [README](packages/crawlers/src/git/README.md) |
 | [RSS](packages/crawlers/src/rss/) | RSS/Atom feeds (+ sitemap backfill) | Posts, Media | [README](packages/crawlers/src/rss/README.md) |
-| MantisHub | MantisHub REST API | Issues, Attachments | — |
+| [Evernote](packages/crawlers/src/evernote/) | Evernote v10 local data | Notes, Attachments | [README](packages/crawlers/src/evernote/README.md) |
+| [MantisHub](packages/crawlers/src/mantishub/) | MantisHub REST API | Issues, Attachments | [README](packages/crawlers/src/mantishub/README.md) |
 
 ## Install the CLI
 
