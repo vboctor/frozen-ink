@@ -24,11 +24,12 @@ interface AggregateView {
   error: string | null;
   errorCount: number;
   failureReason: string | null;
+  republishError: string | null;
 }
 
 function aggregate(jobs: SyncJob[]): AggregateView {
   if (jobs.length === 0) {
-    return { active: false, collectionName: null, status: "idle", created: 0, updated: 0, deleted: 0, error: null, errorCount: 0, failureReason: null };
+    return { active: false, collectionName: null, status: "idle", created: 0, updated: 0, deleted: 0, error: null, errorCount: 0, failureReason: null, republishError: null };
   }
   const active = jobs.filter((j) => j.active);
   const totals = jobs.reduce(
@@ -51,10 +52,12 @@ function aggregate(jobs: SyncJob[]): AggregateView {
       error: null,
       errorCount: totals.errorCount,
       failureReason: active.length === 1 ? active[0].failureReason ?? null : null,
+      republishError: null,
     };
   }
   const firstError = jobs.find((j) => j.error)?.error ?? null;
   const firstFailureReason = jobs.find((j) => j.failureReason)?.failureReason ?? null;
+  const firstRepublishError = jobs.find((j) => j.republishError)?.republishError ?? null;
   return {
     active: false,
     collectionName: null,
@@ -65,6 +68,7 @@ function aggregate(jobs: SyncJob[]): AggregateView {
     error: firstError,
     errorCount: totals.errorCount,
     failureReason: firstFailureReason,
+    republishError: firstRepublishError,
   };
 }
 
@@ -79,6 +83,7 @@ function singleJobView(job: SyncJob): AggregateView {
     error: job.error,
     errorCount: job.errorCount ?? 0,
     failureReason: job.failureReason ?? null,
+    republishError: job.republishError ?? null,
   };
 }
 
@@ -153,6 +158,11 @@ export default function SyncProgress({ collectionName, onComplete }: SyncProgres
       )}
       {view.error && (
         <div className="form-error">{view.error}</div>
+      )}
+      {view.republishError && (
+        <div className="form-warning">
+          Sync completed but auto-republish failed: {view.republishError}
+        </div>
       )}
     </div>
   );
