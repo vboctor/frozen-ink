@@ -83,6 +83,8 @@ export interface SyncJob {
   errorCount?: number;
   /** Reason a sync ended unsuccessfully (rate_limit / fatal). */
   failureReason?: string | null;
+  /** Error from post-sync auto-republish, if any. Preserved after job.status becomes "completed" so the UI can surface it without a race against polling. */
+  republishError?: string | null;
 }
 
 export interface PublishProgress {
@@ -813,6 +815,7 @@ function ensureSyncJob(name: string, full: boolean): SyncJob | null {
     full,
     errorCount: 0,
     failureReason: null,
+    republishError: null,
   };
   syncJobs.set(name, job);
   return job;
@@ -948,7 +951,8 @@ async function startSyncJob(name: string, full: boolean): Promise<void> {
           });
         } catch (err) {
           console.error(`[sync:${name}] republish failed: ${err}`);
-          job.status = `republish failed: ${String(err)}`;
+          job.republishError = String(err);
+          job.status = `republish failed`;
         }
       });
     }

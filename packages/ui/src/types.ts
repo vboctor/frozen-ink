@@ -125,6 +125,7 @@ export interface SyncJob {
   full: boolean;
   errorCount?: number;
   failureReason?: string | null;
+  republishError?: string | null;
 }
 
 export interface ExportRequest {
