@@ -122,4 +122,42 @@ describe("runSyncMigrations", () => {
     expect(idxNames).toContain("idx_entities_external");
     expect(idxNames).toContain("idx_entities_folder");
   });
+
+  it("v5 repairs a falsely-versioned legacy FTS table and preserves rows", () => {
+    const db = open();
+    runSyncMigrations(db, LOCAL_MIGRATIONS);
+    db.exec("DROP TABLE entities_fts");
+    db.exec(`
+      CREATE VIRTUAL TABLE entities_fts USING fts5(
+        collection_name UNINDEXED,
+        entity_id UNINDEXED,
+        external_id UNINDEXED,
+        entity_type UNINDEXED,
+        title,
+        content,
+        tags
+      );
+    `);
+    db.exec("INSERT INTO entities_fts (collection_name, entity_id, external_id, entity_type, title, content, tags) VALUES ('legacy', 1, 'issue:1', 'issue', 'Title', 'Body', 'tag')");
+    db.prepare("UPDATE metadata SET value = '4' WHERE key = ?").run(SCHEMA_VERSION_KEY);
+
+    runSyncMigrations(db, LOCAL_MIGRATIONS);
+
+    const cols = db
+      .prepare("PRAGMA table_info(entities_fts)")
+      .all() as Array<{ name: string }>;
+    expect(cols.map((c) => c.name)).toEqual([
+      "entity_id",
+      "external_id",
+      "entity_type",
+      "title",
+      "content",
+      "tags",
+      "attachment_text",
+    ]);
+    const row = db
+      .prepare("SELECT external_id, title, content FROM entities_fts")
+      .get() as { external_id: string; title: string; content: string };
+    expect(row).toEqual({ external_id: "issue:1", title: "Title", content: "Body" });
+  });
 });

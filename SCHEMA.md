@@ -48,6 +48,13 @@ Two concurrent changes that minimise the gratuitous local↔worker divergence:
 
 - **Drop `collection_name` from `entities_fts`.** Each local collection has its own SQLite file, so collection scoping is implicit — the column was written but never queried. FTS5 has no DROP COLUMN, so detect via `PRAGMA table_info` then drop+recreate. Final 7-column shape: `entity_id UNINDEXED, external_id UNINDEXED, entity_type UNINDEXED, title, content, tags, attachment_text` — same as the worker. SyncEngine re-INSERTs FTS rows on the next sync.
 
+### v5 — Repair inconsistent FTS migration state
+
+Some databases were stamped at v4 while retaining the pre-v3 FTS shape. The
+repair migration verifies the actual columns rather than trusting only
+`schema.version`, then rebuilds the canonical 7-column table and preserves
+existing indexed rows where possible.
+
 - **Drop `AUTOINCREMENT` from `entities.id`.** The historical local table used `INTEGER PRIMARY KEY AUTOINCREMENT` while the worker uses plain `INTEGER PRIMARY KEY`; we never depended on the no-id-reuse guarantee that `AUTOINCREMENT` provides (FTS rows are deleted alongside their entity row before any new INSERT, so collisions can't occur). The migration detects the historical shape via `sqlite_master.sql`, builds a clone table with the new shape, copies all rows preserving their existing ids, drops the original, renames the clone, and rebuilds the indexes. Wrapped in `BEGIN/COMMIT` — partial failure rolls back.
 
 Final FTS bm25 weights used by `SearchIndexer.search()`: `title=10, tags=5, body=1, attachment=0.25` (UNINDEXED columns get weight `1.0` but never match). `snippet()` highlights column index 4 (content). Worker `bm25()` and `snippet()` are kept identical per the parity rule.
