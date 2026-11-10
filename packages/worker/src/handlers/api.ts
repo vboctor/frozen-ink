@@ -15,7 +15,7 @@ import {
 import type { Entity } from "../db/client";
 import { getCollections, getCollectionConfig } from "../config";
 import { searchEntities } from "../db/search";
-import { getR2Object, getMimeType } from "../storage/r2";
+import { getR2Asset, getMimeType } from "../storage/r2";
 import { ThemeEngine } from "@frozenink/core/theme";
 import type { ThemeRenderContext, FolderConfig } from "@frozenink/core/theme";
 import { GitHubTheme, ObsidianTheme, GitTheme, MantisHubTheme, RssTheme } from "@frozenink/crawlers/themes";
@@ -270,6 +270,24 @@ api.get("/api/collections/:name/markdown/*", async (c) => {
 
   return new Response(markdown, {
     headers: { "Content-Type": "text/markdown; charset=utf-8" },
+  });
+});
+
+// GET /api/collections/:name/file/*storagePath
+// Serve crawler assets stored below the collection's content directory.
+api.get("/api/collections/:name/file/*", async (c) => {
+  const name = c.req.param("name");
+  const filePath = c.req.path.replace(`/api/collections/${encodeURIComponent(name)}/file/`, "");
+  const decoded = decodeURIComponent(filePath);
+  if (!decoded.startsWith("content/") || decoded.split("/").includes("..")) {
+    return c.text("Forbidden", 403);
+  }
+
+  const obj = await getR2Asset(c.env.BUCKET, `${name}/${decoded}`);
+  if (!obj) return c.text("File not found", 404);
+
+  return new Response(obj.body, {
+    headers: { "Content-Type": getMimeType(decoded) },
   });
 });
 
@@ -543,7 +561,7 @@ api.get("/api/attachments/:collection/*", async (c) => {
   const decoded = decodeURIComponent(filePath);
 
   const r2Key = `${collection}/attachments/${decoded}`;
-  const obj = await getR2Object(c.env.BUCKET, r2Key);
+  const obj = await getR2Asset(c.env.BUCKET, r2Key);
   if (!obj) return c.text("Attachment not found", 404);
 
   return new Response(obj.body, {

@@ -391,18 +391,12 @@ export class MantisHubCrawler implements Crawler {
     if (this.projectId) {
       url += `&project_id=${this.projectId}`;
     }
-    // Pin the dataset to the snapshot ceiling so concurrent updates after
-    // sync started don't shift later pages. MantisBT supports `filter_updated_before`.
-    if (c.snapshotCeiling) {
-      url += `&filter_updated_before=${encodeURIComponent(c.snapshotCeiling)}`;
-    }
-
     const response = await this.apiFetch(url);
     const data = (await response.json()) as { issues: Array<{ id: number; updated_at: string }> };
     let issues = data.issues ?? [];
 
-    // Belt-and-suspenders: if the server doesn't honor filter_updated_before,
-    // drop items above the ceiling client-side. With DESC ordering, items
+    // MantisBT does not expose an updated-before filter in its REST API, so
+    // enforce the snapshot ceiling client-side. With DESC ordering, items
     // newer than the ceiling appear at the front of the page.
     if (c.snapshotCeiling) {
       const ceilingTs = parseTimestamp(c.snapshotCeiling);

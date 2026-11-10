@@ -7,7 +7,7 @@ import {
 } from "../db/client";
 import { getCollections } from "../config";
 import { searchEntities } from "../db/search";
-import { getR2Object } from "../storage/r2";
+import { getR2Asset } from "../storage/r2";
 import { ThemeEngine } from "@frozenink/core/theme";
 import { GitHubTheme, ObsidianTheme, GitTheme, MantisHubTheme } from "@frozenink/crawlers/themes";
 import { buildRenderContext } from "./api";
@@ -214,7 +214,7 @@ async function callTool(
   }
 
   if (name === "entity_get_attachment") {
-    const obj = await getR2Object(env.BUCKET, `${args.collection}/attachments/${args.path}`);
+    const obj = await getR2Asset(env.BUCKET, `${args.collection}/attachments/${args.path}`);
     if (!obj) return [{ type: "text", text: JSON.stringify({ error: "Attachment not found" }) }];
 
     const buf = await new Response(obj.body).arrayBuffer();

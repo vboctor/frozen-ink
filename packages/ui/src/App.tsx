@@ -353,6 +353,14 @@ export default function App() {
   }, []);
 
   const handleUIModeChange = useCallback((mode: UIMode) => {
+    if (mode === "manage" && uiMode !== "manage") {
+      // Open the collection the user is currently browsing directly in its
+      // management detail view, next to the Manage navigation sidebar.
+      setManageSection("collections");
+      setViewingCollection(selectedCollection);
+      setEditingCollection(null);
+      setAddingCollection(false);
+    }
     // When leaving manage for browse, carry the collection the user was
     // looking at (or editing) over to the browse view so they don't have
     // to re-pick it from the dropdown. The enabled-only effect will fall
@@ -363,7 +371,7 @@ export default function App() {
     }
     setUIMode(mode);
     saveUIMode(mode);
-  }, [viewingCollection, editingCollection]);
+  }, [editingCollection, selectedCollection, uiMode, viewingCollection]);
 
   const handleThemeChange = useCallback((newTheme: ThemeId) => {
     setTheme(newTheme);

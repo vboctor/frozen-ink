@@ -243,4 +243,75 @@ export const LOCAL_MIGRATIONS: SyncMigration[] = [
       }
     },
   },
+  {
+    id: 5,
+    description:
+      "Repair a falsely-versioned or partially-migrated entities_fts table by restoring the canonical 7-column shape while preserving indexed rows.",
+    up: (db) => {
+      const expectedColumns = [
+        "entity_id",
+        "external_id",
+        "entity_type",
+        "title",
+        "content",
+        "tags",
+        "attachment_text",
+      ];
+
+      let columns: string[] = [];
+      try {
+        columns = (db.prepare("PRAGMA table_info(entities_fts)").all() as Array<{ name: string }>)
+          .map((c) => c.name);
+      } catch {
+        // The CREATE below handles a missing table.
+      }
+
+      const canonical = columns.length === expectedColumns.length
+        && expectedColumns.every((name) => columns.includes(name))
+        && !columns.includes("collection_name");
+
+      if (canonical) return;
+
+      const backup = "entities_fts_repair_backup";
+      db.exec(`DROP TABLE IF EXISTS ${backup}`);
+
+      if (columns.length > 0) {
+        // Preserve existing searchable content. Older tables may have
+        // collection_name and/or lack attachment_text; normalize both cases
+        // while copying into the new FTS table.
+        const attachmentText = columns.includes("attachment_text")
+          ? "attachment_text"
+          : "NULL AS attachment_text";
+        db.exec(`
+          CREATE TABLE ${backup} AS
+          SELECT entity_id, external_id, entity_type, title, content, tags,
+                 ${attachmentText}
+          FROM entities_fts;
+        `);
+        db.exec("DROP TABLE IF EXISTS entities_fts");
+      }
+
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
+          entity_id UNINDEXED,
+          external_id UNINDEXED,
+          entity_type UNINDEXED,
+          title,
+          content,
+          tags,
+          attachment_text
+        );
+      `);
+
+      if (columns.length > 0) {
+        db.exec(`
+          INSERT INTO entities_fts
+            (entity_id, external_id, entity_type, title, content, tags, attachment_text)
+          SELECT entity_id, external_id, entity_type, title, content, tags, attachment_text
+          FROM ${backup};
+        `);
+        db.exec(`DROP TABLE IF EXISTS ${backup}`);
+      }
+    },
+  },
 ];

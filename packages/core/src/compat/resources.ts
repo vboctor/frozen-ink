@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { getModuleDir } from "./paths";
 import { spawnProcess } from "./subprocess";
@@ -75,6 +75,19 @@ export function resolveUiDist(moduleDir: string): string | null {
 
 const WRANGLER_INSTALL_URL = "https://developers.cloudflare.com/workers/wrangler/install-and-update/";
 
+function getNvmNodeBinDirs(home: string): string[] {
+  const nvmDir = process.env.NVM_DIR || join(home, ".nvm");
+  const versionsDir = join(nvmDir, "versions", "node");
+  try {
+    return readdirSync(versionsDir)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      .map((version) => join(versionsDir, version, "bin"))
+      .filter((binDir) => existsSync(join(binDir, "node")));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Resolve the wrangler binary path.
  *
@@ -107,18 +120,23 @@ export async function resolveWrangler(moduleDir: string, configuredPath?: string
   //    Dock-launched processes inherit a minimal PATH.
   const home = process.env.HOME ?? "";
   const candidates: string[] = [];
+  const nvmBinDirs = getNvmNodeBinDirs(home);
   if (process.platform === "darwin") {
     candidates.push(
       "/opt/homebrew/bin/wrangler",         // Homebrew on Apple Silicon
       "/usr/local/bin/wrangler",            // Homebrew on Intel / classic npm global
       join(home, ".volta/bin/wrangler"),    // Volta
       join(home, ".bun/bin/wrangler"),      // Bun global
+      join(home, ".npm-global/bin/wrangler"), // Custom npm global prefix
+      ...nvmBinDirs.map((binDir) => join(binDir, "wrangler")),
     );
   } else if (process.platform === "linux") {
     candidates.push(
       "/usr/local/bin/wrangler",
       join(home, ".volta/bin/wrangler"),
       join(home, ".bun/bin/wrangler"),
+      join(home, ".npm-global/bin/wrangler"),
+      ...nvmBinDirs.map((binDir) => join(binDir, "wrangler")),
     );
   }
   for (const p of candidates) {

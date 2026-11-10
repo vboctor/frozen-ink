@@ -1,4 +1,4 @@
-import { join } from "path";
+import { delimiter, dirname, join } from "path";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
@@ -55,9 +55,18 @@ async function runWrangler(
   opts?: { cwd?: string; allowFailure?: boolean },
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const bin = await resolveWranglerBin();
+  // A Dock/Spotlight-launched macOS app has a minimal PATH. Wrangler's npm
+  // executable uses `#!/usr/bin/env node`, so include its installation
+  // directory to make the matching Node runtime available to that shebang.
+  const path = [dirname(bin), process.env.PATH]
+    .filter(Boolean)
+    .join(delimiter);
   const { stdout, stderr, exitCode } = await spawnProcess([bin, ...args], {
-    cwd: opts?.cwd,
-    env: { ...process.env },
+    // GUI apps launched from Spotlight often inherit `/` as their CWD. Wrangler
+    // creates `.wrangler/cache` relative to CWD, so keep it inside the active
+    // Frozen Ink workspace unless a caller explicitly chooses another folder.
+    cwd: opts?.cwd ?? getFrozenInkHome(),
+    env: { ...process.env, PATH: path },
   });
 
   if (exitCode !== 0 && !opts?.allowFailure) {
@@ -314,6 +323,26 @@ async function fetchCloudflareApi(
 
 // --- R2 operations (bucket via wrangler CLI, objects via HTTP for speed) ---
 
+/** Encode each key segment while preserving `/` as the R2 path delimiter. */
+export function encodeR2ObjectKey(key: string): string {
+  return key.split("/").map(encodeURIComponent).join("/");
+}
+
+export function shouldRetryR2UploadWithWrangler(status: number, responseBody: string): boolean {
+  return status === 403 && /<html[\s>]/i.test(responseBody);
+}
+
+async function putR2ObjectWithWrangler(
+  bucket: string,
+  key: string,
+  filePath: string,
+  contentType?: string,
+): Promise<void> {
+  const args = ["r2", "object", "put", `${bucket}/${key}`, "--file", filePath, "--remote"];
+  if (contentType) args.push("--content-type", contentType);
+  await runWrangler(args);
+}
+
 export async function createR2Bucket(name: string): Promise<void> {
   try {
     await runWrangler(["r2", "bucket", "create", name]);
@@ -333,7 +362,7 @@ export async function putR2Object(
 ): Promise<void> {
   const body = readFileSync(filePath);
   const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
-    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`,
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeR2ObjectKey(key)}`,
     init: {
       method: "PUT",
       headers: {
@@ -345,6 +374,13 @@ export async function putR2Object(
   }));
   if (!res.ok) {
     const text = await res.text();
+    // Cloudflare's edge can reject an otherwise valid direct REST upload with
+    // an HTML 403 for particular object names or payloads. Wrangler uses the
+    // supported R2 command path and handles those cases correctly.
+    if (shouldRetryR2UploadWithWrangler(res.status, text)) {
+      await putR2ObjectWithWrangler(bucket, key, filePath, contentType);
+      return;
+    }
     const hint = res.status === 401
       ? " — the Cloudflare OAuth token looks expired. Run `wrangler login` again, or restart the desktop app to refresh the cached credentials."
       : "";
@@ -359,7 +395,7 @@ export async function putR2String(
   contentType: string = "text/plain",
 ): Promise<void> {
   const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
-    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`,
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeR2ObjectKey(key)}`,
     init: {
       method: "PUT",
       headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": contentType },
@@ -374,7 +410,7 @@ export async function putR2String(
 
 export async function getR2String(bucket: string, key: string): Promise<string | null> {
   const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
-    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`,
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeR2ObjectKey(key)}`,
     init: {
       method: "GET",
       headers: { Authorization: `Bearer ${apiToken}` },
@@ -387,7 +423,7 @@ export async function getR2String(bucket: string, key: string): Promise<string |
 
 export async function deleteR2Object(bucket: string, key: string): Promise<void> {
   const res = await fetchCloudflareApi(({ apiToken, accountId }) => ({
-    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`,
+    url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects/${encodeR2ObjectKey(key)}`,
     init: {
       method: "DELETE",
       headers: { Authorization: `Bearer ${apiToken}` },

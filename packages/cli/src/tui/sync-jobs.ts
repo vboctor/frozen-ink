@@ -14,6 +14,7 @@ import {
   SyncEngine,
   ThemeEngine,
   LocalStorageBackend,
+  resolveCredentials,
 } from "@frozenink/core";
 import {
   createDefaultRegistry,
@@ -194,7 +195,7 @@ async function runJob(job: TuiSyncJob): Promise<void> {
       try {
         await crawler.initialize(
           col.config as Record<string, unknown>,
-          col.credentials as Record<string, unknown>,
+          resolveCredentials(col.credentials),
         );
 
         const dbPath = getCollectionDbPath(name);

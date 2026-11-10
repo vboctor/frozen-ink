@@ -39,6 +39,7 @@ export default function PublishPanel() {
   }, []);
 
   const publishedCollections = collections.filter((c) => c.publish);
+  const initialPublishCollections = collections.filter((c) => c.enabled && !c.publish);
 
   const checkAuth = () => {
     setAuthError(null);
@@ -223,7 +224,7 @@ export default function PublishPanel() {
         </div>
       )}
 
-      <div style={{ marginTop: 16 }}>
+      {initialPublishCollections.length > 0 && <div style={{ marginTop: 16 }}>
         <h3>Publish a Collection</h3>
         <div className="form-group">
           <label>Collection</label>
@@ -233,9 +234,9 @@ export default function PublishPanel() {
             onChange={(e) => setSelectedCollection(e.target.value)}
           >
             <option value="">Select a collection...</option>
-            {collections.filter((c) => c.enabled).map((col) => (
+            {initialPublishCollections.map((col) => (
               <option key={col.name} value={col.name}>
-                {col.title || col.name} {col.publish ? "(published)" : ""}
+                {col.title || col.name}
               </option>
             ))}
           </select>
@@ -271,7 +272,7 @@ export default function PublishPanel() {
         >
           {publishing ? "Publishing..." : "Publish"}
         </button>
-      </div>
+      </div>}
     </div>
   );
 }
