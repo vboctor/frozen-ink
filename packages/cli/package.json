@@ -1,6 +1,6 @@
 {
   "name": "@frozenink/cli",
-  "version": "0.10.9",
+  "version": "0.10.15",
   "private": true,
   "type": "module",
   "main": "src/index.ts",

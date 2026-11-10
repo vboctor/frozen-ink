@@ -1,3 +1,5 @@
+import { toR2SafeKey } from "@frozenink/core/storage/r2-key";
+
 export async function getR2Object(
   bucket: R2Bucket,
   key: string,
@@ -30,4 +32,12 @@ export function getMimeType(path: string): string {
     ico: "image/x-icon",
   };
   return map[ext] || "application/octet-stream";
+}
+
+/** Read new encoded keys while retaining compatibility with existing deployments. */
+export async function getR2Asset(bucket: R2Bucket, originalKey: string) {
+  const safeKey = toR2SafeKey(originalKey);
+  const object = await getR2Object(bucket, safeKey);
+  if (object || safeKey === originalKey) return object;
+  return getR2Object(bucket, originalKey);
 }

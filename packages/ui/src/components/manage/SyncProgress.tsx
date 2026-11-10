@@ -6,6 +6,7 @@ export interface SyncResult {
   updated: number;
   deleted: number;
   error: string | null;
+  republishError: string | null;
 }
 
 interface SyncProgressProps {
@@ -114,6 +115,7 @@ export default function SyncProgress({ collectionName, onComplete }: SyncProgres
               updated: next.updated,
               deleted: next.deleted,
               error: next.error,
+              republishError: next.republishError,
             });
           }
         })

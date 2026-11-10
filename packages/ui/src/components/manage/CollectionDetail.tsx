@@ -174,8 +174,9 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
     setSyncing(false);
     setLastSyncResult(result);
     loadStatus();
+    loadCollection();
     onCollectionsChanged?.();
-  }, [loadStatus, onCollectionsChanged]);
+  }, [loadCollection, loadStatus, onCollectionsChanged]);
 
   // --- Enable/Disable ---
   const handleToggle = (enabled: boolean) => {
@@ -433,6 +434,11 @@ export default function CollectionDetail({ name, onBack, onEdit, onCollectionsCh
                 <span>{lastSyncResult.created} created, {lastSyncResult.updated} updated, {lastSyncResult.deleted} deleted</span>
                 {status?.lastSyncRun && <span>Last sync: {formatTimestamp(status.lastSyncRun.startedAt)}</span>}
               </span>
+            )}
+            {lastSyncResult.republishError && (
+              <div className="form-warning" style={{ marginTop: 8 }}>
+                Sync completed, but publishing the updated collection failed: {lastSyncResult.republishError}
+              </div>
             )}
           </div>
         )}

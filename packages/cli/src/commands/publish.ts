@@ -20,6 +20,7 @@ import {
   saveNamedCredentials,
   removeNamedCredentials,
   MetadataStore,
+  toR2SafeKey,
 } from "@frozenink/core";
 import { getPublishCredentialKey } from "./publish-credentials";
 import type { EntityData } from "@frozenink/core";
@@ -466,7 +467,7 @@ export async function publishCollections(
     const uiUploads: Array<{ r2Key: string; fullPath: string }> = [];
     if (existsSync(uiDistDir)) {
       for (const file of collectFiles(uiDistDir)) {
-        uiUploads.push({ r2Key: `_ui/${file.relativePath}`, fullPath: file.fullPath });
+        uiUploads.push({ r2Key: toR2SafeKey(`_ui/${file.relativePath}`), fullPath: file.fullPath });
       }
     }
     if (uiUploads.length > 0) {
@@ -496,7 +497,7 @@ export async function publishCollections(
       const collectionDir = join(home, "collections", colName);
       for (const file of collectFiles(join(collectionDir, "content"))) {
         if (file.relativePath.endsWith(".md") || file.relativePath.endsWith(".yml")) continue;
-        uploads.push({ r2Key: `${colName}/content/${file.relativePath}`, fullPath: file.fullPath });
+        uploads.push({ r2Key: toR2SafeKey(`${colName}/content/${file.relativePath}`), fullPath: file.fullPath });
       }
       // Upload the sibling attachments/ directory — the worker serves these at
       // /api/attachments/{name}/* and the UI rewrites markdown image paths to
@@ -504,13 +505,13 @@ export async function publishCollections(
       const attachmentsDir = join(collectionDir, "attachments");
       if (existsSync(attachmentsDir)) {
         for (const file of collectFiles(attachmentsDir)) {
-          uploads.push({ r2Key: `${colName}/attachments/${file.relativePath}`, fullPath: file.fullPath });
+          uploads.push({ r2Key: toR2SafeKey(`${colName}/attachments/${file.relativePath}`), fullPath: file.fullPath });
         }
       }
     }
     if (existsSync(uiDistDir)) {
       for (const file of collectFiles(uiDistDir)) {
-        uploads.push({ r2Key: `_ui/${file.relativePath}`, fullPath: file.fullPath });
+        uploads.push({ r2Key: toR2SafeKey(`_ui/${file.relativePath}`), fullPath: file.fullPath });
       }
     }
 

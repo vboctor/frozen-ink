@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./theme": "./src/theme/index.ts",
     "./export": "./src/export/index.ts",
+    "./storage/r2-key": "./src/storage/r2-key.ts",
     "./search/fts-query": "./src/search/fts-query.ts"
   },
   "scripts": {

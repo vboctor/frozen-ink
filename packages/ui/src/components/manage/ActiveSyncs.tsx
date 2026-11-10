@@ -88,6 +88,11 @@ export default function ActiveSyncs({ onJobComplete }: ActiveSyncsProps) {
                 </div>
               )}
               {job.error && <div className="active-sync-error">{job.error}</div>}
+              {job.republishError && (
+                <div className="form-warning">
+                  Sync completed, but publishing the updated collection failed: {job.republishError}
+                </div>
+              )}
             </div>
           );
         })}

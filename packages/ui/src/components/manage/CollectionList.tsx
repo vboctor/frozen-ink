@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import SyncProgress from "./SyncProgress";
+import SyncProgress, { type SyncResult } from "./SyncProgress";
 import { formatTimestamp, type Collection } from "../../types";
 
 function formatSize(bytes: number): string {
@@ -80,6 +80,7 @@ interface CollectionListProps {
 export default function CollectionList({ onSelect, onAdd, onSyncComplete, onCollectionsChanged }: CollectionListProps) {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [syncing, setSyncing] = useState(false);
+  const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
 
   const load = () => {
     fetch("/api/collections")
@@ -92,6 +93,7 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
 
   const syncAll = (full: boolean) => {
     setSyncing(true);
+    setLastSyncResult(null);
     fetch("/api/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -99,8 +101,9 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
     }).catch(console.error);
   };
 
-  const handleSyncComplete = () => {
+  const handleSyncComplete = (result: SyncResult) => {
     setSyncing(false);
+    setLastSyncResult(result);
     load();
     onSyncComplete?.();
     onCollectionsChanged?.();
@@ -121,6 +124,14 @@ export default function CollectionList({ onSelect, onAdd, onSyncComplete, onColl
       </div>
 
       {syncing && <SyncProgress onComplete={handleSyncComplete} />}
+      {!syncing && lastSyncResult?.error && (
+        <div className="form-error" style={{ marginBottom: 12 }}>{lastSyncResult.error}</div>
+      )}
+      {!syncing && lastSyncResult?.republishError && (
+        <div className="form-warning" style={{ marginBottom: 12 }}>
+          Sync completed, but publishing one or more updated collections failed: {lastSyncResult.republishError}
+        </div>
+      )}
 
       {(() => {
         const byName = (a: Collection, b: Collection) =>

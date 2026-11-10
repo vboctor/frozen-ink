@@ -97,7 +97,7 @@ app.whenReady().then(async () => {
     const aboutIconPath = join(__desktopDirname, "../../build/icon.png");
     app.setAboutPanelOptions({
       applicationName: "Frozen Ink",
-      applicationVersion: "0.1.0",
+      applicationVersion: app.getVersion(),
       iconPath: aboutIconPath,
     });
     Menu.setApplicationMenu(Menu.buildFromTemplate([
